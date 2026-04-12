@@ -2,6 +2,26 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Memory protocol
+
+### On session start — read all four files before doing anything else:
+
+```
+memory/decisions.md   — architectural and technical decisions made so far
+memory/preferences.md — how the user likes to work and receive output
+memory/people.md      — owner, collaborators, contacts
+memory/users.md       — target users and personas for the app
+```
+
+### On session end — update any file that changed:
+
+- New decision made? Append it to `decisions.md` with today's date and the reason.
+- User corrected your approach or confirmed an unusual one? Update `preferences.md`.
+- New person mentioned? Add them to `people.md`.
+- Target user understanding shifted? Update `users.md`.
+
+Only write what is non-obvious and would be lost between sessions. Do not log routine work, file paths, or things derivable from reading the code.
+
 ## Repository status
 
 This is **not a code repository yet** — it is an Obsidian vault (`vault/RideOS/`) containing German-language concept and planning notes for a project called **RideOS**. There is no source code, no package manager, no build system, and no tests. Do not invent commands. When the user asks to "build the MVP", expect to scaffold the project from scratch based on the notes.
