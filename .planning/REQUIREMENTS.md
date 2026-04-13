@@ -7,8 +7,8 @@
 
 ### BLE & Trainer Control
 
-- [ ] **BLE-01**: User can connect to KICKR Core by device name or service UUID scan on macOS
-- [ ] **BLE-02**: App reads speed, power (watts), and cadence from FTMS Indoor Bike Data characteristic in real time
+- [x] **BLE-01**: User can connect to KICKR Core by device name or service UUID scan on macOS
+- [x] **BLE-02**: App reads speed, power (watts), and cadence from FTMS Indoor Bike Data characteristic in real time
 - [ ] **BLE-03**: App sends simulated grade to KICKR via FTMS simulation mode (full Request Control + Start handshake, 4 Hz control loop)
 - [ ] **BLE-04**: App auto-reconnects to KICKR after BLE drop using exponential backoff without crashing or requiring restart
 
