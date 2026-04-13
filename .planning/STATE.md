@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: "Phase 1 Plan 03 complete — BLE discovery + notify + telemetry consumer green (13/13 tests pass)"
-stopped_at: Completed .planning/phases/01-ble-foundation-metrics-read/01-03-PLAN.md
-last_updated: "2026-04-13T13:04:35.762Z"
+status: completed
+stopped_at: Completed .planning/phases/01-ble-foundation-metrics-read/01-04-PLAN.md — Phase 1 complete
+last_updated: "2026-04-13T19:59:06.834Z"
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 4
-  completed_plans: 3
-  percent: 75
+  completed_plans: 4
+  percent: 100
 ---
 
 # STATE: RideOS
@@ -25,19 +25,20 @@ progress:
 
 **Core value:** Virtual gearing — software-defined gear ratios that translate real route grade into trainer resistance via `effective_grade = real_grade / gear_factor`.
 
-**Current focus:** Phase 1 — BLE Foundation + Metrics Read (plan 03 of 4 complete)
+**Current focus:** Phase 1 COMPLETE (4/4 plans). Next: Phase 2 — FTMS Control Loop + Virtual Gearing.
 
 ---
 
 ## Current Position
 
-- **Phase:** 1 — BLE Foundation + Metrics Read
-- **Plan:** 04 (next) — BleakClient lifecycle + reconnect/backoff around the plan-03 read primitives
-- **Status:** Plan 03 complete (`323e893`/`0eb7298` scanner, `a1d58f1`/`241a264` client); `engine.ble.scanner` + `engine.ble.client` APIs locked, 13/13 tests green
-- **Progress:** [████████░░] 75%
+- **Phase:** 1 — BLE Foundation + Metrics Read — **COMPLETE**
+- **Plan:** Phase 1 closed (all 4 plans done, 17/17 tests green, manual smoke test approved on real KICKR)
+- **Status:** Plan 04 complete (`80ff29a` test RED, `74b25b2` reconnect_loop GREEN, `12e18ab` main entry point); `engine.ble.reconnect.reconnect_loop` + `engine.main.main` APIs locked; live telemetry + unplug/replug reconnect verified by operator; `python -m engine` is the canonical entry point
+- **Next:** Phase 2 — FTMS Control Loop + Virtual Gearing (BLE-03, GEAR-01/02, INFRA-02)
+- **Progress:** [██████████] 100% (Phase 1)
 
 ```
-[ ] Phase 1: BLE Foundation + Metrics Read
+[x] Phase 1: BLE Foundation + Metrics Read
 [ ] Phase 2: FTMS Control Loop + Virtual Gearing
 [ ] Phase 3: WebSocket Bridge + Cockpit UI
 [ ] Phase 4: GPX Route Integration
@@ -52,8 +53,9 @@ progress:
 |--------|--------|--------|
 | Phases planned | 5 | 5 |
 | v1 requirements mapped | 15 / 15 | 15 / 15 |
-| Plans executed | — | 3 |
-| Success criteria verified | — | 3 |
+| Plans executed | — | 4 |
+| Success criteria verified | — | 4 (Phase 1 complete) |
+| Phase 01 P04 | 3m | 3 tasks | 5 files |
 
 ### Execution Metrics
 
@@ -62,6 +64,7 @@ progress:
 | 01-01 | 4m | 3 | 11 | 2026-04-13 |
 | 01-02 | 3m | 2 | 3  | 2026-04-13 |
 | 01-03 | 2m | 2 | 6  | 2026-04-13 |
+| 01-04 | 3m | 3 | 5  | 2026-04-13 |
 
 ---
 
@@ -112,6 +115,17 @@ progress:
 - Unit-test seam: `find_kickr(scanner_cls=...)` injection keeps bleak out of tests; `StubScanner` classmethod doubles exercise the full name-then-filter branch logic without hardware
 - Reconnect / lifecycle stays out of this plan by design — plan 04 owns `BleakClient` connect/disconnect so the control-loop boundary in phase 2 has a clean seam
 
+### Decisions (from plan 01-04 execution)
+
+- `reconnect_loop` is the SOLE owner of the `BleakClient` — Phase 2's control loop will receive the live client via shared state set inside the async-with block, and must NEVER construct its own `BleakClient` (one connection per process; locked architectural rule per RESEARCH.md Pitfall 5)
+- Backoff resets only after a FULL successful connect/subscribe/disconnect cycle, not on bare device discovery — prevents fast-retry loops when a flaky trainer advertises but fails handshake (refinement landed in `74b25b2`)
+- `stop_event` is checked twice per iteration (top of loop AND inside the None-device branch) so Ctrl-C during a scan-miss window does not incur a final stray sleep before exit
+- Production `connect_client` is a tiny `@asynccontextmanager` wrapping `async with BleakClient(device, disconnected_callback=...)` — same shape as the test fakes; never `.connect()/.disconnect()` pair (bleak 3.x return-type change, Pitfall 4)
+- Consumer shutdown is signalled via `queue.put(None)` sentinel, NOT task cancellation — drains in-flight payloads at a predictable point, no half-parsed-payload races
+- `BleakError` + `OSError` are the only exception classes caught; `BleakDBusError` is deprecated in bleak 3.x and is NOT referenced anywhere in `reconnect.py`
+- `python -m engine` is the canonical CLI entry point — `engine/__main__.py` re-exports `engine.main:main` so the package is directly runnable
+- Phase 2 caveat: KICKR keeps streaming Indoor Bike Data ~1–2s after disconnect (BLE link-layer buffering); current `stop_indoor_bike_notify` swallow is intentional, but Phase 2's Request Control / Stop write path will need a slightly longer write timeout to account for it
+
 ### Open Design Questions (surfaced during planning)
 
 1. Gear factor curve: linear vs geometric progression across 10 gears (Phase 2)
@@ -122,8 +136,9 @@ progress:
 
 ### Todos
 
-- Run plan 01-04 — wrap `find_kickr` + `start_indoor_bike_notify` + `telemetry_consumer` in a `BleakClient` lifecycle with reconnect/backoff; run `scan.py` once on the target Mac first to grant CoreBluetooth permission
-- Before Phase 2 execution: check QZ / ftms-bike OSS for Wahoo FTMS quirks
+- Plan Phase 2 (FTMS Control Loop + Virtual Gearing) — Request Control + Start handshake, 4 Hz simulated grade write, 10-gear engine, keyboard shifter, INFRA-02 safe shutdown (FTMS Stop + Reset on exit/crash)
+- Before Phase 2 execution: check QZ / ftms-bike OSS for Wahoo FTMS WRITE quirks (READ path verified clean during 01-04 smoke test; WRITE path untested)
+- Phase 2 architectural reminder: control loop reads the live `BleakClient` via shared state set inside `_connect_client`'s async-with block — does NOT open a second connection
 - Before Phase 5 execution: full Zwift Click spike (nRF Connect capture + community OSS review)
 
 ### Blockers
@@ -134,11 +149,11 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-04-13 — Executed plan 01-03 (find_kickr scanner + start/stop_indoor_bike_notify + telemetry_consumer, TDD RED→GREEN per task, 13/13 tests green).
+**Last session:** 2026-04-13T19:59:06.831Z
 
-**Stopped at:** Completed .planning/phases/01-ble-foundation-metrics-read/01-03-PLAN.md
+**Stopped at:** Completed .planning/phases/01-ble-foundation-metrics-read/01-04-PLAN.md — Phase 1 complete
 
-**Next action:** Execute plan 01-04 — wrap `find_kickr` + `start_indoor_bike_notify` + `telemetry_consumer` in a BleakClient lifecycle with connect/disconnect + reconnect/backoff, closing out phase 1. **Prerequisite:** run `engine/scan.py` once on target hardware to grant macOS Bluetooth permission before any real-KICKR verification.
+**Next action:** Plan Phase 2 — FTMS Control Loop + Virtual Gearing. Phase 1 is closed; the engine runs (`uv run python -m engine`) with live telemetry and survives unplug/replug. Phase 2 owns the WRITE path (Request Control + Start + simulated grade at 4 Hz), the 10-gear engine, the keyboard shifter, and INFRA-02 (safe shutdown).
 
 **Key files:**
 - `.planning/PROJECT.md` — vision, constraints, key decisions
@@ -147,15 +162,20 @@ None.
 - `.planning/phases/01-ble-foundation-metrics-read/01-01-SUMMARY.md` — plan 01-01 outcome
 - `.planning/phases/01-ble-foundation-metrics-read/01-02-SUMMARY.md` — plan 01-02 outcome (parser API + encoding rules)
 - `.planning/phases/01-ble-foundation-metrics-read/01-03-SUMMARY.md` — plan 01-03 outcome (BLE discovery + notify pipeline API)
+- `.planning/phases/01-ble-foundation-metrics-read/01-04-SUMMARY.md` — plan 01-04 outcome (reconnect lifecycle + entry point + Phase 1 closeout)
 - `.planning/research/SUMMARY.md` — stack/architecture/pitfalls synthesis
 - `.planning/config.json` — mode: yolo, granularity: coarse
 - `engine/engine/ftms/parsers.py` — **locked** `IndoorBikeData` + `parse_indoor_bike_data` contract
 - `engine/engine/ble/scanner.py` — **locked** `find_kickr` + `KICKR_NAME` + `FTMS_SERVICE_UUID`
 - `engine/engine/ble/client.py` — **locked** `start_indoor_bike_notify` + `stop_indoor_bike_notify` + `telemetry_consumer` + `INDOOR_BIKE_DATA_UUID`
-- `engine/scan.py` — run once to validate macOS BLE permission
+- `engine/engine/ble/reconnect.py` — **locked** `reconnect_loop` + `ReconnectConfig` (single owner of `BleakClient`)
+- `engine/engine/main.py` — **locked** `async main()` + signal-driven shutdown; `python -m engine` is the canonical entry point
+- `engine/scan.py` — run once to validate macOS BLE permission (already granted on operator hardware)
 
 ---
 *State initialized: 2026-04-12*
 *Plan 01-01 complete: 2026-04-13*
 *Plan 01-02 complete: 2026-04-13*
 *Plan 01-03 complete: 2026-04-13*
+*Plan 01-04 complete: 2026-04-13*
+*Phase 1 complete: 2026-04-13*

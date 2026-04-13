@@ -10,7 +10,7 @@
 - [x] **BLE-01**: User can connect to KICKR Core by device name or service UUID scan on macOS
 - [x] **BLE-02**: App reads speed, power (watts), and cadence from FTMS Indoor Bike Data characteristic in real time
 - [ ] **BLE-03**: App sends simulated grade to KICKR via FTMS simulation mode (full Request Control + Start handshake, 4 Hz control loop)
-- [ ] **BLE-04**: App auto-reconnects to KICKR after BLE drop using exponential backoff without crashing or requiring restart
+- [x] **BLE-04**: App auto-reconnects to KICKR after BLE drop using exponential backoff without crashing or requiring restart
 
 ### Virtual Gearing
 
@@ -65,10 +65,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BLE-01 | Phase 1 | In Progress (scan.py discovery diagnostic shipped in plan 01-01; connect in plan 01-03) |
-| BLE-02 | Phase 1 | In Progress (parser fixtures + xfail stubs in plan 01-01; parser in 01-02; subscription in 01-03) |
+| BLE-01 | Phase 1 | Complete (scan.py + find_kickr name-first/FTMS-UUID-fallback; verified on real KICKR in 01-04 smoke test) |
+| BLE-02 | Phase 1 | Complete (parser + start/stop_indoor_bike_notify + telemetry_consumer; live readings verified in 01-04 smoke test) |
 | BLE-03 | Phase 2 | Pending |
-| BLE-04 | Phase 1 | Pending |
+| BLE-04 | Phase 1 | Complete |
 | GEAR-01 | Phase 2 | Pending |
 | GEAR-02 | Phase 2 | Pending |
 | GEAR-03 | Phase 5 | Pending |

@@ -8,7 +8,7 @@
 
 ## Phases
 
-- [ ] **Phase 1: BLE Foundation + Metrics Read** - Stable KICKR connection, live telemetry parsing
+- [x] **Phase 1: BLE Foundation + Metrics Read** - Stable KICKR connection, live telemetry parsing (completed 2026-04-13)
 - [ ] **Phase 2: FTMS Control Loop + Virtual Gearing** - Grade writes, 10-gear system, keyboard shifter — first real ride
 - [ ] **Phase 3: WebSocket Bridge + Cockpit UI** - 60 fps React cockpit displaying all live metrics
 - [ ] **Phase 4: GPX Route Integration** - Load routes, track position, drive grade from elevation profile
@@ -80,7 +80,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. BLE Foundation + Metrics Read | 1/4 | In Progress|  |
+| 1. BLE Foundation + Metrics Read | 4/4 | Complete   | 2026-04-13 |
 | 2. FTMS Control Loop + Virtual Gearing | 0/0 | Not started | - |
 | 3. WebSocket Bridge + Cockpit UI | 0/0 | Not started | - |
 | 4. GPX Route Integration | 0/0 | Not started | - |
