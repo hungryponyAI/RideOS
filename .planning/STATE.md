@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
+status: planning
 stopped_at: Completed .planning/phases/01-ble-foundation-metrics-read/01-04-PLAN.md — Phase 1 complete
-last_updated: "2026-04-13T19:59:06.834Z"
+last_updated: "2026-04-13T20:09:02.262Z"
 progress:
   total_phases: 5
   completed_phases: 1
@@ -33,7 +33,7 @@ progress:
 
 - **Phase:** 1 — BLE Foundation + Metrics Read — **COMPLETE**
 - **Plan:** Phase 1 closed (all 4 plans done, 17/17 tests green, manual smoke test approved on real KICKR)
-- **Status:** Plan 04 complete (`80ff29a` test RED, `74b25b2` reconnect_loop GREEN, `12e18ab` main entry point); `engine.ble.reconnect.reconnect_loop` + `engine.main.main` APIs locked; live telemetry + unplug/replug reconnect verified by operator; `python -m engine` is the canonical entry point
+- **Status:** Ready to plan
 - **Next:** Phase 2 — FTMS Control Loop + Virtual Gearing (BLE-03, GEAR-01/02, INFRA-02)
 - **Progress:** [██████████] 100% (Phase 1)
 
