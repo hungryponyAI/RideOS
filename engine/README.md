@@ -23,3 +23,25 @@ System Settings > Privacy & Security > Bluetooth > enable Terminal / iTerm2.
 ```bash
 uv run python -m pytest tests/ -q
 ```
+
+## Run the engine (Phase 1)
+
+With the KICKR Core powered on and paired to no other app:
+
+```bash
+cd engine
+uv run python -m engine
+```
+
+You should see:
+
+- `KICKR not found; retrying in 1.0s` if the trainer is off — backoff doubles up to 60s.
+- `Connecting to KICKR CORE` once found, then `TELEMETRY | speed=... power=... cadence=...` lines while you pedal.
+- Unplug/replug the trainer: the engine stays running, logs the disconnect, rescans with backoff, reattaches.
+
+Press Ctrl-C to shut down cleanly.
+
+Phase 1 manual smoke test:
+1. `uv run python scan.py` — confirms macOS Bluetooth permission.
+2. `uv run python -m engine` — confirms live telemetry.
+3. While running, physically unplug the KICKR's USB/power and replug — confirm reconnect.
