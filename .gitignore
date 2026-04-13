@@ -1,2 +1,10 @@
 .DS_Store
 vault/RideOS/.obsidian/workspace.json
+
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
