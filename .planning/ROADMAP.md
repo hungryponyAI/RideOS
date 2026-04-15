@@ -81,7 +81,7 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. BLE Foundation + Metrics Read | 4/4 | Complete   | 2026-04-13 |
-| 2. FTMS Control Loop + Virtual Gearing | 0/0 | Not started | - |
+| 2. FTMS Control Loop + Virtual Gearing | 1/4 | In Progress|  |
 | 3. WebSocket Bridge + Cockpit UI | 0/0 | Not started | - |
 | 4. GPX Route Integration | 0/0 | Not started | - |
 | 5. Zwift Click Integration | 0/0 | Not started | - |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed .planning/phases/01-ble-foundation-metrics-read/01-04-PLAN.md — Phase 1 complete
-last_updated: "2026-04-13T20:09:02.262Z"
+stopped_at: Completed .planning/phases/02-ftms-control-loop-virtual-gearing/02-01-PLAN.md
+last_updated: "2026-04-15T04:27:10.364Z"
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
-  percent: 100
+  total_plans: 8
+  completed_plans: 5
+  percent: 63
 ---
 
 # STATE: RideOS
@@ -31,11 +31,11 @@ progress:
 
 ## Current Position
 
-- **Phase:** 1 — BLE Foundation + Metrics Read — **COMPLETE**
-- **Plan:** Phase 1 closed (all 4 plans done, 17/17 tests green, manual smoke test approved on real KICKR)
-- **Status:** Ready to plan
-- **Next:** Phase 2 — FTMS Control Loop + Virtual Gearing (BLE-03, GEAR-01/02, INFRA-02)
-- **Progress:** [██████████] 100% (Phase 1)
+- **Phase:** 2 — FTMS Control Loop + Virtual Gearing — IN PROGRESS
+- **Plan:** 02-01 complete (control_point encoders + package markers; 32/32 tests green)
+- **Status:** Executing Phase 2
+- **Next:** Plan 02-02 — GearEngine (10-gear virtual gearing math)
+- **Progress:** [██████░░░░] 63% (5/8 plans)
 
 ```
 [x] Phase 1: BLE Foundation + Metrics Read
@@ -56,6 +56,7 @@ progress:
 | Plans executed | — | 4 |
 | Success criteria verified | — | 4 (Phase 1 complete) |
 | Phase 01 P04 | 3m | 3 tasks | 5 files |
+| Phase 02 P01 | 8m | 2 tasks | 9 files |
 
 ### Execution Metrics
 
@@ -115,6 +116,14 @@ progress:
 - Unit-test seam: `find_kickr(scanner_cls=...)` injection keeps bleak out of tests; `StubScanner` classmethod doubles exercise the full name-then-filter branch logic without hardware
 - Reconnect / lifecycle stays out of this plan by design — plan 04 owns `BleakClient` connect/disconnect so the control-loop boundary in phase 2 has a clean seam
 
+### Decisions (from plan 02-01 execution)
+
+- Grade encoding in opcode 0x11: `grade_i = round(grade_percent * 100)` → sint16 LE, 0.01% resolution, clamped to [-32768, 32767] (= ±327.68%)
+- RESEARCH.md Pitfall 2 byte fixture for grade=-3.5 is a documentation typo: states '5e fe' but correct sint16 LE encoding of -350 is 'a2 fe'; the implementation is correct per FTMS spec
+- `encode_stop_or_pause(pause=False)` → b'\x08\x01' (stop); `pause=True` → b'\x08\x02'; INFRA-02 shutdown always sends stop
+- `parse_control_point_response` uses same `bytes(data)` coercion pattern as Phase 1 parser to handle bleak's bytearray notifications
+- All 7 Phase 2 package markers in place (engine/control, engine/gears, engine/input + their test counterparts); Plans 02-02/02-03/02-04 can now import from these subtrees
+
 ### Decisions (from plan 01-04 execution)
 
 - `reconnect_loop` is the SOLE owner of the `BleakClient` — Phase 2's control loop will receive the live client via shared state set inside the async-with block, and must NEVER construct its own `BleakClient` (one connection per process; locked architectural rule per RESEARCH.md Pitfall 5)
@@ -149,9 +158,9 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-04-13T19:59:06.831Z
+**Last session:** 2026-04-15T04:27:10.361Z
 
-**Stopped at:** Completed .planning/phases/01-ble-foundation-metrics-read/01-04-PLAN.md — Phase 1 complete
+**Stopped at:** Completed .planning/phases/02-ftms-control-loop-virtual-gearing/02-01-PLAN.md
 
 **Next action:** Plan Phase 2 — FTMS Control Loop + Virtual Gearing. Phase 1 is closed; the engine runs (`uv run python -m engine`) with live telemetry and survives unplug/replug. Phase 2 owns the WRITE path (Request Control + Start + simulated grade at 4 Hz), the 10-gear engine, the keyboard shifter, and INFRA-02 (safe shutdown).
 
@@ -171,6 +180,7 @@ None.
 - `engine/engine/ble/reconnect.py` — **locked** `reconnect_loop` + `ReconnectConfig` (single owner of `BleakClient`)
 - `engine/engine/main.py` — **locked** `async main()` + signal-driven shutdown; `python -m engine` is the canonical entry point
 - `engine/scan.py` — run once to validate macOS BLE permission (already granted on operator hardware)
+- `engine/engine/ftms/control_point.py` — **locked** FTMS Control Point encoders + ControlPointResponse parser (Plan 02-01)
 
 ---
 *State initialized: 2026-04-12*
@@ -179,3 +189,4 @@ None.
 *Plan 01-03 complete: 2026-04-13*
 *Plan 01-04 complete: 2026-04-13*
 *Phase 1 complete: 2026-04-13*
+*Plan 02-01 complete: 2026-04-15*
