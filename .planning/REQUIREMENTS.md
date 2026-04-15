@@ -14,8 +14,8 @@
 
 ### Virtual Gearing
 
-- [ ] **GEAR-01**: 10-gear virtual system applies a gear factor to real grade (`effective_grade = real_grade / gear_factor`)
-- [ ] **GEAR-02**: Keyboard input (up/down arrow or configurable key) shifts gear up and down during a ride
+- [x] **GEAR-01**: 10-gear virtual system applies a gear factor to real grade (`effective_grade = real_grade / gear_factor`)
+- [x] **GEAR-02**: Keyboard input (up/down arrow or configurable key) shifts gear up and down during a ride
 - [ ] **GEAR-03**: Zwift Click BLE integration — app reads shift signals from Click via reverse-engineered BLE characteristic and maps to gear up/down
 
 ### Cockpit UI
@@ -69,8 +69,8 @@
 | BLE-02 | Phase 1 | Complete (parser + start/stop_indoor_bike_notify + telemetry_consumer; live readings verified in 01-04 smoke test) |
 | BLE-03 | Phase 2 | Complete |
 | BLE-04 | Phase 1 | Complete |
-| GEAR-01 | Phase 2 | Pending |
-| GEAR-02 | Phase 2 | Pending |
+| GEAR-01 | Phase 2 | Complete |
+| GEAR-02 | Phase 2 | Complete |
 | GEAR-03 | Phase 5 | Pending |
 | UI-01 | Phase 3 | Pending |
 | UI-02 | Phase 3 | Pending |
