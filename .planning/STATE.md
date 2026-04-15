@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed .planning/phases/02-ftms-control-loop-virtual-gearing/02-02-PLAN.md
-last_updated: "2026-04-15T04:31:55.545Z"
+stopped_at: Completed .planning/phases/02-ftms-control-loop-virtual-gearing/02-03-PLAN.md
+last_updated: "2026-04-15T04:36:46.237Z"
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 8
-  completed_plans: 6
-  percent: 75
+  completed_plans: 7
+  percent: 88
 ---
 
 # STATE: RideOS
@@ -32,10 +32,10 @@ progress:
 ## Current Position
 
 - **Phase:** 2 — FTMS Control Loop + Virtual Gearing — IN PROGRESS
-- **Plan:** 02-02 complete (GearEngine 20 tests + KeyboardShifter 9 tests; 61/61 tests green)
+- **Plan:** 02-03 complete (FtmsController + run_control_loop + RideState; 69/69 tests green)
 - **Status:** Executing Phase 2
-- **Next:** Plan 02-03 — GradeController (asyncio control loop, 4 Hz FTMS write)
-- **Progress:** [████████░░] 75%
+- **Next:** Plan 02-04 — Integration (wire all Phase 2 components into main.py with INFRA-02 shutdown)
+- **Progress:** [█████████░] 88%
 
 ```
 [x] Phase 1: BLE Foundation + Metrics Read
@@ -58,6 +58,7 @@ progress:
 | Phase 01 P04 | 3m | 3 tasks | 5 files |
 | Phase 02 P01 | 8m | 2 tasks | 9 files |
 | Phase 02 P02 | 141s | 2 tasks | 4 files |
+| Phase 02 P03 | 4min | 2 tasks | 4 files |
 
 ### Execution Metrics
 
@@ -132,6 +133,16 @@ progress:
 - Gear factor curve resolved: geometric progression (not linear) with G1=0.500, G10=1.800 — formula `factor[i] = 0.5 * 3.6^((i-1)/9)` pinned to 3 dp
 - `effective_grade = real_grade / factor` amplifies low-gear grades (gear 1 factor=0.5 doubles felt gradient, gear 10 factor=1.8 dampens it) — verified in `test_low_gear_amplifies_grade`
 
+### Decisions (from plan 02-03 execution)
+
+- asyncio.Future (not Queue) for indication-backed writes — one pending Future per in-flight write, cleared in finally block even on timeout
+- run_control_loop delegates start()/shutdown() responsibility to caller; Plan 02-04 owns the try/finally lifecycle around controller.start() -> run_control_loop -> controller.shutdown()
+- shutdown() individually guards both Stop and Reset with try/except — both ops always attempted even if first fails (best-effort, never raises)
+- RideState is a mutable dataclass (not frozen) — KeyboardShifter and GPX tracker can mutate gear_engine and real_grade_percent directly
+- _on_fmcp_indication is a plain sync def, only calls Future.set_result — enforces Pitfall 3 (no await in CoreBluetooth callback context)
+- write_gatt_char uses keyword form `response=True` (not positional) — enforces Pitfall 7
+- Keepalive 1.0s forces write even when grade is stable, preventing BLE link timeout
+
 ### Decisions (from plan 01-04 execution)
 
 - `reconnect_loop` is the SOLE owner of the `BleakClient` — Phase 2's control loop will receive the live client via shared state set inside the async-with block, and must NEVER construct its own `BleakClient` (one connection per process; locked architectural rule per RESEARCH.md Pitfall 5)
@@ -166,11 +177,11 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-04-15T04:31:55.542Z
+**Last session:** 2026-04-15T04:36:46.234Z
 
-**Stopped at:** Completed .planning/phases/02-ftms-control-loop-virtual-gearing/02-02-PLAN.md
+**Stopped at:** Completed .planning/phases/02-ftms-control-loop-virtual-gearing/02-03-PLAN.md
 
-**Next action:** Plan 02-03 — GradeController (asyncio control loop: Request Control + Start handshake, 4 Hz simulated grade write consuming GearEngine + telemetry queue). GearEngine (02-02) and FTMS encoders (02-01) are ready; controller wires them together.
+**Next action:** Plan 02-04 — Integration (wire FtmsController + run_control_loop + RideState + KeyboardShifter + reconnect_loop into main.py with INFRA-02 safe shutdown).
 
 **Key files:**
 - `.planning/PROJECT.md` — vision, constraints, key decisions
@@ -191,6 +202,8 @@ None.
 - `engine/engine/ftms/control_point.py` — **locked** FTMS Control Point encoders + ControlPointResponse parser (Plan 02-01)
 - `engine/engine/gears/engine.py` — **locked** `GearEngine` dataclass: factor table, shift_up/shift_down, effective_grade (Plan 02-02)
 - `engine/engine/input/keyboard.py` — **locked** `KeyboardShifter`: cbreak + add_reader + debounce + ESC-sequence state machine (Plan 02-02)
+- `engine/engine/control/state.py` — **locked** `RideState` dataclass (gear_engine, real_grade_percent=0.0) — seam for Plan 02-04 (Plan 02-03)
+- `engine/engine/control/controller.py` — **locked** `FtmsController` + `FtmsControlError` + `run_control_loop` (Plan 02-03)
 
 ---
 *State initialized: 2026-04-12*
@@ -201,3 +214,4 @@ None.
 *Phase 1 complete: 2026-04-13*
 *Plan 02-01 complete: 2026-04-15*
 *Plan 02-02 complete: 2026-04-15*
+*Plan 02-03 complete: 2026-04-15*
