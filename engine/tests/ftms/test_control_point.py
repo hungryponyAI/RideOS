@@ -51,8 +51,9 @@ def test_encode_grade_positive():
 
 
 def test_encode_grade_negative():
-    # grade=-3.5 → grade_int = -350 = 0xfe5e LE → bytes[3:5] = b'\x5e\xfe'
-    assert encode_set_simulation_parameters(-3.5) == b'\x11\x00\x00\x5e\xfe\x00\x00'
+    # grade=-3.5 → grade_int = -350 = sint16 LE 0xFEA2 → bytes b'\xa2\xfe'
+    # Note: RESEARCH.md fixture '5e fe' is a documentation typo; -350 LE is a2 fe.
+    assert encode_set_simulation_parameters(-3.5) == b'\x11\x00\x00\xa2\xfe\x00\x00'
 
 
 def test_encode_grade_clamp_high():
