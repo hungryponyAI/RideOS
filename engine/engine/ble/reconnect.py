@@ -16,7 +16,7 @@ import asyncio
 import logging
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Optional
+from typing import Awaitable, Callable, Optional, Type
 
 from bleak import BleakClient, BleakError
 from bleak.backends.device import BLEDevice
@@ -25,6 +25,8 @@ from engine.ble.client import (
     start_indoor_bike_notify,
     stop_indoor_bike_notify,
 )
+from engine.control.controller import FtmsController, run_control_loop
+from engine.control.state import RideState
 
 _log = logging.getLogger(__name__)
 
@@ -34,6 +36,8 @@ ConnectClient = Callable[
     AbstractAsyncContextManager[BleakClient],
 ]
 SleepFn = Callable[[float], Awaitable[None]]
+ControllerFactory = Type[FtmsController]
+OnClientReady = Callable[[BleakClient, FtmsController], None]
 
 
 @dataclass(frozen=True)
@@ -49,8 +53,19 @@ async def reconnect_loop(
     config: ReconnectConfig = ReconnectConfig(),
     sleep: SleepFn = asyncio.sleep,
     stop_event: Optional[asyncio.Event] = None,
+    *,
+    ride_state: Optional[RideState] = None,
+    controller_factory: ControllerFactory = FtmsController,
+    on_client_ready: Optional[OnClientReady] = None,
 ) -> None:
-    """Run the scan/connect/subscribe cycle forever, until stop_event is set."""
+    """Run the scan/connect/subscribe cycle forever, until stop_event is set.
+
+    Phase 1 behavior preserved when ride_state=None.
+
+    Phase 2+: if ride_state is provided, wires FtmsController + run_control_loop
+    into the connect lifecycle.  INFRA-02 guarantee: controller.shutdown() is
+    called in a try/finally before stop_indoor_bike_notify (Pitfall 6).
+    """
     backoff = config.initial_backoff
 
     while True:
@@ -84,12 +99,63 @@ async def reconnect_loop(
             async with connect_client(device, _on_disconnect) as client:
                 await start_indoor_bike_notify(client, queue)
                 _log.info("Subscribed to FTMS Indoor Bike Data; awaiting data...")
-                await disconnected.wait()
+
+                controller: Optional[FtmsController] = None
+                control_task: Optional[asyncio.Task] = None
+
+                if ride_state is not None:
+                    controller = controller_factory(client)
+                    await controller.start()
+
+                if on_client_ready is not None:
+                    on_client_ready(client, controller)
+
+                if controller is not None:
+                    control_task = asyncio.create_task(
+                        run_control_loop(controller, ride_state, stop_event)
+                    )
+
+                # Wait until either stop_event fires or device disconnects.
+                stop_wait = asyncio.ensure_future(
+                    _event_wait(stop_event)
+                ) if stop_event is not None else None
+                disc_wait = asyncio.ensure_future(_event_wait(disconnected))
+
+                waiters = {disc_wait}
+                if stop_wait is not None:
+                    waiters.add(stop_wait)
+
+                await asyncio.wait(waiters, return_when=asyncio.FIRST_COMPLETED)
+
+                # Cancel pending waiters
+                for w in waiters:
+                    if not w.done():
+                        w.cancel()
+                        try:
+                            await w
+                        except asyncio.CancelledError:
+                            pass
+
+                if control_task is not None:
+                    control_task.cancel()
+                    try:
+                        await control_task
+                    except asyncio.CancelledError:
+                        pass
+
+                # INFRA-02: shutdown before stopping notifications (Pitfall 6).
+                if controller is not None:
+                    try:
+                        await controller.shutdown()
+                    finally:
+                        pass  # shutdown() already swallows all exceptions
+
                 _log.info("Disconnected; attempting to stop notifications cleanly")
                 try:
                     await stop_indoor_bike_notify(client)
                 except (BleakError, OSError):
                     pass
+
         except (BleakError, OSError) as exc:
             _log.warning(
                 "BLE error during connect/notify: %s (backoff=%.1fs)",
@@ -102,3 +168,9 @@ async def reconnect_loop(
         # Successful connect/subscribe/disconnect cycle — reset backoff.
         backoff = config.initial_backoff
         _log.info("Reconnect cycle complete; rescanning")
+
+
+async def _event_wait(event: Optional[asyncio.Event]) -> None:
+    """Await an event.wait(); returns immediately if event is None."""
+    if event is not None:
+        await event.wait()

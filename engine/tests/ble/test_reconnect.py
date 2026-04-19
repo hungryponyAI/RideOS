@@ -5,6 +5,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import Any, Callable, List, Optional
+from unittest import mock
 
 import pytest
 
@@ -186,3 +187,101 @@ async def test_bleak_error_on_connect_triggers_backoff():
 
     # Two failures before stop_event sets on the 3rd find() call.
     assert sleeps == [1.0, 2.0]
+
+
+# ---------------------------------------------------------------------------
+# Task 2 (02-04): controller wired into reconnect_loop; shutdown-before-notify
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_control_loop_wired_and_shutdown_before_notify_stop():
+    """reconnect_loop with ride_state: controller.shutdown() called BEFORE
+    stop_indoor_bike_notify (RESEARCH.md Pitfall 6 / INFRA-02 guarantee).
+    """
+    from engine.control.controller import FtmsController
+    from engine.control.state import RideState
+    from engine.gears.engine import GearEngine
+    from engine.ftms.control_point import OpCode
+
+    call_order: List[str] = []
+    stop = asyncio.Event()
+
+    # --- fake client that satisfies FtmsController handshake + auto-responses ---
+    class _TrackingClient(_FakeClient):
+        """Extends _FakeClient to track shutdown and stop_notify calls."""
+
+        def __init__(self):
+            super().__init__()
+            self.writes: List = []
+            self._notify_cbs: dict = {}
+
+        async def start_notify(self, uuid: str, cb) -> None:
+            self._notify_cbs[uuid] = cb
+            self.started.append(uuid)
+
+        async def stop_notify(self, uuid: str) -> None:
+            call_order.append("stop_indoor_bike_notify")
+            self.stopped.append(uuid)
+
+        async def write_gatt_char(self, uuid: str, data, *, response: bool = False) -> None:
+            payload = bytes(data)
+            self.writes.append((uuid, payload, response))
+            # Auto-success for all known opcodes
+            opcode = payload[0] if payload else 0xFF
+            _success = bytes([0x80, opcode, 0x01])
+            loop = asyncio.get_event_loop()
+            cb = self._notify_cbs.get(uuid)
+            if cb is not None:
+                loop.call_soon(cb, None, bytearray(_success))
+
+    tracking_client = _TrackingClient()
+
+    # Patch FtmsController.shutdown to record call order
+    original_shutdown = FtmsController.shutdown
+
+    async def _tracked_shutdown(self_ctrl):
+        call_order.append("controller.shutdown")
+        await original_shutdown(self_ctrl)
+
+    device = SimpleNamespace(name="KICKR CORE")
+
+    @asynccontextmanager
+    async def _connect(dev, on_disconnect):
+        # Fire disconnect + stop_event after one yield turn so the loop exits
+        async def _trigger():
+            await asyncio.sleep(0)
+            stop.set()
+            on_disconnect(tracking_client)
+
+        task = asyncio.create_task(_trigger())
+        try:
+            yield tracking_client
+        finally:
+            task.cancel()
+
+    async def find():
+        return device
+
+    gear_engine = GearEngine()
+    state = RideState(gear_engine=gear_engine, real_grade_percent=2.0)
+
+    with mock.patch.object(FtmsController, "shutdown", _tracked_shutdown):
+        await reconnect_loop(
+            queue=asyncio.Queue(),
+            find_device=find,
+            connect_client=_connect,
+            config=ReconnectConfig(initial_backoff=1.0, max_backoff=60.0),
+            sleep=asyncio.sleep,
+            stop_event=stop,
+            ride_state=state,
+        )
+
+    # INFRA-02: shutdown must precede stop_indoor_bike_notify
+    assert "controller.shutdown" in call_order
+    assert "stop_indoor_bike_notify" in call_order
+    shutdown_pos = call_order.index("controller.shutdown")
+    notify_stop_pos = call_order.index("stop_indoor_bike_notify")
+    assert shutdown_pos < notify_stop_pos, (
+        f"Expected controller.shutdown before stop_indoor_bike_notify, "
+        f"but got order: {call_order}"
+    )
