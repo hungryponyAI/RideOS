@@ -1,7 +1,8 @@
 ---
 phase: 3
 slug: websocket-bridge-cockpit-ui
-status: draft
+status: approved
+reviewed_at: 2026-04-19
 shadcn_initialized: false
 preset: none
 created: 2026-04-19
@@ -91,7 +92,7 @@ Exceptions:
 | Role | Size | Weight | Line Height | Usage |
 |------|------|--------|-------------|-------|
 | Display | 72px | 700 (bold) | 1.0 | Speed value (e.g. "34.2") |
-| Heading | 32px | 600 (semibold) | 1.1 | Gear indicator (e.g. "GEAR 5") |
+| Heading | 32px | 700 (bold) | 1.1 | Gear indicator (e.g. "GEAR 5") |
 | Body | 20px | 400 (regular) | 1.4 | Watt, cadence, grade values |
 | Label | 12px | 400 (regular) | 1.5 | Metric unit labels (km/h, W, rpm, %) |
 
@@ -152,7 +153,7 @@ Props: { value: string | number, unit: string, size: 'display' | 'body' }
 
 Renders gear indicator: `[1 2 3 4 (5) 6 7 8 9 10]`
 
-- Active gear: 32px semibold, accent blue background pill, 44px min-height
+- Active gear: 32px bold, accent blue background pill, 44px min-height
 - Inactive gears: 20px regular, gray-600 text, no background
 - No click handler in Phase 3 (keyboard only in this phase)
 - Horizontal flex, gap: 8px between gear items
@@ -278,11 +279,11 @@ No third-party shadcn registries. No vetting gate required.
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved — 2026-04-19
