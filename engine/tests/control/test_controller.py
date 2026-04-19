@@ -143,3 +143,95 @@ async def test_no_write_before_handshake(fake_bleak_client_factory):
     assert client.writes[1][1][0] == OpCode.START_OR_RESUME    # opcode 0x07 second
     # No 0x11 before any set_simulation_grade call:
     assert not any(w[1][0] == OpCode.SET_INDOOR_BIKE_SIMULATION_PARAMETERS for w in client.writes)
+
+
+# ---------------------------------------------------------------------------
+# Task 1 (02-04): shutdown tests
+# ---------------------------------------------------------------------------
+
+async def test_shutdown_sequence(fake_bleak_client_factory):
+    """shutdown() produces exactly STOP then RESET writes in that order; controlled=False after."""
+    client = fake_bleak_client_factory(
+        auto_success_for=(
+            OpCode.REQUEST_CONTROL,
+            OpCode.START_OR_RESUME,
+            OpCode.STOP_OR_PAUSE,
+            OpCode.RESET,
+        )
+    )
+    ctrl = FtmsController(client)
+    await ctrl.start()
+    baseline = len(client.writes)
+
+    await ctrl.shutdown()
+
+    shutdown_writes = client.writes[baseline:]
+    assert len(shutdown_writes) == 2
+    assert shutdown_writes[0][1][0] == OpCode.STOP_OR_PAUSE   # 0x08 first
+    assert shutdown_writes[1][1][0] == OpCode.RESET            # 0x01 second
+    assert ctrl.controlled is False
+
+
+async def test_shutdown_never_raises(fake_bleak_client_factory):
+    """BLE error on STOP write → RESET still attempted; no exception raised."""
+    client = fake_bleak_client_factory(
+        auto_success_for=(
+            OpCode.REQUEST_CONTROL,
+            OpCode.START_OR_RESUME,
+            # STOP_OR_PAUSE deliberately NOT in auto_success_for → Future never resolves → timeout
+            OpCode.RESET,
+        )
+    )
+    import unittest.mock as mock
+    ctrl = FtmsController(client)
+    await ctrl.start()
+
+    # Shorten timeout so the test is fast
+    with mock.patch.object(FtmsController, "_RESPONSE_TIMEOUT_S", 0.05):
+        # Must not raise even though STOP times out
+        await ctrl.shutdown()
+
+    # RESET was still attempted after STOP failed
+    opcodes = [w[1][0] for w in client.writes]
+    assert OpCode.RESET in opcodes
+
+
+async def test_shutdown_on_crash(fake_bleak_client_factory):
+    """try/finally in caller: shutdown writes appear AFTER a mid-loop grade write.
+
+    Order assertion:
+        sim_idx (0x11 grade write) < stop_idx (0x08) < reset_idx (0x01)
+    """
+    client = fake_bleak_client_factory(
+        auto_success_for=(
+            OpCode.REQUEST_CONTROL,
+            OpCode.START_OR_RESUME,
+            OpCode.SET_INDOOR_BIKE_SIMULATION_PARAMETERS,
+            OpCode.STOP_OR_PAUSE,
+            OpCode.RESET,
+        )
+    )
+    ctrl = FtmsController(client)
+    await ctrl.start()
+
+    gears = GearEngine(current_gear=5)
+    state = RideState(gear_engine=gears, real_grade_percent=5.0)
+    stop = asyncio.Event()
+
+    async def faulty_loop():
+        # Perform one grade write then crash
+        await ctrl.set_simulation_grade(state.gear_engine.effective_grade(state.real_grade_percent))
+        raise RuntimeError("simulated mid-tick crash")
+
+    try:
+        await faulty_loop()
+    except RuntimeError:
+        pass
+    finally:
+        await ctrl.shutdown()
+
+    opcodes = [w[1][0] for w in client.writes]
+    sim_idx  = next(i for i, op in enumerate(opcodes) if op == OpCode.SET_INDOOR_BIKE_SIMULATION_PARAMETERS)
+    stop_idx = next(i for i, op in enumerate(opcodes) if op == OpCode.STOP_OR_PAUSE)
+    reset_idx = next(i for i, op in enumerate(opcodes) if op == OpCode.RESET)
+    assert sim_idx < stop_idx < reset_idx
