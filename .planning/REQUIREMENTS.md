@@ -17,8 +17,8 @@
 
 ### Cockpit UI
 - [x] **UI-01**: React cockpit: speed/gear/watts/cadence/grade; dark; 60 fps
-- [ ] **UI-02**: Elevation profile (bottom); current position; red=climb, blue=descent
-- [ ] **UI-03**: Mini-map (top-right); route + position marker
+- [x] **UI-02**: Elevation profile (bottom); current position; red=climb, blue=descent
+- [x] **UI-03**: Mini-map (top-right); route + position marker
 
 ### Route & Position
 - [ ] **ROUTE-01**: Load GPX; extract elevation profile + coordinates
@@ -54,8 +54,8 @@ Street View / video overlay, multiplayer, cloud sync / auth, Windows/Linux, ERG 
 | INFRA-02 | 2 | Pending (Plan 02-04) |
 | GEAR-03 | 5 | Pending |
 | UI-01 | 3 | Complete |
-| UI-02 | 3 | Pending |
-| UI-03 | 3 | Pending |
+| UI-02 | 3 | Complete |
+| UI-03 | 3 | Complete |
 | INFRA-01 | 3 | Complete |
 | ROUTE-01 | 4 | Pending |
 | ROUTE-02 | 4 | Pending |
