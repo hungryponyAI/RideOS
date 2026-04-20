@@ -16,7 +16,7 @@
 - [ ] **GEAR-03**: Zwift Click BLE → shift signals via reverse-engineered characteristic
 
 ### Cockpit UI
-- [ ] **UI-01**: React cockpit: speed/gear/watts/cadence/grade; dark; 60 fps
+- [x] **UI-01**: React cockpit: speed/gear/watts/cadence/grade; dark; 60 fps
 - [ ] **UI-02**: Elevation profile (bottom); current position; red=climb, blue=descent
 - [ ] **UI-03**: Mini-map (top-right); route + position marker
 
@@ -53,7 +53,7 @@ Street View / video overlay, multiplayer, cloud sync / auth, Windows/Linux, ERG 
 | GEAR-02 | 2 | Complete |
 | INFRA-02 | 2 | Pending (Plan 02-04) |
 | GEAR-03 | 5 | Pending |
-| UI-01 | 3 | Pending |
+| UI-01 | 3 | Complete |
 | UI-02 | 3 | Pending |
 | UI-03 | 3 | Pending |
 | INFRA-01 | 3 | Complete |
