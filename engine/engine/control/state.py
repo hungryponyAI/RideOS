@@ -10,6 +10,7 @@ Read by:
 """
 from __future__ import annotations
 from dataclasses import dataclass
+from typing import Optional
 
 from engine.gears.engine import GearEngine
 
@@ -18,3 +19,6 @@ from engine.gears.engine import GearEngine
 class RideState:
     gear_engine: GearEngine
     real_grade_percent: float = 0.0
+    last_speed_kmh: Optional[float] = None
+    last_power_w: Optional[float] = None
+    last_cadence_rpm: Optional[float] = None

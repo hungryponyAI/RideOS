@@ -5,6 +5,7 @@ description = "RideOS local engine: BLE bridge to Wahoo KICKR Core via FTMS"
 requires-python = ">=3.12"
 dependencies = [
     "bleak>=3.0.1,<4.0",
+    "websockets>=16.0,<17.0",
 ]
 
 [project.optional-dependencies]
