@@ -27,6 +27,7 @@ from engine.control.state import RideState
 from engine.ftms.parsers import IndoorBikeData
 from engine.gears.engine import GearEngine
 from engine.input.keyboard import KeyboardShifter
+from engine.ws.server import broadcast_loop
 
 _log = logging.getLogger("rideos.engine")
 
@@ -79,6 +80,7 @@ async def main() -> int:
 
     queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
     stop_event = asyncio.Event()
+    broadcast_queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=10)
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -95,6 +97,30 @@ async def main() -> int:
     shifter.start()
 
     try:
+        def _on_reading(reading: IndoorBikeData) -> None:
+            """Update RideState telemetry fields and post snapshot to broadcast queue.
+
+            Plain def — no await allowed; runs inside telemetry_consumer's loop.
+            BLE callback safety: put_nowait only (RESEARCH.md Pattern 1).
+            """
+            state.last_speed_kmh = reading.speed_kmh
+            state.last_power_w = reading.power_watts
+            state.last_cadence_rpm = reading.cadence_rpm
+            snapshot = {
+                "speed_kmh": reading.speed_kmh,
+                "power_w": reading.power_watts,
+                "cadence_rpm": reading.cadence_rpm,
+                "gear": state.gear_engine.current_gear,
+                "real_grade_pct": state.real_grade_percent,
+                "effective_grade_pct": state.gear_engine.effective_grade(state.real_grade_percent),
+            }
+            try:
+                broadcast_queue.put_nowait(snapshot)
+            except asyncio.QueueFull:
+                broadcast_queue.get_nowait()
+                broadcast_queue.put_nowait(snapshot)
+            _log_reading(reading)
+
         async def find_device():
             return await find_kickr(timeout=10.0)
 
@@ -111,13 +137,18 @@ async def main() -> int:
         )
 
         consumer_task = asyncio.create_task(
-            telemetry_consumer(queue, _log_reading),
+            telemetry_consumer(queue, _on_reading),
             name="telemetry_consumer",
         )
 
         gear_logger_task = asyncio.create_task(
             _gear_status_logger(state, stop_event),
             name="gear_status_logger",
+        )
+
+        ws_task = asyncio.create_task(
+            broadcast_loop(broadcast_queue, stop_event),
+            name="ws_broadcast",
         )
 
         # Wait for shutdown signal, then drain cleanly.
@@ -130,14 +161,14 @@ async def main() -> int:
         try:
             await asyncio.wait_for(
                 asyncio.gather(
-                    reconnect_task, consumer_task, gear_logger_task,
+                    reconnect_task, consumer_task, gear_logger_task, ws_task,
                     return_exceptions=True,
                 ),
                 timeout=15.0,
             )
         except asyncio.TimeoutError:
             _log.warning("Shutdown timed out; cancelling remaining tasks")
-            for t in (reconnect_task, consumer_task, gear_logger_task):
+            for t in (reconnect_task, consumer_task, gear_logger_task, ws_task):
                 if not t.done():
                     t.cancel()
 
