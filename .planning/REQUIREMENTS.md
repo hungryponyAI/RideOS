@@ -26,7 +26,7 @@
 - [ ] **ROUTE-03**: Grade at position → FTMS control loop base grade
 
 ### Infrastructure
-- [ ] **INFRA-01**: Python engine streams telemetry to React via WebSocket at up to 60 Hz
+- [x] **INFRA-01**: Python engine streams telemetry to React via WebSocket at up to 60 Hz
 - [x] **INFRA-02**: FTMS Stop + Reset on process exit/crash — trainer never stuck at last grade
 
 ## v2 Requirements
@@ -56,7 +56,7 @@ Street View / video overlay, multiplayer, cloud sync / auth, Windows/Linux, ERG 
 | UI-01 | 3 | Pending |
 | UI-02 | 3 | Pending |
 | UI-03 | 3 | Pending |
-| INFRA-01 | 3 | Pending |
+| INFRA-01 | 3 | Complete |
 | ROUTE-01 | 4 | Pending |
 | ROUTE-02 | 4 | Pending |
 | ROUTE-03 | 4 | Pending |

@@ -8,7 +8,7 @@
 |-------|------|--------|------|
 | 1 | BLE Foundation + Metrics Read | Complete | 2026-04-13 |
 | 2 | 4/4 | Complete   | 2026-04-19 |
-| 3 | WebSocket Bridge + Cockpit UI | Not started | — |
+| 3 | 1/3 | In Progress|  |
 | 4 | GPX Route Integration | Not started | — |
 | 5 | Zwift Click Integration | Not started | — |
 

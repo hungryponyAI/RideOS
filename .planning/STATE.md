@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 02-04-PLAN.md (Phase 2 complete)
-last_updated: "2026-04-19T18:26:30.522Z"
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-04-20T04:49:37.894Z"
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 11
+  completed_plans: 9
   percent: 100
 ---
 
@@ -17,19 +17,19 @@ progress:
 
 ## Current Position
 
-- **Phase:** 2 — FTMS Control Loop + Virtual Gearing — COMPLETE
-- **Plan:** 02-04 complete (Phase 2 integration: FtmsController + GearEngine + KeyboardShifter wired into main.py; 73/73 tests green)
-- **Next:** Phase 3 — WebSocket Bridge + Cockpit UI
+- **Phase:** 3 — WebSocket Bridge + Cockpit UI — IN PROGRESS
+- **Plan:** 03-01 complete (WS broadcast server + RideState telemetry fields + main.py wiring; 81/81 tests green)
+- **Next:** 03-02 — React Cockpit UI
 
 ```
 [x] Phase 1: BLE Foundation + Metrics Read
 [x] Phase 2: FTMS Control Loop + Virtual Gearing
-[ ] Phase 3: WebSocket Bridge + Cockpit UI
+[~] Phase 3: WebSocket Bridge + Cockpit UI (03-01 done)
 [ ] Phase 4: GPX Route Integration
 [ ] Phase 5: Zwift Click Integration
 ```
 
-Progress: [██████████] 100%
+Progress: [████████░░] 82%
 
 ## Execution Metrics
 
@@ -43,6 +43,7 @@ Progress: [██████████] 100%
 | 02-02 | 2m30s | 2 | 4 | 2026-04-15 |
 | 02-03 | 4m | 2 | 4  | 2026-04-15 |
 | 02-04 | 8m | 4 | 5  | 2026-04-19 |
+| 03-01 | 3m | 2 | 9  | 2026-04-20 |
 
 ## Locked APIs
 
@@ -56,7 +57,8 @@ Progress: [██████████] 100%
 | `engine/engine/ftms/control_point.py` | FTMS Control Point encoders + ControlPointResponse parser |
 | `engine/engine/gears/engine.py` | `GearEngine`: factor table, shift_up/shift_down, effective_grade |
 | `engine/engine/input/keyboard.py` | `KeyboardShifter`: cbreak + add_reader + debounce + ESC-sequence state machine |
-| `engine/engine/control/state.py` | `RideState` dataclass (gear_engine, real_grade_percent=0.0) |
+| `engine/engine/control/state.py` | `RideState` dataclass (gear_engine, real_grade_percent=0.0, last_speed_kmh, last_power_w, last_cadence_rpm) |
+| `engine/engine/ws/server.py` | `broadcast_loop(broadcast_queue, stop_event, host, port)` + `CLIENTS: set[ServerConnection]` |
 | `engine/engine/control/controller.py` | `FtmsController` + `FtmsControlError` + `run_control_loop` |
 
 ## Key Decisions
@@ -71,6 +73,7 @@ Critical architectural rules:
 - INFRA-02: `controller.shutdown()` in try/finally inside reconnect_loop — before stop_indoor_bike_notify (Pitfall 6)
 - `asyncio.wait(FIRST_COMPLETED)` on {stop_event, disconnected} — clean Ctrl-C during active connection
 - `KeyboardShifter.stop()` in outer finally of `main()` — tty always restored
+- INFRA-01 (03-01): `broadcast_loop` = sibling asyncio.Task; `_on_reading` plain def closure; bounded `broadcast_queue(maxsize=10)` with drop-oldest; websockets.asyncio.server API (not legacy)
 
 ## Todos
 
@@ -82,10 +85,10 @@ None.
 
 ## Session Continuity
 
-**Stopped at:** Completed 02-04-PLAN.md (Phase 2 complete)
-**Next action:** Phase 3 — WebSocket Bridge + Cockpit UI
+**Stopped at:** Completed 03-01-PLAN.md
+**Next action:** 03-02 — React Cockpit UI (Vite + React + Tailwind + useTelemetry hook)
 **Key reference files:**
 - `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`
+- `.planning/phases/03-websocket-bridge-cockpit-ui/03-01-SUMMARY.md`
 - `.planning/phases/02-ftms-control-loop-virtual-gearing/02-04-SUMMARY.md`
-- `.planning/research/SUMMARY.md`
 - `memory/decisions.md`
