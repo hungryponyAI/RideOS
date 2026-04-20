@@ -6,6 +6,7 @@ Coverage:
 - fan-out: two simultaneous clients both receive the same broadcast
 - stop_event causes broadcast_loop to exit cleanly within 1 second
 - JSON snapshot contains exactly the 6 required keys
+- inbound gear_shift messages call GearEngine.shift_up / shift_down
 """
 from __future__ import annotations
 
@@ -156,6 +157,66 @@ async def test_snapshot_schema():
             received = await asyncio.wait_for(ws.recv(), timeout=5.0)
             data = json.loads(received)
             assert set(data.keys()) == required_keys
+    finally:
+        stop_event.set()
+        await asyncio.wait_for(server_task, timeout=2.0)
+
+
+# ---------------------------------------------------------------------------
+# Test: inbound gear_shift messages call GearEngine methods
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_inbound_gear_shift():
+    """WS client sends gear_shift messages; GearEngine.shift_up/down is called."""
+    from engine.gears.engine import GearEngine
+
+    port = await _get_free_port()
+    stop_event = asyncio.Event()
+    queue: asyncio.Queue[dict] = asyncio.Queue()
+    gear_engine = GearEngine()  # starts at gear 5
+
+    server_task = asyncio.create_task(
+        broadcast_loop(queue, stop_event, gear_engine=gear_engine, host="localhost", port=port)
+    )
+
+    await asyncio.sleep(0.05)
+
+    try:
+        async with connect(f"ws://localhost:{port}") as ws:
+            # Shift up: gear 5 -> 6
+            await ws.send(json.dumps({"type": "gear_shift", "direction": "up"}))
+            await asyncio.sleep(0.1)
+            assert gear_engine.current_gear == 6
+
+            # Shift down: gear 6 -> 5
+            await ws.send(json.dumps({"type": "gear_shift", "direction": "down"}))
+            await asyncio.sleep(0.1)
+            assert gear_engine.current_gear == 5
+    finally:
+        stop_event.set()
+        await asyncio.wait_for(server_task, timeout=2.0)
+
+
+@pytest.mark.asyncio
+async def test_inbound_no_gear_engine():
+    """Inbound messages are silently ignored when gear_engine is None (default)."""
+    port = await _get_free_port()
+    stop_event = asyncio.Event()
+    queue: asyncio.Queue[dict] = asyncio.Queue()
+
+    server_task = asyncio.create_task(
+        broadcast_loop(queue, stop_event, host="localhost", port=port)
+    )
+
+    await asyncio.sleep(0.05)
+
+    try:
+        async with connect(f"ws://localhost:{port}") as ws:
+            # Should not raise; gear_engine is None so message is ignored
+            await ws.send(json.dumps({"type": "gear_shift", "direction": "up"}))
+            await asyncio.sleep(0.1)
+            # No assertion needed — test passes if no exception is raised
     finally:
         stop_event.set()
         await asyncio.wait_for(server_task, timeout=2.0)
