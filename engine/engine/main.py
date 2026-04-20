@@ -147,7 +147,7 @@ async def main() -> int:
         )
 
         ws_task = asyncio.create_task(
-            broadcast_loop(broadcast_queue, stop_event),
+            broadcast_loop(broadcast_queue, stop_event, gear_engine=gear_engine),
             name="ws_broadcast",
         )
 

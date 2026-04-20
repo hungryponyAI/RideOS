@@ -16,16 +16,26 @@ export function useTelemetry() {
     setStatus("connecting");
 
     ws.onopen = () => {
-      setStatus("live");
+      setStatus("connected");
       retryCountRef.current = 0;
     };
-    ws.onmessage = (e) => setTelemetry(JSON.parse(e.data));
+    ws.onmessage = (e) => {
+      setStatus("live");
+      setTelemetry(JSON.parse(e.data));
+    };
     ws.onclose = () => {
       setStatus("disconnected");
       const delay = Math.min(30000, 2000 * 2 ** retryCountRef.current);
       retryCountRef.current += 1;
       retryRef.current = setTimeout(connect, delay);
     };
+  }, []);
+
+  const sendMessage = useCallback((msg: object) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(msg));
+    }
   }, []);
 
   useEffect(() => {
@@ -36,5 +46,5 @@ export function useTelemetry() {
     };
   }, [connect]);
 
-  return { telemetry, status };
+  return { telemetry, status, sendMessage };
 }

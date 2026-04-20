@@ -7,4 +7,4 @@ export interface TelemetryState {
   effective_grade_pct: number;
 }
 
-export type ConnectionStatus = "connecting" | "live" | "disconnected" | "reconnecting";
+export type ConnectionStatus = "connecting" | "connected" | "live" | "disconnected" | "reconnecting";

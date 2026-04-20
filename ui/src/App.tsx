@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useTelemetry } from "./hooks/useTelemetry";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { MetricDisplay } from "./components/MetricDisplay";
@@ -7,7 +8,19 @@ import { ElevationProfile } from "./components/ElevationProfile";
 import { MiniMap } from "./components/MiniMap";
 
 function App() {
-  const { telemetry: t, status } = useTelemetry();
+  const { telemetry: t, status, sendMessage } = useTelemetry();
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "j" || e.key === "J") {
+        sendMessage({ type: "gear_shift", direction: "down" });
+      } else if (e.key === "k" || e.key === "K") {
+        sendMessage({ type: "gear_shift", direction: "up" });
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [sendMessage]);
 
   return (
     <div className="w-screen h-screen bg-black overflow-hidden flex flex-col">
