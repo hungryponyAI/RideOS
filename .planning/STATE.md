@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-04-20T04:54:04.950Z"
+stopped_at: Completed 03-04-PLAN.md
+last_updated: "2026-04-20T18:28:12.779Z"
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 11
-  completed_plans: 11
-  percent: 91
+  total_plans: 12
+  completed_plans: 12
+  percent: 100
 ---
 
 # STATE: RideOS
@@ -18,13 +18,13 @@ progress:
 ## Current Position
 
 - **Phase:** 3 — WebSocket Bridge + Cockpit UI — COMPLETE
-- **Plan:** 03-03 complete (ElevationProfile + MiniMap scaffolds; all 7 cockpit components wired; production build passes)
+- **Plan:** 03-04 complete (Gap closure: browser gear shifts via WS + connection banner waits for first telemetry)
 - **Next:** Phase 4 — GPX Route Integration
 
 ```
 [x] Phase 1: BLE Foundation + Metrics Read
 [x] Phase 2: FTMS Control Loop + Virtual Gearing
-[x] Phase 3: WebSocket Bridge + Cockpit UI (03-01 + 03-02 + 03-03 done)
+[x] Phase 3: WebSocket Bridge + Cockpit UI (03-01 + 03-02 + 03-03 + 03-04 done)
 [ ] Phase 4: GPX Route Integration
 [ ] Phase 5: Zwift Click Integration
 ```
@@ -46,6 +46,7 @@ Progress: [██████████] 100%
 | 03-01 | 3m | 2 | 9  | 2026-04-20 |
 | 03-02 | 3m | 2 | 13 | 2026-04-20 |
 | 03-03 | 4m | 2 | 3  | 2026-04-20 |
+| 03-04 | 2m | 2 | 6  | 2026-04-20 |
 
 ## Locked APIs
 
@@ -60,7 +61,7 @@ Progress: [██████████] 100%
 | `engine/engine/gears/engine.py` | `GearEngine`: factor table, shift_up/shift_down, effective_grade |
 | `engine/engine/input/keyboard.py` | `KeyboardShifter`: cbreak + add_reader + debounce + ESC-sequence state machine |
 | `engine/engine/control/state.py` | `RideState` dataclass (gear_engine, real_grade_percent=0.0, last_speed_kmh, last_power_w, last_cadence_rpm) |
-| `engine/engine/ws/server.py` | `broadcast_loop(broadcast_queue, stop_event, host, port)` + `CLIENTS: set[ServerConnection]` |
+| `engine/engine/ws/server.py` | `broadcast_loop(broadcast_queue, stop_event, gear_engine, host, port)` + `CLIENTS: set[ServerConnection]` + inbound `gear_shift` dispatch |
 | `engine/engine/control/controller.py` | `FtmsController` + `FtmsControlError` + `run_control_loop` |
 
 ## Key Decisions
@@ -78,6 +79,7 @@ Critical architectural rules:
 - INFRA-01 (03-01): `broadcast_loop` = sibling asyncio.Task; `_on_reading` plain def closure; bounded `broadcast_queue(maxsize=10)` with drop-oldest; websockets.asyncio.server API (not legacy)
 - UI-01 (03-02): React.memo on all leaf components required for 60 Hz cockpit stability; Tailwind v3 locked; useTelemetry retryCountRef for backoff state
 - UI-02/UI-03 (03-03): ElevationProfile empty-state uses Recharts AreaChart with isAnimationActive=false; MiniMap uses leaflet/dist/leaflet.css explicit import; overlay text at z-[1000] to clear Leaflet tile layers; CartoDB dark_all requires no API token
+- UI-01 (03-04): ConnectionStatus gains "connected" variant; onopen -> connected (banner stays amber), onmessage -> live (banner hides); sendMessage useCallback with readyState guard; J/K keydown -> gear_shift WS message; Zwift Click (Phase 5) uses same gear_shift format
 
 ## Todos
 
@@ -89,7 +91,7 @@ None.
 
 ## Session Continuity
 
-**Stopped at:** Completed 03-03-PLAN.md
+**Stopped at:** Completed 03-04-PLAN.md
 **Next action:** Phase 4 — GPX Route Integration (04-01)
 **Key reference files:**
 - `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`
