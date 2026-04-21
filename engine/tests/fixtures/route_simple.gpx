@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="RideOS test fixture" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Simple 3-point ramp</name>
+    <trkseg>
+      <trkpt lat="52.5200" lon="13.4050"><ele>100.0</ele></trkpt>
+      <trkpt lat="52.5210" lon="13.4060"><ele>110.0</ele></trkpt>
+      <trkpt lat="52.5220" lon="13.4070"><ele>120.0</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>
