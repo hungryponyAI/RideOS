@@ -169,6 +169,7 @@ async def _handler(
                 if not isinstance(content, str) or not content:
                     _log.warning("load_route_content ignored: invalid/missing content")
                     continue
+                _log.info("load_route_content received (%d bytes), spawning task", len(content))
                 asyncio.create_task(
                     _load_route_content(route_context, content), name="load_route_content"
                 )
