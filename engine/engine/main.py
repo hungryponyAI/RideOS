@@ -27,12 +27,13 @@ from engine.control.state import RideState
 from engine.ftms.parsers import IndoorBikeData
 from engine.gears.engine import GearEngine
 from engine.input.keyboard import KeyboardShifter
-from engine.ws.server import broadcast_loop
+from engine.ws.server import broadcast_loop, RouteContext
 
 _log = logging.getLogger("rideos.engine")
 
-# Edit this constant for bench testing. Phase 4 GPX replaces it with per-tick values.
-DEFAULT_GRADE: float = 2.0  # % simulated gradient
+# Phase 4: "Free ride" baseline — no GPX loaded means flat road (0%).
+# RouteTracker overwrites state.real_grade_percent on every tick once a route is active.
+DEFAULT_GRADE: float = 0.0  # % simulated gradient (no route = flat)
 
 
 @asynccontextmanager
@@ -93,6 +94,12 @@ async def main() -> int:
     gear_engine = GearEngine()
     state = RideState(gear_engine=gear_engine, real_grade_percent=DEFAULT_GRADE)
 
+    route_ctx = RouteContext(
+        state=state,
+        broadcast_queue=broadcast_queue,
+        stop_event=stop_event,
+    )
+
     shifter = KeyboardShifter(gear_engine)
     shifter.start()
 
@@ -107,12 +114,15 @@ async def main() -> int:
             state.last_power_w = reading.power_watts
             state.last_cadence_rpm = reading.cadence_rpm
             snapshot = {
+                "type": "telemetry",
                 "speed_kmh": reading.speed_kmh,
                 "power_w": reading.power_watts,
                 "cadence_rpm": reading.cadence_rpm,
                 "gear": state.gear_engine.current_gear,
                 "real_grade_pct": state.real_grade_percent,
                 "effective_grade_pct": state.gear_engine.effective_grade(state.real_grade_percent),
+                "position_m": (route_ctx.tracker.position_m if route_ctx.tracker is not None else None),
+                "route_loaded": route_ctx.tracker is not None,
             }
             try:
                 broadcast_queue.put_nowait(snapshot)
@@ -147,13 +157,26 @@ async def main() -> int:
         )
 
         ws_task = asyncio.create_task(
-            broadcast_loop(broadcast_queue, stop_event, gear_engine=gear_engine),
+            broadcast_loop(
+                broadcast_queue,
+                stop_event,
+                gear_engine=gear_engine,
+                route_context=route_ctx,
+            ),
             name="ws_broadcast",
         )
 
         # Wait for shutdown signal, then drain cleanly.
         await stop_event.wait()
         _log.info("Shutdown requested; stopping tasks")
+
+        # Cancel the RouteTracker task if one is running (route loaded this session).
+        if route_ctx.tracker_task is not None and not route_ctx.tracker_task.done():
+            route_ctx.tracker_task.cancel()
+            try:
+                await asyncio.wait_for(route_ctx.tracker_task, timeout=1.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+                pass
 
         # Tell the consumer to exit; let the reconnect loop finish its current await.
         await queue.put(None)
