@@ -4,32 +4,32 @@ milestone: v1.0
 milestone_name: milestone
 status: unknown
 stopped_at: Phase 4 context gathered
-last_updated: "2026-04-21T04:51:24.366Z"
+last_updated: "2026-04-21T10:38:58.216Z"
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 12
-  completed_plans: 12
-  percent: 100
+  total_plans: 17
+  completed_plans: 13
+  percent: 76
 ---
 
 # STATE: RideOS
 
 ## Current Position
 
-- **Phase:** 3 — WebSocket Bridge + Cockpit UI — COMPLETE
-- **Plan:** 03-04 complete (Gap closure: browser gear shifts via WS + connection banner waits for first telemetry)
-- **Next:** Phase 4 — GPX Route Integration
+- **Phase:** 4 — GPX Route Integration — IN PROGRESS
+- **Plan:** 04-01 complete (GPX loader foundation: load_gpx + RouteData + ROUTE-01)
+- **Next:** 04-02 — RouteTracker (position lookup at 4 Hz)
 
 ```
 [x] Phase 1: BLE Foundation + Metrics Read
 [x] Phase 2: FTMS Control Loop + Virtual Gearing
 [x] Phase 3: WebSocket Bridge + Cockpit UI (03-01 + 03-02 + 03-03 + 03-04 done)
-[ ] Phase 4: GPX Route Integration
+[~] Phase 4: GPX Route Integration (04-01 done)
 [ ] Phase 5: Zwift Click Integration
 ```
 
-Progress: [██████████] 100%
+Progress: [████████░░] 76%
 
 ## Execution Metrics
 
@@ -47,6 +47,7 @@ Progress: [██████████] 100%
 | 03-02 | 3m | 2 | 13 | 2026-04-20 |
 | 03-03 | 4m | 2 | 3  | 2026-04-20 |
 | 03-04 | 2m | 2 | 6  | 2026-04-20 |
+| 04-01 | 8m | 2 | 9  | 2026-04-21 |
 
 ## Locked APIs
 
@@ -63,6 +64,8 @@ Progress: [██████████] 100%
 | `engine/engine/control/state.py` | `RideState` dataclass (gear_engine, real_grade_percent=0.0, last_speed_kmh, last_power_w, last_cadence_rpm) |
 | `engine/engine/ws/server.py` | `broadcast_loop(broadcast_queue, stop_event, gear_engine, host, port)` + `CLIENTS: set[ServerConnection]` + inbound `gear_shift` dispatch |
 | `engine/engine/control/controller.py` | `FtmsController` + `FtmsControlError` + `run_control_loop` |
+| `engine/engine/route/model.py` | `RouteData` frozen dataclass (lats, lons, elevations_m, cum_dist_m, grades_pct, total_dist_m) |
+| `engine/engine/route/loader.py` | `load_gpx(path: str) -> RouteData` + `_rolling_mean(values, window)` |
 
 ## Key Decisions
 
@@ -80,6 +83,7 @@ Critical architectural rules:
 - UI-01 (03-02): React.memo on all leaf components required for 60 Hz cockpit stability; Tailwind v3 locked; useTelemetry retryCountRef for backoff state
 - UI-02/UI-03 (03-03): ElevationProfile empty-state uses Recharts AreaChart with isAnimationActive=false; MiniMap uses leaflet/dist/leaflet.css explicit import; overlay text at z-[1000] to clear Leaflet tile layers; CartoDB dark_all requires no API token
 - UI-01 (03-04): ConnectionStatus gains "connected" variant; onopen -> connected (banner stays amber), onmessage -> live (banner hides); sendMessage useCallback with readyState guard; J/K keydown -> gear_shift WS message; Zwift Click (Phase 5) uses same gear_shift format
+- ROUTE-01 (04-01): RouteData frozen dataclass with tuple fields; load_gpx does all expensive work at startup (haversine, 5-point rolling mean, ±20% clamp); 04-02 RouteTracker does O(log n) bisect only at 4 Hz
 
 ## Todos
 
@@ -91,10 +95,10 @@ None.
 
 ## Session Continuity
 
-**Stopped at:** Phase 4 context gathered
-**Next action:** Phase 4 — GPX Route Integration (04-01)
+**Stopped at:** Completed 04-01-PLAN.md
+**Next action:** Phase 4 — 04-02 RouteTracker (position lookup at 4 Hz using bisect)
 **Key reference files:**
-- `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`
-- `.planning/phases/03-websocket-bridge-cockpit-ui/03-01-SUMMARY.md`
-- `.planning/phases/02-ftms-control-loop-virtual-gearing/02-04-SUMMARY.md`
+- `.planning/phases/04-gpx-route-integration/04-01-SUMMARY.md`
+- `engine/engine/route/model.py` (RouteData contract)
+- `engine/engine/route/loader.py` (load_gpx)
 - `memory/decisions.md`

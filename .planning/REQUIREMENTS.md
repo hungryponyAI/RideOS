@@ -21,7 +21,7 @@
 - [x] **UI-03**: Mini-map (top-right); route + position marker
 
 ### Route & Position
-- [ ] **ROUTE-01**: Load GPX; extract elevation profile + coordinates
+- [x] **ROUTE-01**: Load GPX; extract elevation profile + coordinates
 - [ ] **ROUTE-02**: Track position by integrating speed × time (haversine)
 - [ ] **ROUTE-03**: Grade at position → FTMS control loop base grade
 
@@ -57,7 +57,7 @@ Street View / video overlay, multiplayer, cloud sync / auth, Windows/Linux, ERG 
 | UI-02 | 3 | Complete |
 | UI-03 | 3 | Complete |
 | INFRA-01 | 3 | Complete |
-| ROUTE-01 | 4 | Pending |
+| ROUTE-01 | 4 | Complete |
 | ROUTE-02 | 4 | Pending |
 | ROUTE-03 | 4 | Pending |
 
