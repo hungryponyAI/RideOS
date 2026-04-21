@@ -41,6 +41,7 @@ def load_gpx_content(content: str) -> RouteData:
 def _parse_gpx(content: str, source_label: str) -> RouteData:
     """Shared GPX parsing logic."""
     gpx = gpxpy.parse(content)
+    # Collect from tracks (standard) AND routes (common in Komoot / RideWithGPS exports).
     points = [
         pt
         for track in gpx.tracks
@@ -48,7 +49,11 @@ def _parse_gpx(content: str, source_label: str) -> RouteData:
         for pt in seg.points
     ]
     if not points:
-        raise ValueError(f"GPX {source_label} contains no track points")
+        points = [pt for route in gpx.routes for pt in route.points]
+    if not points:
+        raise ValueError(
+            f"GPX {source_label} contains no track points or route points"
+        )
 
     lats = [pt.latitude for pt in points]
     lons = [pt.longitude for pt in points]

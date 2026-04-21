@@ -3,7 +3,7 @@ import type { OutgoingMessage } from "../types/route";
 
 interface PreRideScreenProps {
   onStarted: () => void;
-  sendMessage: (msg: OutgoingMessage | object) => void;
+  sendMessage: (msg: OutgoingMessage | object) => boolean;
 }
 
 export function PreRideScreen({ onStarted, sendMessage }: PreRideScreenProps) {
@@ -22,7 +22,12 @@ export function PreRideScreen({ onStarted, sendMessage }: PreRideScreenProps) {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const content = ev.target?.result as string;
-      sendMessage({ type: "load_route_content", content });
+      const sent = sendMessage({ type: "load_route_content", content });
+      if (!sent) {
+        setFileError("Keine Verbindung zur Engine — ist sie gestartet?");
+        setLoading(false);
+        return;
+      }
       onStarted();
     };
     reader.onerror = () => {

@@ -88,11 +88,13 @@ export function useTelemetry() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const sendMessage = useCallback((msg: OutgoingMessage | object) => {
+  const sendMessage = useCallback((msg: OutgoingMessage | object): boolean => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(msg));
+      return true;
     }
+    return false;
   }, []);
 
   useEffect(() => {
