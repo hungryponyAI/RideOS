@@ -220,3 +220,121 @@ async def test_inbound_no_gear_engine():
     finally:
         stop_event.set()
         await asyncio.wait_for(server_task, timeout=2.0)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: load_route inbound + route_data outbound
+# ---------------------------------------------------------------------------
+
+from pathlib import Path
+
+_FIXTURES = Path(__file__).parent.parent / "fixtures"
+
+
+@pytest.mark.asyncio
+async def test_load_route_success_broadcasts_route_data():
+    """Sending a load_route message with a valid GPX path results in a route_data broadcast."""
+    from engine.control.state import RideState
+    from engine.gears.engine import GearEngine
+    from engine.ws.server import broadcast_loop, RouteContext
+
+    port = await _get_free_port()
+    stop_event = asyncio.Event()
+    queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=10)
+    state = RideState(gear_engine=GearEngine())
+    ctx = RouteContext(state=state, broadcast_queue=queue, stop_event=stop_event)
+
+    server_task = asyncio.create_task(
+        broadcast_loop(queue, stop_event, gear_engine=state.gear_engine,
+                       host="localhost", port=port, route_context=ctx),
+    )
+    await asyncio.sleep(0.05)
+
+    try:
+        async with connect(f"ws://localhost:{port}") as ws:
+            await ws.send(json.dumps({
+                "type": "load_route",
+                "path": str(_FIXTURES / "route_simple.gpx"),
+            }))
+            # Wait for route_data message
+            received = await asyncio.wait_for(ws.recv(), timeout=5.0)
+            data = json.loads(received)
+            assert data["type"] == "route_data"
+            assert len(data["lats"]) == 3
+            assert len(data["lons"]) == 3
+            assert len(data["elevations_m"]) == 3
+            assert len(data["cum_dist_m"]) == 3
+            assert len(data["grades_pct"]) == 3
+            assert 200.0 < data["total_dist_m"] < 350.0
+
+        # RouteContext now has a live tracker
+        assert ctx.tracker is not None
+        assert ctx.tracker_task is not None
+        assert not ctx.tracker_task.done()
+    finally:
+        if ctx.tracker_task:
+            ctx.tracker_task.cancel()
+            try:
+                await ctx.tracker_task
+            except (asyncio.CancelledError, Exception):
+                pass
+        stop_event.set()
+        await asyncio.wait_for(server_task, timeout=3.0)
+
+
+@pytest.mark.asyncio
+async def test_load_route_failure_broadcasts_route_error():
+    """Bogus path yields route_error, not a crash."""
+    from engine.control.state import RideState
+    from engine.gears.engine import GearEngine
+    from engine.ws.server import broadcast_loop, RouteContext
+
+    port = await _get_free_port()
+    stop_event = asyncio.Event()
+    queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=10)
+    state = RideState(gear_engine=GearEngine())
+    ctx = RouteContext(state=state, broadcast_queue=queue, stop_event=stop_event)
+
+    server_task = asyncio.create_task(
+        broadcast_loop(queue, stop_event, gear_engine=state.gear_engine,
+                       host="localhost", port=port, route_context=ctx),
+    )
+    await asyncio.sleep(0.05)
+
+    try:
+        async with connect(f"ws://localhost:{port}") as ws:
+            await ws.send(json.dumps({
+                "type": "load_route",
+                "path": "/does/not/exist.gpx",
+            }))
+            received = await asyncio.wait_for(ws.recv(), timeout=5.0)
+            data = json.loads(received)
+            assert data["type"] == "route_error"
+            assert "message" in data
+            assert isinstance(data["message"], str) and data["message"]
+
+        # No tracker should be spawned on failure
+        assert ctx.tracker is None
+        assert ctx.tracker_task is None
+        # Grade reset to 0 on failure per CONTEXT.md "free ride = 0%"
+        assert state.real_grade_percent == 0.0
+    finally:
+        stop_event.set()
+        await asyncio.wait_for(server_task, timeout=3.0)
+
+
+@pytest.mark.asyncio
+async def test_backward_compat_broadcast_loop_without_route_context():
+    """broadcast_loop still works when route_context is omitted (legacy callers)."""
+    from engine.ws.server import broadcast_loop
+
+    port = await _get_free_port()
+    stop_event = asyncio.Event()
+    queue: asyncio.Queue[dict] = asyncio.Queue()
+
+    server_task = asyncio.create_task(
+        broadcast_loop(queue, stop_event, host="localhost", port=port),
+    )
+    await asyncio.sleep(0.05)
+    stop_event.set()
+    await asyncio.wait_for(server_task, timeout=3.0)
