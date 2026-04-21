@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTelemetry } from "./hooks/useTelemetry";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { MetricDisplay } from "./components/MetricDisplay";
@@ -6,9 +6,12 @@ import { GearStrip } from "./components/GearStrip";
 import { GradeBar } from "./components/GradeBar";
 import { ElevationProfile } from "./components/ElevationProfile";
 import { MiniMap } from "./components/MiniMap";
+import { PreRideScreen } from "./components/PreRideScreen";
 
 function App() {
-  const { telemetry: t, status, sendMessage } = useTelemetry();
+  const { telemetry: t, status, sendMessage, routeRef, routeLoaded, routeError } =
+    useTelemetry();
+  const [started, setStarted] = useState<boolean>(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -21,6 +24,27 @@ function App() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [sendMessage]);
+
+  useEffect(() => {
+    if (routeError) {
+      // For MVP we log route_error; user can restart the app to re-pick a file.
+      console.warn("[RideOS] route_error:", routeError);
+    }
+  }, [routeError]);
+
+  if (!started) {
+    return (
+      <PreRideScreen
+        onStarted={() => setStarted(true)}
+        sendMessage={sendMessage}
+      />
+    );
+  }
+
+  // routeRef is a ref — reading .current is OK here; routeLoaded boolean triggers the re-render
+  // when it flips from false→true, at which point routeRef.current has been populated.
+  const stored = routeLoaded ? routeRef.current : null;
+  const positionM = t?.position_m ?? null;
 
   return (
     <div className="w-screen h-screen bg-black overflow-hidden flex flex-col">
@@ -50,10 +74,17 @@ function App() {
             effective={t?.effective_grade_pct ?? 0}
           />
         </div>
-        <MiniMap />
+        <MiniMap
+          coords={stored?.coords ?? null}
+          cumDist={stored?.cumDist ?? null}
+          positionM={positionM}
+        />
       </div>
       <div className="h-[120px] shrink-0">
-        <ElevationProfile />
+        <ElevationProfile
+          data={stored?.elevationChart ?? null}
+          positionM={positionM}
+        />
       </div>
     </div>
   );
