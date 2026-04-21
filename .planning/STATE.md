@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 04-02-PLAN.md
-last_updated: "2026-04-21T10:42:44.935Z"
+stopped_at: Completed 04-04-PLAN.md
+last_updated: "2026-04-21T15:07:05Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 17
-  completed_plans: 14
-  percent: 82
+  completed_plans: 16
+  percent: 94
 ---
 
 # STATE: RideOS
@@ -18,18 +18,18 @@ progress:
 ## Current Position
 
 - **Phase:** 4 — GPX Route Integration — IN PROGRESS
-- **Plan:** 04-02 complete (RouteTracker: position integration + bisect grade lookup + ROUTE-02 + ROUTE-03)
-- **Next:** 04-03 — main.py wiring (integrate RouteTracker as sibling asyncio.Task, --gpx CLI arg, WS broadcast of position_m)
+- **Plan:** 04-04 complete (UI layer: PreRideScreen, useTelemetry msg.type discriminator, live ElevationProfile + MiniMap, App.tsx gating; ROUTE-01/02/03 UI done)
+- **Next:** 04-05 — human-verify checkpoint (end-to-end ride on real KICKR hardware with GPX)
 
 ```
 [x] Phase 1: BLE Foundation + Metrics Read
 [x] Phase 2: FTMS Control Loop + Virtual Gearing
 [x] Phase 3: WebSocket Bridge + Cockpit UI (03-01 + 03-02 + 03-03 + 03-04 done)
-[~] Phase 4: GPX Route Integration (04-01 done)
+[~] Phase 4: GPX Route Integration (04-01, 04-02, 04-03, 04-04 done)
 [ ] Phase 5: Zwift Click Integration
 ```
 
-Progress: [████████░░] 82%
+Progress: [█████████░] 94%
 
 ## Execution Metrics
 
@@ -49,6 +49,8 @@ Progress: [████████░░] 82%
 | 03-04 | 2m | 2 | 6  | 2026-04-20 |
 | 04-01 | 8m | 2 | 9  | 2026-04-21 |
 | 04-02 | 2m | 2 | 2  | 2026-04-21 |
+| 04-03 | — | — | —  | 2026-04-21 |
+| 04-04 | 3m | 2 | 7  | 2026-04-21 |
 
 ## Locked APIs
 
@@ -87,6 +89,7 @@ Critical architectural rules:
 - UI-01 (03-04): ConnectionStatus gains "connected" variant; onopen -> connected (banner stays amber), onmessage -> live (banner hides); sendMessage useCallback with readyState guard; J/K keydown -> gear_shift WS message; Zwift Click (Phase 5) uses same gear_shift format
 - ROUTE-01 (04-01): RouteData frozen dataclass with tuple fields; load_gpx does all expensive work at startup (haversine, 5-point rolling mean, ±20% clamp); 04-02 RouteTracker does O(log n) bisect only at 4 Hz
 - ROUTE-02/03 (04-02): RouteTracker exits at total_dist_m-0.5m epsilon, sets grade=0.0 then returns; TYPE_CHECKING guard prevents circular deps; task exits via return not stop_event (main.py detects completion via Task.done())
+- UI-04 (04-04): Route arrays in useRef not useState — prevents 4 Hz re-render thrash on 10k-point routes; routeLoaded boolean is the single state trigger; PreRideScreen path transport = text input over WS (browser File API limitation); route_error after dismissal = console.warn only (MVP)
 
 ## Todos
 
@@ -98,11 +101,11 @@ None.
 
 ## Session Continuity
 
-**Stopped at:** Completed 04-02-PLAN.md
-**Next action:** Phase 4 — 04-03 main.py wiring (RouteTracker as sibling asyncio.Task + --gpx CLI arg + position_m in WS broadcast)
+**Stopped at:** Completed 04-04-PLAN.md
+**Next action:** Phase 4 — 04-05 human-verify checkpoint: start engine + UI, load a GPX file, ride on KICKR, verify map/elevation/resistance follow route
 **Key reference files:**
-- `.planning/phases/04-gpx-route-integration/04-02-SUMMARY.md`
-- `engine/engine/route/tracker.py` (RouteTracker contract)
-- `engine/engine/route/model.py` (RouteData contract)
-- `engine/engine/main.py` (locked API to extend)
+- `.planning/phases/04-gpx-route-integration/04-04-SUMMARY.md`
+- `ui/src/hooks/useTelemetry.ts` (full WS message discrimination contract)
+- `ui/src/components/PreRideScreen.tsx` (GPX picker + path input)
+- `engine/engine/ws/server.py` (route_data/route_error/telemetry broadcast)
 - `memory/decisions.md`
