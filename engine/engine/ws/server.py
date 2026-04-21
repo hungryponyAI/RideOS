@@ -51,13 +51,23 @@ CLIENTS: set[ServerConnection] = set()
 
 
 async def _load_route(ctx: RouteContext, path: str) -> None:
-    """Handle inbound load_route: parse GPX, broadcast route_data, start RouteTracker.
+    """Handle inbound load_route (path-based): parse GPX, broadcast route_data, start RouteTracker."""
+    from engine.route.loader import load_gpx
+    await _do_load_route(ctx, lambda: load_gpx(path), label=repr(path))
+
+
+async def _load_route_content(ctx: RouteContext, content: str) -> None:
+    """Handle inbound load_route_content (browser file upload): parse GPX string."""
+    from engine.route.loader import load_gpx_content
+    await _do_load_route(ctx, lambda: load_gpx_content(content), label="<browser upload>")
+
+
+async def _do_load_route(ctx: RouteContext, loader_fn, label: str) -> None:
+    """Shared route loading logic: cancel previous tracker, parse, broadcast, spawn tracker.
 
     Exceptions during load do NOT propagate — they produce a route_error WS
     message and leave any previously-cancelled tracker cancelled.
     """
-    # Lazy imports to avoid circular deps at module load time
-    from engine.route.loader import load_gpx
     from engine.route.tracker import RouteTracker
 
     # Cancel any previous tracker task before starting a new one.
@@ -73,9 +83,9 @@ async def _load_route(ctx: RouteContext, path: str) -> None:
 
     # Parse GPX off the event loop to avoid blocking the 4 Hz tick path.
     try:
-        route = await asyncio.to_thread(load_gpx, path)
+        route = await asyncio.to_thread(loader_fn)
     except Exception as exc:  # noqa: BLE001 — we want to report any load failure
-        _log.warning("load_route failed for %r: %s", path, exc)
+        _log.warning("load_route failed for %s: %s", label, exc)
         try:
             ctx.broadcast_queue.put_nowait({
                 "type": "route_error",
@@ -114,8 +124,8 @@ async def _load_route(ctx: RouteContext, path: str) -> None:
         tracker.run(ctx.state, ctx.stop_event),
         name="route_tracker",
     )
-    _log.info("Route loaded from %r: %d points, %.0f m total",
-              path, len(route.lats), route.total_dist_m)
+    _log.info("Route loaded from %s: %d points, %.0f m total",
+              label, len(route.lats), route.total_dist_m)
 
 
 async def _handler(
@@ -150,8 +160,18 @@ async def _handler(
                 if not isinstance(path, str) or not path:
                     _log.warning("load_route ignored: invalid/missing path")
                     continue
-                # Fire-and-forget: the coroutine posts results via broadcast_queue
                 asyncio.create_task(_load_route(route_context, path), name="load_route")
+            elif msg.get("type") == "load_route_content":
+                if route_context is None:
+                    _log.warning("load_route_content ignored: no route_context wired")
+                    continue
+                content = msg.get("content")
+                if not isinstance(content, str) or not content:
+                    _log.warning("load_route_content ignored: invalid/missing content")
+                    continue
+                asyncio.create_task(
+                    _load_route_content(route_context, content), name="load_route_content"
+                )
     except Exception:
         pass
     finally:

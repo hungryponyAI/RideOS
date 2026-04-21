@@ -9,7 +9,7 @@ import { MiniMap } from "./components/MiniMap";
 import { PreRideScreen } from "./components/PreRideScreen";
 
 function App() {
-  const { telemetry: t, status, sendMessage, routeRef, routeLoaded, routeError } =
+  const { telemetry: t, status, sendMessage, routeRef, routeLoaded, routeError, clearRouteError } =
     useTelemetry();
   const [started, setStarted] = useState<boolean>(false);
 
@@ -27,7 +27,6 @@ function App() {
 
   useEffect(() => {
     if (routeError) {
-      // For MVP we log route_error; user can restart the app to re-pick a file.
       console.warn("[RideOS] route_error:", routeError);
     }
   }, [routeError]);
@@ -49,6 +48,12 @@ function App() {
   return (
     <div className="w-screen h-screen bg-black overflow-hidden flex flex-col">
       <ConnectionBanner status={status} />
+      {routeError && (
+        <div className="bg-[#7F1D1D] text-[#FCA5A5] text-[12px] px-4 py-2 flex items-center justify-between">
+          <span>Strecke konnte nicht geladen werden: {routeError}</span>
+          <button type="button" onClick={clearRouteError} className="ml-4 text-[#FCA5A5] font-bold">✕</button>
+        </div>
+      )}
       <div className="flex-1 grid grid-cols-[1fr_auto] p-6 gap-8 min-h-0">
         <div className="flex flex-col gap-8">
           <MetricDisplay

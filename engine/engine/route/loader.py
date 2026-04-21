@@ -30,7 +30,17 @@ _SMOOTH_WINDOW: int = 5
 def load_gpx(path: str) -> RouteData:
     """Parse a GPX file into a RouteData with pre-computed cum distances + smoothed grades."""
     with open(path) as fh:
-        gpx = gpxpy.parse(fh)
+        return _parse_gpx(fh.read(), source_label=repr(path))
+
+
+def load_gpx_content(content: str) -> RouteData:
+    """Parse GPX XML content (string) into a RouteData — used for browser file upload."""
+    return _parse_gpx(content, source_label="<browser upload>")
+
+
+def _parse_gpx(content: str, source_label: str) -> RouteData:
+    """Shared GPX parsing logic."""
+    gpx = gpxpy.parse(content)
     points = [
         pt
         for track in gpx.tracks
@@ -38,7 +48,7 @@ def load_gpx(path: str) -> RouteData:
         for pt in seg.points
     ]
     if not points:
-        raise ValueError(f"GPX file {path!r} contains no track points")
+        raise ValueError(f"GPX {source_label} contains no track points")
 
     lats = [pt.latitude for pt in points]
     lons = [pt.longitude for pt in points]

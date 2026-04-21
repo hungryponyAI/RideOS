@@ -47,7 +47,7 @@ export function useTelemetry() {
       switch (msg.type) {
         case "telemetry": {
           setTelemetry(msg);
-          if (msg.route_loaded && !routeLoaded) setRouteLoaded(true);
+          if (msg.route_loaded) setRouteLoaded(true);
           break;
         }
         case "route_data": {
@@ -85,7 +85,8 @@ export function useTelemetry() {
       retryCountRef.current += 1;
       retryRef.current = setTimeout(connect, delay);
     };
-  }, [routeLoaded]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const sendMessage = useCallback((msg: OutgoingMessage | object) => {
     const ws = wsRef.current;
