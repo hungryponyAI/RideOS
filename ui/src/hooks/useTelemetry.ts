@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { TelemetryState, ConnectionStatus } from "../types/telemetry";
+import type {
+  IncomingMessage,
+  OutgoingMessage,
+  StoredRoute,
+} from "../types/route";
 
 const WS_URL = "ws://localhost:8765";
 
@@ -7,8 +12,17 @@ export function useTelemetry() {
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
+
+  // Route data lives in a ref (NOT state) — full arrays would trigger re-renders at 4 Hz.
+  // See 04-CONTEXT.md "WebSocket Route Data Strategy" + UI-SPEC §"Phase 4 Specific Constraints".
+  const routeRef = useRef<StoredRoute | null>(null);
+
   const [telemetry, setTelemetry] = useState<TelemetryState | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  const [routeLoaded, setRouteLoaded] = useState<boolean>(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
+
+  const clearRouteError = useCallback(() => setRouteError(null), []);
 
   const connect = useCallback(() => {
     const ws = new WebSocket(WS_URL);
@@ -21,7 +35,49 @@ export function useTelemetry() {
     };
     ws.onmessage = (e) => {
       setStatus("live");
-      setTelemetry(JSON.parse(e.data));
+      let msg: IncomingMessage;
+      try {
+        msg = JSON.parse(e.data) as IncomingMessage;
+      } catch {
+        return;
+      }
+      if (!msg || typeof msg !== "object" || !("type" in msg)) {
+        return;
+      }
+      switch (msg.type) {
+        case "telemetry": {
+          setTelemetry(msg);
+          if (msg.route_loaded && !routeLoaded) setRouteLoaded(true);
+          break;
+        }
+        case "route_data": {
+          const coords: Array<[number, number]> = msg.lats.map(
+            (lat, i) => [lat, msg.lons[i]] as [number, number],
+          );
+          const elevationChart = msg.cum_dist_m.map((d, i) => ({
+            dist: d,
+            elev: msg.elevations_m[i],
+          }));
+          routeRef.current = {
+            coords,
+            elevationChart,
+            cumDist: msg.cum_dist_m,
+            totalDistM: msg.total_dist_m,
+          };
+          setRouteLoaded(true);
+          setRouteError(null);
+          break;
+        }
+        case "route_error": {
+          setRouteError(msg.message);
+          routeRef.current = null;
+          setRouteLoaded(false);
+          break;
+        }
+        default:
+          // Unknown message type — ignore silently to stay forward-compatible.
+          break;
+      }
     };
     ws.onclose = () => {
       setStatus("disconnected");
@@ -29,9 +85,9 @@ export function useTelemetry() {
       retryCountRef.current += 1;
       retryRef.current = setTimeout(connect, delay);
     };
-  }, []);
+  }, [routeLoaded]);
 
-  const sendMessage = useCallback((msg: object) => {
+  const sendMessage = useCallback((msg: OutgoingMessage | object) => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(msg));
@@ -46,5 +102,13 @@ export function useTelemetry() {
     };
   }, [connect]);
 
-  return { telemetry, status, sendMessage };
+  return {
+    telemetry,
+    status,
+    sendMessage,
+    routeRef,             // ref — read .current for the stored route (or null)
+    routeLoaded,          // state — triggers re-render on load/unload transition
+    routeError,           // state — string or null
+    clearRouteError,
+  };
 }
