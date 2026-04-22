@@ -2,30 +2,30 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: unknown
-stopped_at: Completed 04-04-PLAN.md
-last_updated: "2026-04-21T15:07:05Z"
+status: in_progress
+stopped_at: Completed 04-05-PLAN.md (Phase 4 accepted on real hardware)
+last_updated: "2026-04-21T17:00:00Z"
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 17
-  completed_plans: 16
-  percent: 94
+  completed_plans: 17
+  percent: 100
 ---
 
 # STATE: RideOS
 
 ## Current Position
 
-- **Phase:** 4 — GPX Route Integration — IN PROGRESS
-- **Plan:** 04-04 complete (UI layer: PreRideScreen, useTelemetry msg.type discriminator, live ElevationProfile + MiniMap, App.tsx gating; ROUTE-01/02/03 UI done)
-- **Next:** 04-05 — human-verify checkpoint (end-to-end ride on real KICKR hardware with GPX)
+- **Phase:** 4 — GPX Route Integration — COMPLETE (human-verified on real KICKR Core, all 14 items approved)
+- **Plan:** 04-05 complete (human-verify checkpoint: full end-to-end ride verified on real hardware)
+- **Next:** Phase 5 — Zwift Click Integration (BLE reverse-engineering spike first)
 
 ```
 [x] Phase 1: BLE Foundation + Metrics Read
 [x] Phase 2: FTMS Control Loop + Virtual Gearing
 [x] Phase 3: WebSocket Bridge + Cockpit UI (03-01 + 03-02 + 03-03 + 03-04 done)
-[~] Phase 4: GPX Route Integration (04-01, 04-02, 04-03, 04-04 done)
+[x] Phase 4: GPX Route Integration (04-01, 04-02, 04-03, 04-04, 04-05 done — hardware verified)
 [ ] Phase 5: Zwift Click Integration
 ```
 
@@ -51,6 +51,7 @@ Progress: [█████████░] 94%
 | 04-02 | 2m | 2 | 2  | 2026-04-21 |
 | 04-03 | — | — | —  | 2026-04-21 |
 | 04-04 | 3m | 2 | 7  | 2026-04-21 |
+| 04-05 | — (human-verify) | 1 | 0 | 2026-04-21 |
 
 ## Locked APIs
 
@@ -101,11 +102,9 @@ None.
 
 ## Session Continuity
 
-**Stopped at:** Completed 04-04-PLAN.md
-**Next action:** Phase 4 — 04-05 human-verify checkpoint: start engine + UI, load a GPX file, ride on KICKR, verify map/elevation/resistance follow route
+**Stopped at:** Completed 04-05-PLAN.md — Phase 4 fully accepted on real hardware
+**Next action:** Phase 5 — Zwift Click Integration. Start with full BLE reverse-engineering spike (nRF Connect capture of Zwift Click notify characteristic bytes for up/down shift)
 **Key reference files:**
-- `.planning/phases/04-gpx-route-integration/04-04-SUMMARY.md`
-- `ui/src/hooks/useTelemetry.ts` (full WS message discrimination contract)
-- `ui/src/components/PreRideScreen.tsx` (GPX picker + path input)
-- `engine/engine/ws/server.py` (route_data/route_error/telemetry broadcast)
+- `.planning/phases/04-gpx-route-integration/04-05-SUMMARY.md`
+- `vault/RideOS/Click integration.md` (BLE sniffing procedure for Zwift Click)
 - `memory/decisions.md`

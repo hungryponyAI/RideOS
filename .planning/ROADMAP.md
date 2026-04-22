@@ -9,7 +9,7 @@
 | 1 | BLE Foundation + Metrics Read | Complete | 2026-04-13 |
 | 2 | 4/4 | Complete   | 2026-04-19 |
 | 3 | 4/4 | Complete   | 2026-04-20 |
-| 4 | 4/5 | In Progress|  |
+| 4 | 5/5 | Complete   | 2026-04-22 |
 | 5 | Zwift Click Integration | Not started | — |
 
 ## Phase 1: BLE Foundation + Metrics Read ✅
