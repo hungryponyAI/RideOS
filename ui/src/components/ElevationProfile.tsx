@@ -2,6 +2,7 @@ import { memo } from "react";
 import {
   AreaChart,
   Area,
+  XAxis,
   ReferenceLine,
   ResponsiveContainer,
 } from "recharts";
@@ -11,6 +12,8 @@ interface ElevationProfileProps {
   data: ElevationChartDatum[] | null;
   positionM: number | null;
 }
+
+const WINDOW_M = 10_000; // 10 km sliding window
 
 const EMPTY_DATA: ElevationChartDatum[] = [
   { dist: 0, elev: 0 },
@@ -24,17 +27,36 @@ export const ElevationProfile = memo(function ElevationProfile({
   const hasRoute = data !== null && data.length > 0;
   const chartData = hasRoute ? data : EMPTY_DATA;
 
+  // Sliding window: keep current position centered, clamped to route bounds.
+  const totalDistM = hasRoute ? (data[data.length - 1]?.dist ?? 0) : 1;
+  const posM = positionM ?? 0;
+  let xMin = Math.max(0, posM - WINDOW_M / 2);
+  let xMax = xMin + WINDOW_M;
+  if (xMax > totalDistM) {
+    xMax = totalDistM;
+    xMin = Math.max(0, xMax - WINDOW_M);
+  }
+
   return (
     <div className="relative w-full h-full bg-[#111111]">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={chartData}>
           {hasRoute && (
-            <defs>
-              <linearGradient id="elevGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#EF4444" stopOpacity={0.8} />
-                <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.3} />
-              </linearGradient>
-            </defs>
+            <>
+              <defs>
+                <linearGradient id="elevGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#EF4444" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.3} />
+                </linearGradient>
+              </defs>
+              {/* XAxis using cumulative distance (metres) so ReferenceLine x aligns */}
+              <XAxis
+                dataKey="dist"
+                type="number"
+                domain={[xMin, xMax]}
+                hide
+              />
+            </>
           )}
           <Area
             type="linear"
