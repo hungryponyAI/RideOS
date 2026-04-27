@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in_progress
-stopped_at: Completed 05-01-PLAN.md — BLE hardware spike complete, ECDH path confirmed required
-last_updated: "2026-04-27T00:00:00.000Z"
+stopped_at: Completed 05-02-PLAN.md — ClickShifter implemented, 8 tests GREEN, cryptography added
+last_updated: "2026-04-27T20:34:21.587Z"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 21
-  completed_plans: 18
-  percent: 96
+  completed_plans: 19
+  percent: 90
 ---
 
 # STATE: RideOS
@@ -18,18 +18,18 @@ progress:
 ## Current Position
 
 - **Phase:** 5 — Zwift Click Integration — IN PROGRESS
-- **Plan:** 05-01 complete (hardware BLE spike: firmware 1.1.0, ECDH mandatory, no FC82 UUID migration)
-- **Next:** 05-02 — ClickShifter implementation with ECDH handshake
+- **Plan:** 05-02 complete (ClickShifter implemented, 8 TDD tests GREEN, ECDH skeleton, cryptography added)
+- **Next:** 05-03 — Wire run_click_shifter into main.py + end-to-end hardware verification
 
 ```
 [x] Phase 1: BLE Foundation + Metrics Read
 [x] Phase 2: FTMS Control Loop + Virtual Gearing
 [x] Phase 3: WebSocket Bridge + Cockpit UI (03-01 + 03-02 + 03-03 + 03-04 done)
 [x] Phase 4: GPX Route Integration (04-01, 04-02, 04-03, 04-04, 04-05 done — hardware verified)
-[ ] Phase 5: Zwift Click Integration (05-01 done, 05-02, 05-03, 05-04 pending)
+[ ] Phase 5: Zwift Click Integration (05-01 done, 05-02 done, 05-03, 05-04 pending)
 ```
 
-Progress: [█████████░] 96%
+Progress: [█████████░] 90%
 
 ## Execution Metrics
 
@@ -53,6 +53,7 @@ Progress: [█████████░] 96%
 | 04-04 | 3m | 2 | 7  | 2026-04-21 |
 | 04-05 | — (human-verify) | 1 | 0 | 2026-04-21 |
 | 05-01 | ~5 days (HW spike) | 1 | 1 | 2026-04-27 |
+| 05-02 | 4m | 2 | 4 | 2026-04-27 |
 
 ## Locked APIs
 
@@ -72,6 +73,7 @@ Progress: [█████████░] 96%
 | `engine/engine/route/model.py` | `RouteData` frozen dataclass (lats, lons, elevations_m, cum_dist_m, grades_pct, total_dist_m) |
 | `engine/engine/route/loader.py` | `load_gpx(path: str) -> RouteData` + `_rolling_mean(values, window)` |
 | `engine/engine/route/tracker.py` | `RouteTracker.__init__(route)`, `position_m` property, `async run(state, stop_event, *, tick_s=0.25)` + `ROUTE_COMPLETE_GRADE = 0.0` |
+| `engine/engine/input/click.py` | `ClickShifter(gear_engine, *, clock)` + `on_notify(sender, data)` plain def + `connect_and_listen(*, scanner, connect, stop_event, retry_backoff)` async + `run_click_shifter(gear_engine, stop_event)` top-level coroutine |
 
 ## Key Decisions
 
@@ -93,11 +95,12 @@ Critical architectural rules:
 - ROUTE-02/03 (04-02): RouteTracker exits at total_dist_m-0.5m epsilon, sets grade=0.0 then returns; TYPE_CHECKING guard prevents circular deps; task exits via return not stop_event (main.py detects completion via Task.done())
 - UI-04 (04-04): Route arrays in useRef not useState — prevents 4 Hz re-render thrash on 10k-point routes; routeLoaded boolean is the single state trigger; PreRideScreen path transport = text input over WS (browser File API limitation); route_error after dismissal = console.warn only (MVP)
 - CLICK-01 (05-01): Zwift Click firmware 1.1.0 REQUIRES ECDH (SECP256R1 + HKDF-SHA256 + AES-CCM); unencrypted b'RideOn' path produces zero 0x37 frames; service UUID is long-form 00000001-19ca-4651-86e5-fa29dcdd09d1 (no FC82 migration); uv add cryptography required in 05-02; heartbeat frame to ignore: 23 08 ff ff ff ff 0f
+- CLICK-02 (05-02): Per-button prev_state guard removed from on_notify; debounce alone is the correct repeated-press protection; edge-state tracking broke test_debounce_allows_after_window
+- CLICK-03 (05-02): ECDH handshake skeleton wired in _handshake_encrypted (SECP256R1); full AES-CCM decryption of notify stream deferred to 05-03 hardware test
 
 ## Todos
 
-- 05-02: Implement ClickShifter with ECDH handshake (`uv add cryptography`)
-- 05-03: End-to-end hardware verification on real Zwift Click
+- 05-03: Wire run_click_shifter into main.py; end-to-end hardware verification on real Zwift Click
 - 05-04: Polish and final integration
 
 ## Blockers
@@ -106,9 +109,10 @@ None.
 
 ## Session Continuity
 
-**Stopped at:** Completed 05-01-PLAN.md — BLE hardware spike complete, ECDH confirmed mandatory
-**Next action:** 05-02 — ClickShifter implementation (`engine/engine/input/click.py`) with ECDH handshake; `uv add cryptography`
+**Stopped at:** Completed 05-02-PLAN.md — ClickShifter implemented, 8 tests GREEN, cryptography added
+**Next action:** 05-03 — Wire `run_click_shifter` into `engine/engine/main.py` as sibling asyncio.Task; hardware integration test on real Zwift Click
 **Key reference files:**
-- `.planning/phases/05-zwift-click-integration/05-01-SUMMARY.md`
-- `docs/click-ble-spike.md` (hardware-confirmed BLE constants for click.py)
+- `.planning/phases/05-zwift-click-integration/05-02-SUMMARY.md`
+- `engine/engine/input/click.py` (ClickShifter + run_click_shifter — locked API)
+- `docs/click-ble-spike.md` (hardware-confirmed BLE constants)
 - `memory/decisions.md`

@@ -10,7 +10,7 @@
 | 2 | 4/4 | Complete   | 2026-04-19 |
 | 3 | 4/4 | Complete   | 2026-04-20 |
 | 4 | 5/5 | Complete   | 2026-04-22 |
-| 5 | Zwift Click Integration | Planned | — |
+| 5 | 2/4 | In Progress|  |
 
 ## Phase 1: BLE Foundation + Metrics Read ✅
 **Goal:** Stable BLE link to KICKR Core; parse live Indoor Bike Data.
@@ -53,7 +53,7 @@
 ## Phase 5: Zwift Click Integration
 **Goal:** Replace keyboard shifter with Zwift Click BLE signals.
 **Reqs:** GEAR-03
-**Plans:** 4 plans
+**Plans:** 2/4 plans executed
 - [ ] 05-01-PLAN.md — Hardware spike: nRF Connect capture → confirm Click BLE protocol in `docs/click-ble-spike.md` (BLOCKER for 05-02)
 - [ ] 05-02-PLAN.md — `engine/engine/input/click.py` ClickShifter implementation (TDD, 8 unit tests)
 - [ ] 05-03-PLAN.md — Wire ClickShifter into `main.py`; broadcast `{"type":"click_status","connected":bool}`; keyboard regression
