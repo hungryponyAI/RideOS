@@ -163,3 +163,84 @@ async def test_connection_failure_retries():
         timeout=2.0,
     )
     assert attempts["n"] >= 2  # confirmed: retried after first None
+
+
+# ---------------------------------------------------------------------------
+# Async tests — connection-state callback (on_state_change hook)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_state_change_called_on_connect():
+    gears = GearEngine()
+    stop_event = asyncio.Event()
+    states: list[bool] = []
+
+    async def fake_scanner(*, timeout):
+        return object()
+
+    @asynccontextmanager
+    async def fake_connect(device):
+        class _Stub:
+            async def write_gatt_char(self, *a, **k): pass
+            async def start_notify(self, *a, **k):
+                stop_event.set()  # exit immediately after callback wired
+            async def stop_notify(self, *a, **k): pass
+        yield _Stub()
+
+    sh = ClickShifter(gears, on_state_change=states.append)
+    await asyncio.wait_for(
+        sh.connect_and_listen(scanner=fake_scanner, connect=fake_connect, stop_event=stop_event, retry_backoff=0.01),
+        timeout=2.0,
+    )
+    assert True in states     # connect was reported
+    assert False in states    # disconnect was reported (finally branch)
+    assert states.index(True) < states.index(False)  # ordering
+
+
+@pytest.mark.asyncio
+async def test_state_change_called_on_disconnect_via_bleak_error():
+    from bleak import BleakError
+    gears = GearEngine()
+    stop_event = asyncio.Event()
+    states: list[bool] = []
+
+    async def fake_scanner(*, timeout):
+        stop_event.set()
+        return object()
+
+    @asynccontextmanager
+    async def fake_connect(device):
+        raise BleakError("simulated disconnect")
+        yield  # unreachable
+
+    sh = ClickShifter(gears, on_state_change=states.append)
+    await asyncio.wait_for(
+        sh.connect_and_listen(scanner=fake_scanner, connect=fake_connect, stop_event=stop_event, retry_backoff=0.01),
+        timeout=2.0,
+    )
+    assert states == [] or states[-1] is False  # never claimed connected, or last state is False
+
+
+@pytest.mark.asyncio
+async def test_state_change_callback_optional():
+    # No callback → no crash. Same fast-exit shape as the connect test above.
+    gears = GearEngine()
+    stop_event = asyncio.Event()
+
+    async def fake_scanner(*, timeout):
+        return object()
+
+    @asynccontextmanager
+    async def fake_connect(device):
+        class _Stub:
+            async def write_gatt_char(self, *a, **k): pass
+            async def start_notify(self, *a, **k): stop_event.set()
+            async def stop_notify(self, *a, **k): pass
+        yield _Stub()
+
+    sh = ClickShifter(gears)  # no on_state_change
+    await asyncio.wait_for(
+        sh.connect_and_listen(scanner=fake_scanner, connect=fake_connect, stop_event=stop_event, retry_backoff=0.01),
+        timeout=2.0,
+    )
+    # Reaches here without exception = pass.

@@ -73,10 +73,25 @@ class ClickShifter:
         gear_engine: GearEngine,
         *,
         clock: Callable[[], float] = time.monotonic,
+        on_state_change: Callable[[bool], None] | None = None,
     ) -> None:
         self._gears = gear_engine
         self._clock = clock
         self._last_shift_t: float = float("-inf")
+        self._on_state_change = on_state_change
+
+    # ------------------------------------------------------------------
+    # Connection-state callback helper
+    # ------------------------------------------------------------------
+
+    def _emit_state(self, connected: bool) -> None:
+        """Fire the on_state_change callback safely — never raises out of connect_and_listen."""
+        if self._on_state_change is None:
+            return
+        try:
+            self._on_state_change(connected)
+        except Exception as e:
+            _log.warning("Click on_state_change callback raised: %s", e)
 
     # ------------------------------------------------------------------
     # Notify callback — MUST be plain def (Pitfall 4)
@@ -157,14 +172,18 @@ class ClickShifter:
                     continue
 
                 async with _connect(device) as client:
-                    await self._handshake_encrypted(client)
-                    await client.start_notify(ZWIFT_ASYNC_CHAR_UUID, self.on_notify)
-                    _log.info("Zwift Click connected and notifying")
-                    await stop_event.wait()
                     try:
-                        await client.stop_notify(ZWIFT_ASYNC_CHAR_UUID)
-                    except Exception:
-                        pass  # ignore cleanup errors on shutdown
+                        await self._handshake_encrypted(client)
+                        await client.start_notify(ZWIFT_ASYNC_CHAR_UUID, self.on_notify)
+                        self._emit_state(True)
+                        _log.info("Zwift Click connected and notifying")
+                        await stop_event.wait()
+                        try:
+                            await client.stop_notify(ZWIFT_ASYNC_CHAR_UUID)
+                        except Exception:
+                            pass  # ignore cleanup errors on shutdown
+                    finally:
+                        self._emit_state(False)
 
             except asyncio.TimeoutError:
                 # stop_event.wait() timed out — retry, not exit
@@ -173,6 +192,7 @@ class ClickShifter:
                 _log.warning(
                     "Click BLE error: %s — retrying in %.1fs", exc, retry_backoff
                 )
+                self._emit_state(False)
                 try:
                     await asyncio.wait_for(stop_event.wait(), timeout=retry_backoff)
                 except asyncio.TimeoutError:
@@ -181,6 +201,7 @@ class ClickShifter:
                 _log.warning(
                     "Click unexpected error: %s — retrying in %.1fs", exc, retry_backoff
                 )
+                self._emit_state(False)
                 try:
                     await asyncio.wait_for(stop_event.wait(), timeout=retry_backoff)
                 except asyncio.TimeoutError:
@@ -251,6 +272,8 @@ class ClickShifter:
 async def run_click_shifter(
     gear_engine: GearEngine,
     stop_event: asyncio.Event,
+    *,
+    on_state_change: Callable[[bool], None] | None = None,
 ) -> None:
     """Scan for the Zwift Click, connect, and dispatch shifts until stop_event.
 
@@ -258,11 +281,11 @@ async def run_click_shifter(
 
         from engine.input.click import run_click_shifter
         click_task = asyncio.create_task(
-            run_click_shifter(gear_engine, stop_event),
+            run_click_shifter(gear_engine, stop_event, on_state_change=callback),
             name="click_shifter",
         )
 
     The Click's BleakClient is owned entirely by ClickShifter — it is completely
     separate from the KICKR's BleakClient (single-owner rule).
     """
-    await ClickShifter(gear_engine).connect_and_listen(stop_event=stop_event)
+    await ClickShifter(gear_engine, on_state_change=on_state_change).connect_and_listen(stop_event=stop_event)
