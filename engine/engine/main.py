@@ -26,6 +26,7 @@ from engine.ble.scanner import find_kickr
 from engine.control.state import RideState
 from engine.ftms.parsers import IndoorBikeData
 from engine.gears.engine import GearEngine
+from engine.input.click import run_click_shifter
 from engine.input.keyboard import KeyboardShifter
 from engine.ws.server import broadcast_loop, RouteContext
 
@@ -104,6 +105,23 @@ async def main() -> int:
     shifter.start()
 
     try:
+        def _on_click_state_change(connected: bool) -> None:
+            """Push click_status onto the WS broadcast queue so cockpit shows indicator.
+
+            Mirrors _on_reading drop-oldest pattern (RESEARCH.md Pattern 1, INFRA-01).
+            Plain def — no await allowed; runs on the asyncio event loop thread.
+            """
+            msg = {"type": "click_status", "connected": connected}
+            try:
+                broadcast_queue.put_nowait(msg)
+            except asyncio.QueueFull:
+                try:
+                    broadcast_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                broadcast_queue.put_nowait(msg)
+            _log.info("Zwift Click %s", "connected" if connected else "disconnected")
+
         def _on_reading(reading: IndoorBikeData) -> None:
             """Update RideState telemetry fields and post snapshot to broadcast queue.
 
@@ -166,6 +184,16 @@ async def main() -> int:
             name="ws_broadcast",
         )
 
+        click_task = asyncio.create_task(
+            run_click_shifter(
+                gear_engine,
+                stop_event,
+                on_state_change=_on_click_state_change,
+            ),
+            name="click_shifter",
+        )
+        _log.debug("click_task spawned — scanning for Zwift Click in background")
+
         # Wait for shutdown signal, then drain cleanly.
         await stop_event.wait()
         _log.info("Shutdown requested; stopping tasks")
@@ -184,14 +212,14 @@ async def main() -> int:
         try:
             await asyncio.wait_for(
                 asyncio.gather(
-                    reconnect_task, consumer_task, gear_logger_task, ws_task,
+                    reconnect_task, consumer_task, gear_logger_task, ws_task, click_task,
                     return_exceptions=True,
                 ),
                 timeout=15.0,
             )
         except asyncio.TimeoutError:
             _log.warning("Shutdown timed out; cancelling remaining tasks")
-            for t in (reconnect_task, consumer_task, gear_logger_task, ws_task):
+            for t in (reconnect_task, consumer_task, gear_logger_task, ws_task, click_task):
                 if not t.done():
                     t.cancel()
 

@@ -338,3 +338,39 @@ async def test_backward_compat_broadcast_loop_without_route_context():
     await asyncio.sleep(0.05)
     stop_event.set()
     await asyncio.wait_for(server_task, timeout=3.0)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: click_status message contract
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_click_status_message_serializes_cleanly():
+    """click_status dict serializes to the expected JSON shape."""
+    msg = {"type": "click_status", "connected": True}
+    text = json.dumps(msg)
+    assert json.loads(text) == msg
+    assert text == '{"type": "click_status", "connected": true}'
+
+
+@pytest.mark.asyncio
+async def test_click_status_drop_oldest_on_full_queue():
+    """Mirrors the _on_reading drop-oldest pattern in main.py.
+
+    Fill a maxsize=2 queue, then write a click_status — must succeed
+    without raising QueueFull (older message dropped).
+    """
+    q: asyncio.Queue[dict] = asyncio.Queue(maxsize=2)
+    q.put_nowait({"type": "telemetry", "n": 1})
+    q.put_nowait({"type": "telemetry", "n": 2})
+    msg = {"type": "click_status", "connected": True}
+    try:
+        q.put_nowait(msg)
+    except asyncio.QueueFull:
+        q.get_nowait()
+        q.put_nowait(msg)
+    # The newest message must be in the queue.
+    seen = []
+    while not q.empty():
+        seen.append(q.get_nowait())
+    assert msg in seen
