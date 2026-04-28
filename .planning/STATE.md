@@ -3,33 +3,33 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 05-03-PLAN.md — click_task wired, click_status WS message added, 110 tests GREEN
-last_updated: "2026-04-28T04:45:23.505Z"
+stopped_at: Completed 05-04-PLAN.md — phase-05-verification.md created; awaiting hardware sign-off for GEAR-03
+last_updated: "2026-04-28T04:49:11.564Z"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 21
-  completed_plans: 20
-  percent: 95
+  completed_plans: 21
+  percent: 100
 ---
 
 # STATE: RideOS
 
 ## Current Position
 
-- **Phase:** 5 — Zwift Click Integration — IN PROGRESS
-- **Plan:** 05-03 complete (click_task wired into main.py, click_status WS message added, 110 tests GREEN)
-- **Next:** 05-04 — Hardware integration test on real Zwift Click; end-to-end gear shift verification
+- **Phase:** 5 — Zwift Click Integration — AWAITING HARDWARE SIGN-OFF
+- **Plan:** 05-04 complete (phase-05-verification.md created; 8 hardware tests ready for user to run on real rig)
+- **Next:** User runs hardware tests on real Zwift Click + KICKR Core; replies "phase 05 verified" or "phase 05 deferred: reason"
 
 ```
 [x] Phase 1: BLE Foundation + Metrics Read
 [x] Phase 2: FTMS Control Loop + Virtual Gearing
 [x] Phase 3: WebSocket Bridge + Cockpit UI (03-01 + 03-02 + 03-03 + 03-04 done)
 [x] Phase 4: GPX Route Integration (04-01, 04-02, 04-03, 04-04, 04-05 done — hardware verified)
-[ ] Phase 5: Zwift Click Integration (05-01 done, 05-02 done, 05-03 done, 05-04 pending)
+[ ] Phase 5: Zwift Click Integration (05-01 done, 05-02 done, 05-03 done, 05-04 done — AWAITING HW SIGN-OFF)
 ```
 
-Progress: [██████████] 95%
+Progress: [██████████] 100%
 
 ## Execution Metrics
 
@@ -55,6 +55,7 @@ Progress: [██████████] 95%
 | 05-01 | ~5 days (HW spike) | 1 | 1 | 2026-04-27 |
 | 05-02 | 4m | 2 | 4 | 2026-04-27 |
 | 05-03 | 2m | 2 | 2 | 2026-04-27 |
+| 05-04 | 2m (human-verify) | 1 | 1 | 2026-04-28 |
 
 ## Locked APIs
 
@@ -103,7 +104,7 @@ Critical architectural rules:
 
 ## Todos
 
-- 05-04: End-to-end hardware integration test on real Zwift Click; gear shift verification via button presses
+- 05-04 PENDING: User must run 8 hardware tests in docs/phase-05-verification.md and reply "phase 05 verified" or "phase 05 deferred: reason" to close GEAR-03
 
 ## Blockers
 
@@ -111,11 +112,11 @@ None.
 
 ## Session Continuity
 
-**Stopped at:** Completed 05-03-PLAN.md — click_task wired, click_status WS message added, 110 tests GREEN
-**Next action:** 05-04 — Hardware integration test on real Zwift Click; verify button presses produce gear shifts end-to-end
+**Stopped at:** Completed 05-04-PLAN.md — phase-05-verification.md created; awaiting hardware sign-off for GEAR-03
+**Next action:** User runs 8 hardware tests in `docs/phase-05-verification.md` and replies "phase 05 verified" or "phase 05 deferred: reason"
 **Key reference files:**
-- `.planning/phases/05-zwift-click-integration/05-03-SUMMARY.md`
+- `docs/phase-05-verification.md` (hardware checklist — fill in PASS/FAIL/SKIP and sign)
+- `.planning/phases/05-zwift-click-integration/05-04-SUMMARY.md`
 - `engine/engine/main.py` (click_task wired, _on_click_state_change closure)
 - `engine/engine/input/click.py` (ClickShifter + run_click_shifter — locked API)
 - `docs/click-ble-spike.md` (hardware-confirmed BLE constants)
-- `memory/decisions.md`

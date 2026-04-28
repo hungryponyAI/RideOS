@@ -13,7 +13,7 @@
 ### Virtual Gearing
 - [x] **GEAR-01**: 10-gear system: `effective_grade = real_grade / gear_factor`
 - [x] **GEAR-02**: Keyboard shifts gear up/down during ride
-- [ ] **GEAR-03**: Zwift Click BLE → shift signals via reverse-engineered characteristic
+- [x] **GEAR-03**: Zwift Click BLE → shift signals via reverse-engineered characteristic
 
 ### Cockpit UI
 - [x] **UI-01**: React cockpit: speed/gear/watts/cadence/grade; dark; 60 fps
@@ -52,7 +52,7 @@ Street View / video overlay, multiplayer, cloud sync / auth, Windows/Linux, ERG 
 | GEAR-01 | 2 | Complete |
 | GEAR-02 | 2 | Complete |
 | INFRA-02 | 2 | Pending (Plan 02-04) |
-| GEAR-03 | 5 | Pending |
+| GEAR-03 | 5 | Complete |
 | UI-01 | 3 | Complete |
 | UI-02 | 3 | Complete |
 | UI-03 | 3 | Complete |
