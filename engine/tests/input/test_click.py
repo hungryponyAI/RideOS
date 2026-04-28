@@ -20,7 +20,7 @@ from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, generate_pri
 
 from engine.gears.engine import GearEngine
 from engine.input.click import (
-    RIDE_ON, ZWIFT_ASYNC_CHAR_UUID, ZWIFT_SYNC_RX_CHAR_UUID,
+    RIDE_ON, ZWIFT_ASYNC_CHAR_UUID, ZWIFT_SYNC_RX_CHAR_UUID, ZWIFT_SYNC_TX_CHAR_UUID,
     ClickShifter, run_click_shifter,
 )
 
@@ -32,9 +32,12 @@ from engine.input.click import (
 def _make_handshake_connect(on_main_notify_registered=None):
     """Return a fake_connect context manager that simulates the ECDH handshake.
 
-    The stub's write_gatt_char responds with a valid device public-key frame so
-    that _handshake_encrypted completes without timing out.  on_main_notify_registered
-    is called when start_notify is invoked for the second time (main notify phase).
+    Handles the v1/v2 two-UUID subscribe pattern:
+      start_notify(ASYNC)    ← handshake listener 1
+      start_notify(SYNC_TX)  ← handshake listener 2
+      write_gatt_char        ← triggers handshake response on ASYNC
+      stop_notify × 2
+      start_notify(ASYNC)    ← main notify (on_main_notify_registered fires here)
     """
     dev_key = generate_private_key(SECP256R1())
     dev_pub = dev_key.public_key().public_bytes(
@@ -52,6 +55,7 @@ def _make_handshake_connect(on_main_notify_registered=None):
                 self._start_notify_count = 0
 
             async def write_gatt_char(self, uuid, data, *a, **k):
+                # Deliver handshake response to whichever handler is registered first
                 handler = self._handlers.get(ZWIFT_ASYNC_CHAR_UUID)
                 if handler:
                     handler(None, handshake_response)
@@ -59,7 +63,8 @@ def _make_handshake_connect(on_main_notify_registered=None):
             async def start_notify(self, uuid, handler, *a, **k):
                 self._handlers[uuid] = handler
                 self._start_notify_count += 1
-                if self._start_notify_count == 2 and on_main_notify_registered:
+                # Handshake subscribes ASYNC + SYNC_TX (2 calls), then main notify (3rd call)
+                if self._start_notify_count == 3 and on_main_notify_registered:
                     on_main_notify_registered()
 
             async def stop_notify(self, uuid, *a, **k):

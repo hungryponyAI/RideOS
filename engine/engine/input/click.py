@@ -1,11 +1,11 @@
 """Zwift Click BLE shifter — runs as a sibling asyncio.Task alongside KeyboardShifter.
 
-Hardware-confirmed constants from docs/click-ble-spike.md:
-  - Firmware 1.1.0 REQUIRES ECDH (b'RideOn' alone produces no 0x37 frames)
-  - Service UUID: 00000001-19ca-4651-86e5-fa29dcdd09d1 (long-form confirmed)
-  - ASYNC char (NOTIFY): 00000002-19ca-4651-86e5-fa29dcdd09d1
-  - SYNC_RX char (WRITE): 00000003-19ca-4651-86e5-fa29dcdd09d1
-  - Heartbeat frame to ignore: 23 08 ff ff ff ff 0f (first byte 0x23)
+Hardware-confirmed constants (v1 from docs/click-ble-spike.md, v2 from live nRF Connect):
+  - ASYNC char (NOTIFY):    00000002-19ca-4651-86e5-fa29dcdd09d1  (both v1 and v2)
+  - SYNC_RX char (WRITE):   00000003-19ca-4651-86e5-fa29dcdd09d1  (both)
+  - SYNC_TX char (INDICATE): 00000004-19ca-4651-86e5-fa29dcdd09d1 (v2 only — handshake response)
+  - v1 device type byte: 0x09, v2 device type byte: 0x0b (manufacturer ID 0x094A for both)
+  - v2 advertises short service UUID FC82 in addition to the custom long-form UUID
 
 BLE callback pitfall: on_notify MUST be plain def, never async def.
 Gear state pitfall: both keyboard and Click run on the same asyncio loop — no
@@ -33,11 +33,13 @@ _log = logging.getLogger(__name__)
 # Hardware-confirmed constants (docs/click-ble-spike.md)
 # ---------------------------------------------------------------------------
 
-ZWIFT_CUSTOM_SERVICE_UUID = "00000001-19ca-4651-86e5-fa29dcdd09d1"
-ZWIFT_ASYNC_CHAR_UUID     = "00000002-19ca-4651-86e5-fa29dcdd09d1"
-ZWIFT_SYNC_RX_CHAR_UUID   = "00000003-19ca-4651-86e5-fa29dcdd09d1"
-ZWIFT_MANUFACTURER_ID     = 0x094A
-CLICK_DEVICE_TYPE_BYTE    = 0x09
+ZWIFT_CUSTOM_SERVICE_UUID  = "00000001-19ca-4651-86e5-fa29dcdd09d1"
+ZWIFT_ASYNC_CHAR_UUID      = "00000002-19ca-4651-86e5-fa29dcdd09d1"
+ZWIFT_SYNC_RX_CHAR_UUID    = "00000003-19ca-4651-86e5-fa29dcdd09d1"
+ZWIFT_SYNC_TX_CHAR_UUID    = "00000004-19ca-4651-86e5-fa29dcdd09d1"  # v2: INDICATE, handshake response
+ZWIFT_MANUFACTURER_ID      = 0x094A
+CLICK_DEVICE_TYPE_BYTES    = {0x09, 0x0B}  # 0x09 = v1 Click, 0x0B = v2 Click
+ZWIFT_FC82_SERVICE_UUID    = "0000fc82-0000-1000-8000-00805f9b34fb"  # v2 advertised service
 CLICK_NOTIFY_MSG_TYPE     = 0x37      # decimal 55 — button event message type
 PLUS_FIELD_TAG            = 0x08      # protobuf tag for field 1 (key '1' = plus)
 MINUS_FIELD_TAG           = 0x10      # protobuf tag for field 2 (key '2' = minus)
@@ -275,7 +277,16 @@ class ClickShifter:
                 dev_pub_raw.append(data[8:72])
                 key_received.set()
 
-        await client.start_notify(ZWIFT_ASYNC_CHAR_UUID, _key_handler)
+        # v1 responds on ASYNC (00000002); v2 responds on SYNC_TX (00000004, INDICATE).
+        # Subscribe both; whichever fires first wins; stop both after.
+        subscribed: list[str] = []
+        for char_uuid in (ZWIFT_ASYNC_CHAR_UUID, ZWIFT_SYNC_TX_CHAR_UUID):
+            try:
+                await client.start_notify(char_uuid, _key_handler)
+                subscribed.append(char_uuid)
+            except Exception:
+                pass  # char may not exist on this hardware version
+
         try:
             await client.write_gatt_char(ZWIFT_SYNC_RX_CHAR_UUID, payload, response=False)
             try:
@@ -283,7 +294,11 @@ class ClickShifter:
             except asyncio.TimeoutError:
                 raise BleakError("ECDH handshake timeout: Zwift Click did not respond")
         finally:
-            await client.stop_notify(ZWIFT_ASYNC_CHAR_UUID)
+            for char_uuid in subscribed:
+                try:
+                    await client.stop_notify(char_uuid)
+                except Exception:
+                    pass
 
         dev_pub_bytes = b'\x04' + dev_pub_raw[0]   # restore uncompressed-point prefix
         dev_pub_key = EllipticCurvePublicKey.from_encoded_point(SECP256R1(), dev_pub_bytes)
@@ -312,11 +327,13 @@ class ClickShifter:
 
         def _is_click(device: BLEDevice, adv: AdvertisementData) -> bool:
             mfr = adv.manufacturer_data.get(ZWIFT_MANUFACTURER_ID)
-            if mfr and len(mfr) >= 1 and mfr[0] == CLICK_DEVICE_TYPE_BYTE:
+            if mfr and len(mfr) >= 1 and mfr[0] in CLICK_DEVICE_TYPE_BYTES:
                 return True
-            return ZWIFT_CUSTOM_SERVICE_UUID.lower() in [
-                u.lower() for u in (adv.service_uuids or [])
-            ]
+            uuids = [u.lower() for u in (adv.service_uuids or [])]
+            return (
+                ZWIFT_CUSTOM_SERVICE_UUID.lower() in uuids
+                or ZWIFT_FC82_SERVICE_UUID.lower() in uuids
+            )
 
         return await BleakScanner.find_device_by_filter(_is_click, timeout=timeout)
 
