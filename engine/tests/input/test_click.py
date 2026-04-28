@@ -15,9 +15,59 @@ import asyncio
 from contextlib import asynccontextmanager
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, generate_private_key
 
 from engine.gears.engine import GearEngine
-from engine.input.click import ClickShifter, run_click_shifter
+from engine.input.click import (
+    RIDE_ON, ZWIFT_ASYNC_CHAR_UUID, ZWIFT_SYNC_RX_CHAR_UUID,
+    ClickShifter, run_click_shifter,
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _make_handshake_connect(on_main_notify_registered=None):
+    """Return a fake_connect context manager that simulates the ECDH handshake.
+
+    The stub's write_gatt_char responds with a valid device public-key frame so
+    that _handshake_encrypted completes without timing out.  on_main_notify_registered
+    is called when start_notify is invoked for the second time (main notify phase).
+    """
+    dev_key = generate_private_key(SECP256R1())
+    dev_pub = dev_key.public_key().public_bytes(
+        serialization.Encoding.X962,
+        serialization.PublicFormat.UncompressedPoint,
+    )
+    # Response: RIDE_ON + two control bytes + 64 raw key bytes (strip leading 0x04)
+    handshake_response = RIDE_ON + bytes([0x01, 0x03]) + dev_pub[1:]
+
+    @asynccontextmanager
+    async def _connect(device):
+        class _Stub:
+            def __init__(self):
+                self._handlers = {}
+                self._start_notify_count = 0
+
+            async def write_gatt_char(self, uuid, data, *a, **k):
+                handler = self._handlers.get(ZWIFT_ASYNC_CHAR_UUID)
+                if handler:
+                    handler(None, handshake_response)
+
+            async def start_notify(self, uuid, handler, *a, **k):
+                self._handlers[uuid] = handler
+                self._start_notify_count += 1
+                if self._start_notify_count == 2 and on_main_notify_registered:
+                    on_main_notify_registered()
+
+            async def stop_notify(self, uuid, *a, **k):
+                self._handlers.pop(uuid, None)
+
+        yield _Stub()
+
+    return _connect
 
 
 # ---------------------------------------------------------------------------
@@ -135,21 +185,9 @@ async def test_connection_failure_retries():
             return None  # first call: simulate not found
         # second call: signal stop and return a truthy stand-in
         stop_event.set()
-        return object()  # truthy; connect is also faked below
+        return object()
 
-    @asynccontextmanager
-    async def fake_connect(device):
-        class _Stub:
-            async def write_gatt_char(self, *a, **k):
-                pass
-
-            async def start_notify(self, *a, **k):
-                pass
-
-            async def stop_notify(self, *a, **k):
-                pass
-
-        yield _Stub()
+    fake_connect = _make_handshake_connect()
 
     sh = ClickShifter(gears)
     # Bound the test so it cannot hang.
@@ -178,14 +216,8 @@ async def test_state_change_called_on_connect():
     async def fake_scanner(*, timeout):
         return object()
 
-    @asynccontextmanager
-    async def fake_connect(device):
-        class _Stub:
-            async def write_gatt_char(self, *a, **k): pass
-            async def start_notify(self, *a, **k):
-                stop_event.set()  # exit immediately after callback wired
-            async def stop_notify(self, *a, **k): pass
-        yield _Stub()
+    # stop_event set on the 2nd start_notify (main notify phase, after handshake)
+    fake_connect = _make_handshake_connect(on_main_notify_registered=stop_event.set)
 
     sh = ClickShifter(gears, on_state_change=states.append)
     await asyncio.wait_for(
@@ -230,13 +262,7 @@ async def test_state_change_callback_optional():
     async def fake_scanner(*, timeout):
         return object()
 
-    @asynccontextmanager
-    async def fake_connect(device):
-        class _Stub:
-            async def write_gatt_char(self, *a, **k): pass
-            async def start_notify(self, *a, **k): stop_event.set()
-            async def stop_notify(self, *a, **k): pass
-        yield _Stub()
+    fake_connect = _make_handshake_connect(on_main_notify_registered=stop_event.set)
 
     sh = ClickShifter(gears)  # no on_state_change
     await asyncio.wait_for(

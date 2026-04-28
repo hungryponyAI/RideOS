@@ -45,6 +45,7 @@ BUTTON_VALUE_PRESSED      = 0x00
 BUTTON_VALUE_RELEASED     = 0x01
 RIDE_ON                   = b"RideOn"
 REQUEST_START             = bytes([1, 2])  # ECDH handshake prefix after RIDE_ON
+HANDSHAKE_TIMEOUT_S       = 5.0           # seconds to wait for Click's key response
 DEFAULT_SCAN_TIMEOUT_S    = 30.0
 DEFAULT_RETRY_BACKOFF_S   = 2.0
 
@@ -79,6 +80,8 @@ class ClickShifter:
         self._clock = clock
         self._last_shift_t: float = float("-inf")
         self._on_state_change = on_state_change
+        self._aes_key: bytes | None = None
+        self._iv_prefix: bytes | None = None
 
     # ------------------------------------------------------------------
     # Connection-state callback helper
@@ -97,6 +100,23 @@ class ClickShifter:
     # Notify callback — MUST be plain def (Pitfall 4)
     # ------------------------------------------------------------------
 
+    def _decrypt_frame(self, data: bytes) -> bytes | None:
+        """AES-CCM decrypt an encrypted notify frame. Returns plaintext or None on failure.
+
+        Frame format: [counter: 4 bytes][ciphertext][tag: 4 bytes]
+        Nonce: iv_prefix (4 bytes) || counter (4 bytes) = 8 bytes total.
+        """
+        if len(data) < 9:  # 4 counter + ≥1 payload + 4 tag
+            return None
+        from cryptography.hazmat.primitives.ciphers.aead import AESCCM
+        counter = data[:4]
+        ciphertext_and_tag = data[4:]
+        nonce = self._iv_prefix + counter
+        try:
+            return AESCCM(self._aes_key, tag_length=4).decrypt(nonce, ciphertext_and_tag, None)
+        except Exception:
+            return None
+
     def on_notify(self, sender, data: bytes | bytearray) -> None:
         """Decode a BLE notification frame and dispatch a shift if appropriate.
 
@@ -106,8 +126,17 @@ class ClickShifter:
         - Release events (value = 1)
         - Rapid repeated presses within the debounce window
         """
-        if not data or data[0] != CLICK_NOTIFY_MSG_TYPE:
-            return  # idle, battery, heartbeat, or encrypted frame
+        if not data:
+            return
+        data = bytes(data)
+
+        if self._aes_key is not None:
+            data = self._decrypt_frame(data) or b""
+            if not data:
+                return
+
+        if data[0] != CLICK_NOTIFY_MSG_TYPE:
+            return  # idle, battery, heartbeat frame
 
         # Walk the payload as sequential (tag, value) byte pairs.
         # Click frames are short (3–5 bytes); varint multibyte values are not
@@ -212,33 +241,65 @@ class ClickShifter:
     # ------------------------------------------------------------------
 
     async def _handshake_encrypted(self, client: "BleakClient") -> None:
-        """Perform the ECDH key exchange required by firmware >= 1.1.0.
+        """Perform the full ECDH key exchange required by firmware >= 1.1.0.
 
-        Protocol (source: ajchellew/zwiftplay + makinolo.com):
+        Protocol (source: ajchellew/zwiftplay + makinolo.com + jat255/zwift_click_handling):
           1. Generate ephemeral SECP256R1 key pair.
-          2. Write RIDE_ON + REQUEST_START + uncompressed-pub-x-bytes to SYNC_RX.
-          3. Click responds on ASYNC with its public key + counter seed.
-          4. Derive shared secret via ECDH → HKDF-SHA256(length=36).
-          5. Split: first 32 bytes = AES-CCM key, last 4 bytes = counter seed.
-
-        For Plan 05-02 the handshake is wired and exercised by the fake-connect
-        test path. Full AES-CCM decryption of the notify stream is deferred to
-        Plan 05-03 (hardware integration test). If firmware 1.1.0 requires
-        decryption to produce 0x37 frames, 05-03 will add the decrypt step here.
+          2. Write RIDE_ON + REQUEST_START + our uncompressed pub (raw x||y) to SYNC_RX.
+          3. Click responds on ASYNC with RIDE_ON + \x01\x03 + device pub (64 raw bytes).
+          4. Derive shared secret via ECDH; apply HKDF-SHA256(length=36,
+             salt=device_pub_full || our_pub_full, info=b'handshake data').
+          5. Split: first 32 bytes → AES-CCM key; last 4 bytes → IV prefix for nonces.
         """
-        from cryptography.hazmat.backends import default_backend
         from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric.ec import ECDH, SECP256R1, generate_private_key
+        from cryptography.hazmat.primitives.asymmetric.ec import (
+            ECDH, SECP256R1, EllipticCurvePublicKey, generate_private_key,
+        )
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-        private_key = generate_private_key(SECP256R1(), default_backend())
+        private_key = generate_private_key(SECP256R1())
         pub_bytes = private_key.public_key().public_bytes(
             serialization.Encoding.X962,
             serialization.PublicFormat.UncompressedPoint,
         )
-        # Strip leading 0x04 uncompressed point marker — Click expects raw x||y.
+        # Strip leading 0x04 uncompressed-point marker — Click expects raw x||y (64 bytes).
         payload = RIDE_ON + REQUEST_START + pub_bytes[1:]
-        await client.write_gatt_char(ZWIFT_SYNC_RX_CHAR_UUID, payload, response=False)
-        _log.debug("ECDH handshake written (%d bytes)", len(payload))
+
+        key_received = asyncio.Event()
+        dev_pub_raw: list[bytes] = []
+
+        def _key_handler(sender, data: bytes | bytearray) -> None:
+            data = bytes(data)
+            # Device response: 'RideOn' prefix + 2 control bytes + 64 raw key bytes = 72 total
+            if data[:6] == RIDE_ON and len(data) >= 72 and not key_received.is_set():
+                dev_pub_raw.append(data[8:72])
+                key_received.set()
+
+        await client.start_notify(ZWIFT_ASYNC_CHAR_UUID, _key_handler)
+        try:
+            await client.write_gatt_char(ZWIFT_SYNC_RX_CHAR_UUID, payload, response=False)
+            try:
+                await asyncio.wait_for(key_received.wait(), timeout=HANDSHAKE_TIMEOUT_S)
+            except asyncio.TimeoutError:
+                raise BleakError("ECDH handshake timeout: Zwift Click did not respond")
+        finally:
+            await client.stop_notify(ZWIFT_ASYNC_CHAR_UUID)
+
+        dev_pub_bytes = b'\x04' + dev_pub_raw[0]   # restore uncompressed-point prefix
+        dev_pub_key = EllipticCurvePublicKey.from_encoded_point(SECP256R1(), dev_pub_bytes)
+        shared_secret = private_key.exchange(ECDH(), dev_pub_key)
+
+        # salt = device_pub (65 bytes) || our_pub (65 bytes), per ajchellew/zwiftplay
+        key_material = HKDF(
+            algorithm=hashes.SHA256(),
+            length=36,
+            salt=dev_pub_bytes + pub_bytes,
+            info=b'handshake data',
+        ).derive(shared_secret)
+
+        self._aes_key = key_material[:32]
+        self._iv_prefix = key_material[32:]
+        _log.debug("ECDH session key derived")
 
     # ------------------------------------------------------------------
     # Default scanner / connector (production paths)
