@@ -20,7 +20,7 @@ import asyncio
 import bisect
 import logging
 import time
-from typing import TYPE_CHECKING
+from typing import Callable, Optional, TYPE_CHECKING
 
 from engine.route.model import RouteData
 
@@ -40,9 +40,10 @@ _ROUTE_END_EPSILON_M: float = 0.5
 class RouteTracker:
     """Advances position along a RouteData and updates RideState.real_grade_percent."""
 
-    def __init__(self, route: RouteData) -> None:
+    def __init__(self, route: RouteData, on_complete: Optional[Callable[[int], None]] = None) -> None:
         self._route = route
         self._position_m: float = 0.0
+        self._on_complete = on_complete
 
     @property
     def position_m(self) -> float:
@@ -58,6 +59,7 @@ class RouteTracker:
     ) -> None:
         """Main tracker loop. Exits when stop_event fires OR route completes."""
         last_t = time.monotonic()
+        start_t = time.monotonic()
         while not stop_event.is_set():
             now = time.monotonic()
             dt = now - last_t
@@ -72,12 +74,16 @@ class RouteTracker:
 
             # Pitfall 5: route ends mid-ride — cool down, log, exit task.
             if self._position_m >= self._route.total_dist_m - _ROUTE_END_EPSILON_M:
+                elapsed_s = int(now - start_t)
                 state.real_grade_percent = ROUTE_COMPLETE_GRADE
                 _log.info(
-                    "Route complete at %.0f m; grade -> %.1f%%",
+                    "Route complete at %.0f m in %ds; grade -> %.1f%%",
                     self._route.total_dist_m,
+                    elapsed_s,
                     ROUTE_COMPLETE_GRADE,
                 )
+                if self._on_complete is not None:
+                    self._on_complete(elapsed_s)
                 return
 
             # bisect_right returns insertion index; -1 gives "current segment".

@@ -1,4 +1,41 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;700&family=Fira+Code:wght@400;500;700&family=Inter:wght@400;700&display=swap');
+
+:root {
+  --bg: #F2F2F2;
+  --surface: #FFFFFF;
+  --border: #DDDDDD;
+  --text: #000000;
+  --text-muted: #666666;
+  --label-accent: #000000;
+  --chart-empty: #CCCCCC;
+  --map-bg: #e8e8e8;
+}
+
+.dark {
+  --bg: #000000;
+  --surface: #111111;
+  --border: #111111;
+  --text: #FFFFFF;
+  --text-muted: #666666;
+  --label-accent: #FFF200;
+  --chart-empty: #1a1a1a;
+  --map-bg: #111111;
+}
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Consistent focus ring for keyboard navigation */
+:focus-visible {
+  outline: 2px solid #FFF200;
+  outline-offset: 2px;
+}
 
 @tailwind base;
 @tailwind components;

@@ -21,9 +21,11 @@ import json
 import logging
 from dataclasses import dataclass, field
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 from websockets.asyncio.server import serve, ServerConnection
+
+from engine.route.library import RouteLibrary
 
 if TYPE_CHECKING:
     from engine.control.state import RideState
@@ -45,6 +47,8 @@ class RouteContext:
     stop_event: asyncio.Event
     tracker: "RouteTracker | None" = None
     tracker_task: "asyncio.Task | None" = None
+    library: "RouteLibrary | None" = None
+    current_route_id: "str | None" = None
 
 # Module-level client registry — mutated by _handler coroutines.
 CLIENTS: set[ServerConnection] = set()
@@ -58,11 +62,21 @@ async def _load_route(ctx: RouteContext, path: str) -> None:
 
 async def _load_route_content(ctx: RouteContext, content: str) -> None:
     """Handle inbound load_route_content (browser file upload): parse GPX string."""
-    from engine.route.loader import load_gpx_content
-    await _do_load_route(ctx, lambda: load_gpx_content(content), label="<browser upload>")
+    from engine.route.loader import load_gpx_content, extract_gpx_name
+    name = await asyncio.to_thread(extract_gpx_name, content)
+    await _do_load_route(ctx, lambda: load_gpx_content(content), label="<browser upload>",
+                         gpx_content=content, route_name=name)
 
 
-async def _do_load_route(ctx: RouteContext, loader_fn, label: str) -> None:
+async def _do_load_route(
+    ctx: RouteContext,
+    loader_fn,
+    label: str,
+    *,
+    gpx_content: Optional[str] = None,
+    route_name: Optional[str] = None,
+    route_id: Optional[str] = None,
+) -> None:
     """Shared route loading logic: cancel previous tracker, parse, broadcast, spawn tracker.
 
     Exceptions during load do NOT propagate — they produce a route_error WS
@@ -117,8 +131,45 @@ async def _do_load_route(ctx: RouteContext, loader_fn, label: str) -> None:
         ctx.broadcast_queue.get_nowait()
         ctx.broadcast_queue.put_nowait(route_msg)
 
+    # Determine route_id for this session
+    ctx.current_route_id = None
+    active_route_id: Optional[str] = route_id
+
+    if ctx.library is not None and gpx_content is not None:
+        name = route_name or "Route"
+        try:
+            entry = await asyncio.to_thread(ctx.library.add_route, name, gpx_content, route)
+            active_route_id = entry.id
+            # Broadcast updated library
+            lib_msg = ctx.library.to_ws_message()
+            try:
+                ctx.broadcast_queue.put_nowait(lib_msg)
+            except asyncio.QueueFull:
+                ctx.broadcast_queue.get_nowait()
+                ctx.broadcast_queue.put_nowait(lib_msg)
+        except Exception as exc:
+            _log.warning("Library: could not save route: %s", exc)
+
+    ctx.current_route_id = active_route_id
+
+    # Build on_complete closure capturing current route_id
+    rid_snapshot = active_route_id
+
+    def _on_complete(elapsed_s: int) -> None:
+        if ctx.library is not None and rid_snapshot is not None:
+            ctx.library.update_best_time(rid_snapshot, elapsed_s)
+            lib_msg = ctx.library.to_ws_message()
+            try:
+                ctx.broadcast_queue.put_nowait(lib_msg)
+            except asyncio.QueueFull:
+                try:
+                    ctx.broadcast_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                ctx.broadcast_queue.put_nowait(lib_msg)
+
     # Spawn the tracker as a sibling task.
-    tracker = RouteTracker(route)
+    tracker = RouteTracker(route, on_complete=_on_complete)
     ctx.tracker = tracker
     ctx.tracker_task = asyncio.create_task(
         tracker.run(ctx.state, ctx.stop_event),
@@ -173,6 +224,62 @@ async def _handler(
                 asyncio.create_task(
                     _load_route_content(route_context, content), name="load_route_content"
                 )
+            elif msg.get("type") == "athlete_settings":
+                if route_context is not None:
+                    s = route_context.state
+                    w = msg.get("weight_kg")
+                    h = msg.get("height_cm")
+                    f = msg.get("ftp_w")
+                    if isinstance(w, (int, float)) and w > 0:
+                        s.athlete_weight_kg = float(w)
+                    if isinstance(h, (int, float)) and h > 0:
+                        s.athlete_height_cm = float(h)
+                    if isinstance(f, (int, float)) and f > 0:
+                        s.athlete_ftp_w = float(f)
+                    _log.info(
+                        "Athlete settings: %.1f kg  %.0f cm  FTP %.0f W",
+                        s.athlete_weight_kg, s.athlete_height_cm, s.athlete_ftp_w,
+                    )
+            elif msg.get("type") == "list_routes":
+                if route_context is not None and route_context.library is not None:
+                    lib_msg = route_context.library.to_ws_message()
+                    await ws.send(json.dumps(lib_msg))
+
+            elif msg.get("type") == "load_saved_route":
+                if route_context is None or route_context.library is None:
+                    continue
+                rid = msg.get("route_id")
+                if not isinstance(rid, str) or not rid:
+                    continue
+                gpx_path = route_context.library.get_gpx_path(rid)
+                if gpx_path is None or not gpx_path.exists():
+                    await ws.send(json.dumps({"type": "route_error", "message": "Strecke nicht gefunden"}))
+                    continue
+                from engine.route.loader import load_gpx as _load_gpx
+                asyncio.create_task(
+                    _do_load_route(route_context, lambda p=gpx_path: _load_gpx(str(p)),
+                                   label=repr(str(gpx_path)), route_id=rid),
+                    name="load_saved_route",
+                )
+
+            elif msg.get("type") == "delete_route":
+                if route_context is None or route_context.library is None:
+                    continue
+                rid = msg.get("route_id")
+                if isinstance(rid, str) and rid:
+                    route_context.library.delete_route(rid)
+                    lib_msg = route_context.library.to_ws_message()
+                    await ws.send(json.dumps(lib_msg))
+
+            elif msg.get("type") == "rename_route":
+                if route_context is None or route_context.library is None:
+                    continue
+                rid = msg.get("route_id")
+                name = msg.get("name")
+                if isinstance(rid, str) and rid and isinstance(name, str) and name.strip():
+                    route_context.library.rename_route(rid, name.strip())
+                    lib_msg = route_context.library.to_ws_message()
+                    await ws.send(json.dumps(lib_msg))
     except Exception:
         pass
     finally:
@@ -202,7 +309,7 @@ async def broadcast_loop(
         port: Listen port (default 8765).
     """
     handler = partial(_handler, gear_engine=gear_engine, route_context=route_context)
-    async with serve(handler, host, port):
+    async with serve(handler, host, port, max_size=16 * 1024 * 1024):
         _log.info("WS server listening on ws://%s:%d", host, port)
         while not stop_event.is_set():
             try:

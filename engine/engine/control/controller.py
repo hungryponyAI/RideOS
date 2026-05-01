@@ -60,8 +60,10 @@ class FtmsController:
         self._controlled = True
         _log.info("FTMS handshake complete; control loop may begin")
 
-    async def set_simulation_grade(self, grade_percent: float) -> None:
-        payload = encode_set_simulation_parameters(grade_percent=grade_percent)
+    async def set_simulation_grade(
+        self, grade_percent: float, *, crr: float = 0.0, cw: float = 0.0
+    ) -> None:
+        payload = encode_set_simulation_parameters(grade_percent=grade_percent, crr=crr, cw=cw)
         await self._send(payload, OpCode.SET_INDOOR_BIKE_SIMULATION_PARAMETERS)
 
     async def shutdown(self) -> None:
@@ -104,6 +106,18 @@ class FtmsController:
             raise FtmsControlError(op, resp.result)
 
 
+def _estimate_cw(weight_kg: float, height_cm: float) -> float:
+    """Wind resistance coefficient = CdA × ρ (kg/m).
+
+    Uses Bassett (1999) frontal-area estimate for a cyclist in hoods position.
+    CdA ≈ frontal_area × Cd, Cd ≈ 1.15, ρ = 1.225 kg/m³.
+    """
+    h_m = height_cm / 100.0
+    frontal_area = 0.0276 * (h_m ** 0.725) * (weight_kg ** 0.425)
+    cda = frontal_area * 1.15
+    return cda * 1.225
+
+
 async def run_control_loop(
     controller: FtmsController,
     state: RideState,
@@ -117,6 +131,8 @@ async def run_control_loop(
     last_write_t: float = 0.0
     while not stop_event.is_set():
         grade = state.gear_engine.effective_grade(state.real_grade_percent)
+        crr = 0.004
+        cw = _estimate_cw(state.athlete_weight_kg, state.athlete_height_cm)
         now = clock()
         changed = (
             last_sent_grade is None
@@ -124,7 +140,7 @@ async def run_control_loop(
         )
         stale = (now - last_write_t) >= FtmsController._KEEPALIVE_S
         if changed or stale:
-            await controller.set_simulation_grade(grade)
+            await controller.set_simulation_grade(grade, crr=crr, cw=cw)
             last_sent_grade = grade
             last_write_t = now
         await sleep(FtmsController._TICK_S)

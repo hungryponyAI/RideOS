@@ -4,6 +4,7 @@ import type {
   IncomingMessage,
   OutgoingMessage,
   StoredRoute,
+  RouteLibraryEntry,
 } from "../types/route";
 
 const WS_URL = "ws://localhost:8765";
@@ -21,6 +22,9 @@ export function useTelemetry() {
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [routeLoaded, setRouteLoaded] = useState<boolean>(false);
   const [routeError, setRouteError] = useState<string | null>(null);
+  const [clickConnected, setClickConnected] = useState<boolean>(false);
+  const [kickrConnected, setKickrConnected] = useState<boolean>(false);
+  const [routeLibrary, setRouteLibrary] = useState<RouteLibraryEntry[]>([]);
 
   const clearRouteError = useCallback(() => setRouteError(null), []);
 
@@ -32,6 +36,7 @@ export function useTelemetry() {
     ws.onopen = () => {
       setStatus("connected");
       retryCountRef.current = 0;
+      ws.send(JSON.stringify({ type: "list_routes" }));
     };
     ws.onmessage = (e) => {
       setStatus("live");
@@ -74,6 +79,18 @@ export function useTelemetry() {
           setRouteLoaded(false);
           break;
         }
+        case "click_status": {
+          setClickConnected(msg.connected);
+          break;
+        }
+        case "kickr_status": {
+          setKickrConnected(msg.connected);
+          break;
+        }
+        case "route_library": {
+          setRouteLibrary(msg.routes);
+          break;
+        }
         default:
           // Unknown message type — ignore silently to stay forward-compatible.
           break;
@@ -109,9 +126,12 @@ export function useTelemetry() {
     telemetry,
     status,
     sendMessage,
-    routeRef,             // ref — read .current for the stored route (or null)
-    routeLoaded,          // state — triggers re-render on load/unload transition
-    routeError,           // state — string or null
+    routeRef,
+    routeLoaded,
+    routeError,
     clearRouteError,
+    clickConnected,
+    kickrConnected,
+    routeLibrary,
   };
 }

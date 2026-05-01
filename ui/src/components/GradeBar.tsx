@@ -1,44 +1,30 @@
 import { memo } from "react";
 
 interface Props {
-  real: number;
   effective: number;
 }
 
-export const GradeBar = memo(function GradeBar({ real, effective }: Props) {
-  // Color: red-500 for climb (>0), blue-500 for descent (<0), gray-700 for flat (0)
-  const fillColor =
-    effective > 0 ? "bg-red-500" : effective < 0 ? "bg-blue-500" : "bg-gray-700";
-
-  // Normalize to bar width: +-20% maps to 0-100% of half-width
-  const maxGrade = 20;
-  const clampedEffective = Math.max(-maxGrade, Math.min(maxGrade, effective));
-  const barWidthPercent = Math.abs(clampedEffective / maxGrade) * 50;
-  const barLeft = effective >= 0 ? 50 : 50 - barWidthPercent;
-
-  const clampedReal = Math.max(-maxGrade, Math.min(maxGrade, real));
-  const realPos = 50 + (clampedReal / maxGrade) * 50;
-
-  // Format with comma as decimal separator (German locale)
-  const sign = (v: number) => (v > 0 ? "+" : v < 0 ? "-" : "");
+export const GradeBar = memo(function GradeBar({ effective }: Props) {
+  const sign = (v: number) => (v > 0 ? "+" : v < 0 ? "−" : "");
   const fmt = (v: number) => `${sign(v)}${Math.abs(v).toFixed(1).replace(".", ",")}%`;
 
   return (
-    <div className="px-6">
-      <div className="relative w-full h-2 bg-gray-800 rounded-full overflow-hidden">
-        {/* Effective grade fill */}
-        <div
-          className={`absolute top-0 h-full ${fillColor}`}
-          style={{ left: `${barLeft}%`, width: `${barWidthPercent}%` }}
-        />
-        {/* Real grade marker — 2px line */}
-        <div
-          className="absolute top-0 h-full w-[2px] bg-gray-600"
-          style={{ left: `${realPos}%` }}
-        />
-      </div>
-      <span className="text-[12px] text-gray-500 mt-1 block">
-        {fmt(real)} / effektiv {fmt(effective)}
+    <div className="flex items-center gap-4">
+      {/* Slope / incline icon */}
+      <svg
+        width="24" height="24" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+        className="text-[var(--label-accent)] shrink-0"
+        aria-hidden="true"
+      >
+        {/* Rising slope with arrow */}
+        <polyline points="2,19 22,5"/>
+        <polyline points="15,5 22,5 22,12"/>
+        {/* Ground line */}
+        <line x1="2" y1="19" x2="22" y2="19" strokeOpacity="0.35"/>
+      </svg>
+      <span className="text-[32px] font-data font-bold text-[var(--text)] tabular-nums leading-none">
+        {fmt(effective)}
       </span>
     </div>
   );

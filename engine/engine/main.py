@@ -15,6 +15,7 @@ import asyncio
 import logging
 import signal
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from bleak import BleakClient
@@ -28,6 +29,7 @@ from engine.ftms.parsers import IndoorBikeData
 from engine.gears.engine import GearEngine
 from engine.input.click import run_click_shifter
 from engine.input.keyboard import KeyboardShifter
+from engine.route.library import RouteLibrary
 from engine.ws.server import broadcast_loop, RouteContext
 
 _log = logging.getLogger("rideos.engine")
@@ -95,16 +97,32 @@ async def main() -> int:
     gear_engine = GearEngine()
     state = RideState(gear_engine=gear_engine, real_grade_percent=DEFAULT_GRADE)
 
+    _ROUTES_DIR = Path(__file__).parent.parent / "routes"
+    library = RouteLibrary(_ROUTES_DIR)
+
     route_ctx = RouteContext(
         state=state,
         broadcast_queue=broadcast_queue,
         stop_event=stop_event,
+        library=library,
     )
 
     shifter = KeyboardShifter(gear_engine)
     shifter.start()
 
     try:
+        def _on_kickr_state_change(connected: bool) -> None:
+            msg = {"type": "kickr_status", "connected": connected}
+            try:
+                broadcast_queue.put_nowait(msg)
+            except asyncio.QueueFull:
+                try:
+                    broadcast_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                broadcast_queue.put_nowait(msg)
+            _log.info("KICKR %s", "connected" if connected else "disconnected")
+
         def _on_click_state_change(connected: bool) -> None:
             """Push click_status onto the WS broadcast queue so cockpit shows indicator.
 
@@ -160,6 +178,7 @@ async def main() -> int:
                 config=ReconnectConfig(initial_backoff=1.0, max_backoff=60.0),
                 stop_event=stop_event,
                 ride_state=state,
+                on_kickr_state_change=_on_kickr_state_change,
             ),
             name="reconnect_loop",
         )

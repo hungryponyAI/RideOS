@@ -57,6 +57,7 @@ async def reconnect_loop(
     ride_state: Optional[RideState] = None,
     controller_factory: ControllerFactory = FtmsController,
     on_client_ready: Optional[OnClientReady] = None,
+    on_kickr_state_change: Optional[Callable[[bool], None]] = None,
 ) -> None:
     """Run the scan/connect/subscribe cycle forever, until stop_event is set.
 
@@ -94,10 +95,14 @@ async def reconnect_loop(
 
         def _on_disconnect(_: BleakClient) -> None:
             disconnected.set()
+            if on_kickr_state_change is not None:
+                on_kickr_state_change(False)
 
         try:
             async with connect_client(device, _on_disconnect) as client:
                 await start_indoor_bike_notify(client, queue)
+                if on_kickr_state_change is not None:
+                    on_kickr_state_change(True)
                 _log.info("Subscribed to FTMS Indoor Bike Data; awaiting data...")
 
                 controller: Optional[FtmsController] = None

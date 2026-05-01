@@ -104,6 +104,24 @@ def _parse_gpx(content: str, source_label: str) -> RouteData:
     )
 
 
+def extract_gpx_name(content: str) -> str:
+    """Extract a human-readable name from GPX content. Falls back to a timestamp."""
+    try:
+        gpx = gpxpy.parse(content)
+        if gpx.name and gpx.name.strip():
+            return gpx.name.strip()
+        for track in gpx.tracks:
+            if track.name and track.name.strip():
+                return track.name.strip()
+        for route in gpx.routes:
+            if route.name and route.name.strip():
+                return route.name.strip()
+    except Exception:
+        pass
+    from datetime import datetime as _dt
+    return f"Route {_dt.now().strftime('%d.%m.%Y %H:%M')}"
+
+
 def _rolling_mean(values: List[float], window: int = 5) -> List[float]:
     """Centered rolling mean. Edges use shrinking window; length preserved."""
     if not values:

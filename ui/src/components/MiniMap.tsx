@@ -1,9 +1,8 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useMemo } from "react";
 import {
   MapContainer,
   TileLayer,
   Polyline,
-  CircleMarker,
   useMap,
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -12,17 +11,18 @@ interface MiniMapProps {
   coords: Array<[number, number]> | null;
   cumDist: number[] | null;
   positionM: number | null;
+  isDark: boolean;
 }
 
-const CARTO_DARK =
-  "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const CARTO_DARK  = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const CARTO_LIGHT = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
 const ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>';
 
 const DEFAULT_CENTER: [number, number] = [50.0, 10.0];
 const DEFAULT_ZOOM = 5;
-// Zoom level for riding view — gives ~400 m width on a 160 px map tile
 const RIDING_ZOOM = 16;
+const BEARING_LOOKAHEAD_M = 300;
 
 function bisectRight(arr: number[], x: number): number {
   let lo = 0;
@@ -35,6 +35,17 @@ function bisectRight(arr: number[], x: number): number {
   return lo;
 }
 
+function calcBearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLng = toRad(lng2 - lng1);
+  const y = Math.sin(dLng) * Math.cos(toRad(lat2));
+  const x =
+    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
+  return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
+}
+
+// RouteLayer: pans map to keep current position centred. No marker — ego is an HTML overlay.
 function RouteLayer({
   coords,
   cumDist,
@@ -45,17 +56,15 @@ function RouteLayer({
   positionM: number | null;
 }) {
   const map = useMap();
-  const hasStartedRef = useRef(false);
 
-  // Compute current marker position
   const idx = positionM === null
     ? 0
     : Math.min(Math.max(bisectRight(cumDist, positionM) - 1, 0), coords.length - 1);
-  const markerPos = coords[idx];
-  const lat = markerPos?.[0];
-  const lng = markerPos?.[1];
+  const pos = coords[idx];
+  const lat = pos?.[0];
+  const lng = pos?.[1];
 
-  // Initial load: fit full route bounds
+  // Fit overview when route first loads.
   useEffect(() => {
     if (coords.length > 0) {
       map.fitBounds(coords, { animate: false });
@@ -63,33 +72,18 @@ function RouteLayer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coords.length]);
 
-  // Riding: follow position at fixed zoom
+  // Keep ego centred by panning the map — no animation; CSS rotation handles smoothness.
   useEffect(() => {
-    if (positionM === null || positionM === 0 || lat == null || lng == null) return;
-    hasStartedRef.current = true;
-    map.setView([lat, lng], RIDING_ZOOM, { animate: true, duration: 0.3 });
+    if (positionM === null || lat == null || lng == null) return;
+    map.setView([lat, lng], RIDING_ZOOM, { animate: false });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lat, lng]);
 
   return (
-    <>
-      <Polyline
-        positions={coords}
-        pathOptions={{ color: "#4B5563", weight: 2 }}
-      />
-      {markerPos && (
-        <CircleMarker
-          center={markerPos}
-          radius={6}
-          pathOptions={{
-            color: "#F59E0B",
-            fillColor: "#F59E0B",
-            fillOpacity: 1,
-            weight: 2,
-          }}
-        />
-      )}
-    </>
+    <Polyline
+      positions={coords}
+      pathOptions={{ color: "#FFF200", weight: 2 }}
+    />
   );
 }
 
@@ -97,19 +91,45 @@ export const MiniMap = memo(function MiniMap({
   coords,
   cumDist,
   positionM,
+  isDark,
 }: MiniMapProps) {
   const hasRoute = coords !== null && coords.length > 0 && cumDist !== null;
+  const tileUrl = isDark ? CARTO_DARK : CARTO_LIGHT;
+
+  // Bearing: heading from current position towards a lookahead point on the route.
+  // Used to rotate the map so the direction of travel always points up.
+  const bearingDeg = useMemo(() => {
+    if (!hasRoute || coords!.length < 2) return 0;
+    const posM = positionM ?? 0;
+    const curIdx = Math.min(
+      Math.max(bisectRight(cumDist!, posM) - 1, 0),
+      coords!.length - 1,
+    );
+    const aheadIdx = Math.min(
+      Math.max(bisectRight(cumDist!, posM + BEARING_LOOKAHEAD_M) - 1, curIdx + 1),
+      coords!.length - 1,
+    );
+    if (curIdx === aheadIdx) return 0;
+    return calcBearing(
+      coords![curIdx][0], coords![curIdx][1],
+      coords![aheadIdx][0], coords![aheadIdx][1],
+    );
+  }, [hasRoute, positionM, coords, cumDist]);
+
+  const showEgo = hasRoute && positionM !== null;
+
   return (
-    // Outer clip: keeps rounded corners clean after perspective transform
-    <div className="relative w-[160px] h-[160px] rounded-lg overflow-hidden bg-[#111111] shrink-0">
-      {/* Perspective tilt: bottom edge (near) wider, top (ahead) narrower */}
+    <div className="relative w-full h-full overflow-hidden bg-[var(--map-bg)]">
+
+      {/*
+        The map container is 150% of the visible area and centred via negative offsets.
+        This ensures tile coverage in all corners as the map rotates.
+        The entire block rotates around its own centre (= the visible area's centre),
+        so the rider's position — which the map always pans to centre — stays fixed on screen.
+      */}
       <div
-        style={{
-          width: "100%",
-          height: "100%",
-          transform: "perspective(500px) rotateX(20deg)",
-          transformOrigin: "50% 100%",
-        }}
+        className="absolute w-[150%] h-[150%] -top-[25%] -left-[25%] transition-transform duration-500 ease-out motion-reduce:transition-none"
+        style={{ transform: `rotate(${-bearingDeg}deg)`, transformOrigin: "50% 50%" }}
       >
         <MapContainer
           center={DEFAULT_CENTER}
@@ -122,19 +142,39 @@ export const MiniMap = memo(function MiniMap({
           doubleClickZoom={false}
           touchZoom={false}
         >
-          <TileLayer url={CARTO_DARK} attribution={ATTRIBUTION} />
+          <TileLayer key={tileUrl} url={tileUrl} attribution={ATTRIBUTION} />
           {hasRoute && (
             <RouteLayer
-              coords={coords}
-              cumDist={cumDist}
+              coords={coords!}
+              cumDist={cumDist!}
               positionM={positionM}
             />
           )}
         </MapContainer>
       </div>
+
+      {/* Ego marker: fixed at screen centre, outside the rotating layer. */}
+      {showEgo && (
+        <div
+          className="absolute inset-0 pointer-events-none z-[1000] flex items-center justify-center"
+          aria-hidden="true"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24">
+            {/* Arrowhead pointing up = direction of travel */}
+            <polygon
+              points="12,2 21,20 12,15 3,20"
+              fill="#E10600"
+              stroke="white"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+      )}
+
       {!hasRoute && (
-        <span className="absolute inset-0 flex items-center justify-center text-xs text-[#6B7280] pointer-events-none z-[1000]">
-          Keine Strecke
+        <span className="absolute inset-0 flex items-center justify-center text-[11px] font-condensed font-bold tracking-widest uppercase text-[var(--text-muted)] pointer-events-none z-[1000]">
+          KEINE STRECKE
         </span>
       )}
     </div>

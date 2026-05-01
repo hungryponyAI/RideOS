@@ -25,10 +25,59 @@ export interface RouteErrorMessage {
   message: string;
 }
 
+export interface ClickStatusMessage {
+  type: "click_status";
+  connected: boolean;
+}
+
+export interface KickrStatusMessage {
+  type: "kickr_status";
+  connected: boolean;
+}
+
+// --- Route library types ---
+
+export interface RouteLibraryEntry {
+  id: string;
+  name: string;
+  filename: string;
+  added_at: string;
+  distance_km: number;
+  elevation_gain_m: number;
+  elevation_loss_m: number;
+  elevation_thumbnail: number[];
+  best_time_s: number | null;
+  ride_count: number;
+}
+
+export interface RouteLibraryMessage {
+  type: "route_library";
+  routes: RouteLibraryEntry[];
+}
+
+export interface LoadSavedRouteMessage {
+  type: "load_saved_route";
+  route_id: string;
+}
+
+export interface DeleteRouteMessage {
+  type: "delete_route";
+  route_id: string;
+}
+
+export interface RenameRouteMessage {
+  type: "rename_route";
+  route_id: string;
+  name: string;
+}
+
 export type IncomingMessage =
   | TelemetryMessage
   | RouteDataMessage
-  | RouteErrorMessage;
+  | RouteErrorMessage
+  | ClickStatusMessage
+  | KickrStatusMessage
+  | RouteLibraryMessage;
 
 // ---------------------------------------------------------------------------
 // Outbound (UI → engine)
@@ -44,7 +93,20 @@ export interface LoadRouteMessage {
   path: string;
 }
 
-export type OutgoingMessage = GearShiftMessage | LoadRouteMessage;
+export interface AthleteSettingsMessage {
+  type: "athlete_settings";
+  weight_kg: number;
+  height_cm: number;
+  ftp_w: number;
+}
+
+export type OutgoingMessage =
+  | GearShiftMessage
+  | LoadRouteMessage
+  | AthleteSettingsMessage
+  | LoadSavedRouteMessage
+  | DeleteRouteMessage
+  | RenameRouteMessage;
 
 // ---------------------------------------------------------------------------
 // Convenience type for UI consumers: pre-mapped elevation-chart data

@@ -7,19 +7,27 @@ interface Props {
 }
 
 export const MetricDisplay = memo(function MetricDisplay({ value, unit, size }: Props) {
-  const valueClass = size === "display"
-    ? "text-[72px] font-bold leading-none"
-    : "text-[20px] font-normal leading-[1.4]";
-  const unitClass = size === "display"
-    ? "text-[20px] font-normal text-gray-500"
-    : "text-[12px] font-normal text-gray-500";
+  if (size === "display") {
+    return (
+      <div className="flex flex-col items-start leading-none">
+        <span className="text-[clamp(64px,8vw,120px)] font-data font-bold text-[var(--text)] tabular-nums leading-none">
+          {value}
+        </span>
+        <span className="text-[18px] font-condensed font-bold uppercase tracking-widest text-[var(--label-accent)] mt-1">
+          {unit}
+        </span>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex items-baseline gap-2">
-      <span className={`${valueClass} text-gray-50 tabular-nums`}>
+    <div className="flex flex-col items-start leading-none">
+      <span className="text-[28px] font-data font-bold text-[var(--text)] tabular-nums leading-none">
         {value}
       </span>
-      <span className={unitClass}>{unit}</span>
+      <span className="text-[11px] font-condensed font-bold uppercase tracking-widest text-[var(--text-muted)] mt-0.5">
+        {unit}
+      </span>
     </div>
   );
 });

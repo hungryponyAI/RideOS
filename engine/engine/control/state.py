@@ -22,3 +22,6 @@ class RideState:
     last_speed_kmh: Optional[float] = None
     last_power_w: Optional[float] = None
     last_cadence_rpm: Optional[float] = None
+    athlete_weight_kg: float = 75.0
+    athlete_height_cm: float = 180.0
+    athlete_ftp_w: float = 200.0
