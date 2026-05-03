@@ -9,7 +9,7 @@ import json
 import logging
 import re
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -33,6 +33,11 @@ class RouteEntry:
     elevation_thumbnail: List[float]
     best_time_s: Optional[int]
     ride_count: int
+    # Strava-sourced fields — None for locally uploaded GPX routes
+    strava_id: Optional[str] = None
+    sport_type: Optional[str] = None
+    activity_date: Optional[str] = None
+    moving_time_s: Optional[int] = None
 
     @classmethod
     def from_dict(cls, d: dict) -> "RouteEntry":
@@ -47,6 +52,10 @@ class RouteEntry:
             elevation_thumbnail=d.get("elevation_thumbnail", []),
             best_time_s=d.get("best_time_s"),
             ride_count=d.get("ride_count", 0),
+            strava_id=d.get("strava_id"),
+            sport_type=d.get("sport_type"),
+            activity_date=d.get("activity_date"),
+            moving_time_s=d.get("moving_time_s"),
         )
 
 
@@ -122,6 +131,45 @@ class RouteLibrary:
         self._routes[route_id] = entry
         self._save()
         _log.info("Library: added %r (%s, %.1f km)", name, route_id, entry.distance_km)
+        return entry
+
+    def add_strava_route(
+        self,
+        name: str,
+        gpx_content: str,
+        route: RouteData,
+        strava_id: str,
+        sport_type: Optional[str] = None,
+        activity_date: Optional[str] = None,
+        moving_time_s: Optional[int] = None,
+    ) -> RouteEntry:
+        route_id = uuid.uuid4().hex[:8]
+        safe = re.sub(r"[^\w\-]", "_", name)[:40]
+        filename = f"{safe}_{route_id}.gpx"
+        (self._dir / filename).write_text(gpx_content, encoding="utf-8")
+        stats = _compute_stats(route)
+        entry = RouteEntry(
+            id=route_id,
+            name=name,
+            filename=filename,
+            added_at=datetime.now(timezone.utc).isoformat(),
+            distance_km=stats["distance_km"],
+            elevation_gain_m=stats["elevation_gain_m"],
+            elevation_loss_m=stats["elevation_loss_m"],
+            elevation_thumbnail=stats["elevation_thumbnail"],
+            best_time_s=None,
+            ride_count=0,
+            strava_id=strava_id,
+            sport_type=sport_type,
+            activity_date=activity_date,
+            moving_time_s=moving_time_s,
+        )
+        self._routes[route_id] = entry
+        self._save()
+        _log.info(
+            "Library: added Strava route %r (%s, strava_id=%s, %.1f km)",
+            name, route_id, strava_id, entry.distance_km,
+        )
         return entry
 
     def delete_route(self, route_id: str) -> bool:

@@ -9,6 +9,12 @@ import type {
 
 const WS_URL = "ws://localhost:8765";
 
+export interface StravaStatus {
+  connected: boolean;
+  athleteName: string | null;
+  syncing: boolean;
+}
+
 export function useTelemetry() {
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -25,8 +31,13 @@ export function useTelemetry() {
   const [clickConnected, setClickConnected] = useState<boolean>(false);
   const [kickrConnected, setKickrConnected] = useState<boolean>(false);
   const [routeLibrary, setRouteLibrary] = useState<RouteLibraryEntry[]>([]);
+  const [stravaStatus, setStravaStatus] = useState<StravaStatus | null>(null);
+  const [stravaAuthUrl, setStravaAuthUrl] = useState<string | null>(null);
+  const [stravaError, setStravaError] = useState<string | null>(null);
 
   const clearRouteError = useCallback(() => setRouteError(null), []);
+  const clearStravaAuthUrl = useCallback(() => setStravaAuthUrl(null), []);
+  const clearStravaError = useCallback(() => setStravaError(null), []);
 
   const connect = useCallback(() => {
     const ws = new WebSocket(WS_URL);
@@ -91,6 +102,22 @@ export function useTelemetry() {
           setRouteLibrary(msg.routes);
           break;
         }
+        case "strava_status": {
+          setStravaStatus({
+            connected: msg.connected,
+            athleteName: msg.athlete_name,
+            syncing: msg.syncing,
+          });
+          break;
+        }
+        case "strava_auth_url": {
+          setStravaAuthUrl(msg.url);
+          break;
+        }
+        case "strava_error": {
+          setStravaError(msg.message);
+          break;
+        }
         default:
           // Unknown message type — ignore silently to stay forward-compatible.
           break;
@@ -133,5 +160,10 @@ export function useTelemetry() {
     clickConnected,
     kickrConnected,
     routeLibrary,
+    stravaStatus,
+    stravaAuthUrl,
+    clearStravaAuthUrl,
+    stravaError,
+    clearStravaError,
   };
 }

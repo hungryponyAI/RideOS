@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTelemetry } from "./hooks/useTelemetry";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { MetricDisplay } from "./components/MetricDisplay";
@@ -54,10 +54,57 @@ function ThemeToggle({ isDark, onToggle }: { isDark: boolean; onToggle: () => vo
   );
 }
 
+function PlayPauseOverlay({
+  isPaused,
+  visible,
+  onToggle,
+}: {
+  isPaused: boolean;
+  visible: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      className={`fixed inset-0 z-[1500] flex items-center justify-center transition-opacity duration-300 ${
+        visible ? "opacity-100" : "opacity-0 pointer-events-none"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label={isPaused ? "Fahrt starten" : "Fahrt pausieren"}
+        className="flex flex-col items-center gap-2 cursor-pointer group"
+      >
+        <div className="w-20 h-20 rounded-full bg-black/60 border-2 border-white/40 flex items-center justify-center text-white group-hover:bg-black/80 group-hover:border-white/70 transition-all duration-150">
+          {isPaused ? (
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+          ) : (
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <rect x="6" y="4" width="4" height="16" rx="1" />
+              <rect x="14" y="4" width="4" height="16" rx="1" />
+            </svg>
+          )}
+        </div>
+        <span className="text-white/80 font-condensed font-bold text-[10px] tracking-widest uppercase">
+          {isPaused ? "STARTEN" : "PAUSE"}
+        </span>
+      </button>
+    </div>
+  );
+}
+
 function App() {
-  const { telemetry: t, status, sendMessage, routeRef, routeLoaded, routeError, clearRouteError, clickConnected, kickrConnected, routeLibrary } =
-    useTelemetry();
+  const {
+    telemetry: t, status, sendMessage, routeRef, routeLoaded, routeError, clearRouteError,
+    clickConnected, kickrConnected, routeLibrary,
+    stravaStatus, stravaAuthUrl, clearStravaAuthUrl, stravaError, clearStravaError,
+  } = useTelemetry();
   const [started, setStarted] = useState<boolean>(false);
+  const [isPaused, setIsPaused] = useState<boolean>(true);
+  const [showControls, setShowControls] = useState<boolean>(true);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isDark, setIsDark] = useState<boolean>(() => {
     return localStorage.getItem('rideos-theme') === 'dark';
   });
@@ -65,6 +112,14 @@ function App() {
   const prevStatusRef = useRef(status);
 
   const toggleTheme = () => setIsDark(d => !d);
+
+  const togglePause = useCallback(() => {
+    setIsPaused(p => {
+      const next = !p;
+      sendMessage({ type: "set_paused", paused: next });
+      return next;
+    });
+  }, [sendMessage]);
 
   useEffect(() => {
     if (isDark) {
@@ -81,11 +136,14 @@ function App() {
         sendMessage({ type: "gear_shift", direction: "down" });
       } else if (e.key === "k" || e.key === "K") {
         sendMessage({ type: "gear_shift", direction: "up" });
+      } else if (e.key === " " && started) {
+        e.preventDefault();
+        togglePause();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [sendMessage]);
+  }, [sendMessage, started, togglePause]);
 
   useEffect(() => {
     if (routeError) {
@@ -101,8 +159,25 @@ function App() {
     const wasActive = prev === "connected" || prev === "live";
     if (nowActive && !wasActive) {
       sendMessage({ type: "athlete_settings", ...loadAthleteSettings() });
+      sendMessage({ type: "set_paused", paused: true });
     }
   }, [status, sendMessage]);
+
+  // Show controls overlay on mouse movement; hide after 2 s of inactivity.
+  useEffect(() => {
+    if (!started) return;
+    const onMove = () => {
+      setShowControls(true);
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = setTimeout(() => setShowControls(false), 2000);
+    };
+    window.addEventListener("mousemove", onMove);
+    hideTimerRef.current = setTimeout(() => setShowControls(false), 2000);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    };
+  }, [started]);
 
   const settingsPanel = (
     <SettingsPanel
@@ -123,6 +198,11 @@ function App() {
           sendMessage={sendMessage}
           routeLibrary={routeLibrary}
           athleteSettings={loadAthleteSettings()}
+          stravaStatus={stravaStatus}
+          stravaAuthUrl={stravaAuthUrl}
+          onStravaAuthUrlConsumed={clearStravaAuthUrl}
+          stravaError={stravaError}
+          onStravaErrorConsumed={clearStravaError}
         />
         <SettingsButton onClick={() => setIsSettingsOpen(o => !o)} />
         <ThemeToggle isDark={isDark} onToggle={toggleTheme} />
@@ -172,6 +252,10 @@ function App() {
             cumDist={stored?.cumDist ?? null}
             positionM={positionM}
             isDark={isDark}
+            ghostLat={t?.ghost_lat ?? null}
+            ghostLng={t?.ghost_lng ?? null}
+            ghostBearingDeg={t?.ghost_bearing_deg ?? null}
+            ghostTimeGapS={t?.ghost_time_gap_s ?? null}
           />
         </div>
       </div>
@@ -181,6 +265,7 @@ function App() {
         <ElevationProfile data={stored?.elevationChart ?? null} positionM={positionM} />
       </div>
 
+      <PlayPauseOverlay isPaused={isPaused} visible={showControls} onToggle={togglePause} />
       <SettingsButton onClick={() => setIsSettingsOpen(o => !o)} />
       <ThemeToggle isDark={isDark} onToggle={toggleTheme} />
       {settingsPanel}

@@ -30,6 +30,8 @@ from engine.gears.engine import GearEngine
 from engine.input.click import run_click_shifter
 from engine.input.keyboard import KeyboardShifter
 from engine.route.library import RouteLibrary
+from engine.strava.auth import StravaAuth
+from engine.strava.importer import StravaImporter
 from engine.ws.server import broadcast_loop, RouteContext
 
 _log = logging.getLogger("rideos.engine")
@@ -98,13 +100,26 @@ async def main() -> int:
     state = RideState(gear_engine=gear_engine, real_grade_percent=DEFAULT_GRADE)
 
     _ROUTES_DIR = Path(__file__).parent.parent / "routes"
+    _CONFIG_DIR = Path(__file__).parent.parent / "config"
     library = RouteLibrary(_ROUTES_DIR)
+
+    strava_auth = StravaAuth(
+        config_path=_CONFIG_DIR / "strava.json",
+        tokens_path=_ROUTES_DIR / "strava_tokens.json",
+    )
+    strava_importer = StravaImporter(
+        library=library,
+        streams_dir=_ROUTES_DIR / "streams",
+    )
 
     route_ctx = RouteContext(
         state=state,
         broadcast_queue=broadcast_queue,
         stop_event=stop_event,
         library=library,
+        strava_auth=strava_auth,
+        strava_importer=strava_importer,
+        streams_dir=_ROUTES_DIR / "streams",
     )
 
     shifter = KeyboardShifter(gear_engine)
@@ -149,6 +164,13 @@ async def main() -> int:
             state.last_speed_kmh = reading.speed_kmh
             state.last_power_w = reading.power_watts
             state.last_cadence_rpm = reading.cadence_rpm
+
+            rider_pos = route_ctx.tracker.position_m if route_ctx.tracker is not None else 0.0
+            ghost_snap = None
+            if route_ctx.ghost_tracker is not None:
+                route_ctx.ghost_tracker.tick(state.paused)
+                ghost_snap = route_ctx.ghost_tracker.snapshot(rider_pos)
+
             snapshot = {
                 "type": "telemetry",
                 "speed_kmh": reading.speed_kmh,
@@ -157,8 +179,12 @@ async def main() -> int:
                 "gear": state.gear_engine.current_gear,
                 "real_grade_pct": state.real_grade_percent,
                 "effective_grade_pct": state.gear_engine.effective_grade(state.real_grade_percent),
-                "position_m": (route_ctx.tracker.position_m if route_ctx.tracker is not None else None),
+                "position_m": rider_pos if route_ctx.tracker is not None else None,
                 "route_loaded": route_ctx.tracker is not None,
+                "ghost_lat": ghost_snap.lat if ghost_snap is not None else None,
+                "ghost_lng": ghost_snap.lng if ghost_snap is not None else None,
+                "ghost_bearing_deg": ghost_snap.bearing_deg if ghost_snap is not None else None,
+                "ghost_time_gap_s": ghost_snap.time_gap_s if ghost_snap is not None else None,
             }
             try:
                 broadcast_queue.put_nowait(snapshot)

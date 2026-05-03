@@ -10,3 +10,4 @@ Format: `[YYYY-MM-DD] Decision — Reason`
 [2026-04-12] Local engine (Node.js noble OR Python bleak) handles all BLE — browser alone cannot reliably drive FTMS
 [2026-04-12] LLM layer is optional and isolated — must never control the trainer directly; control loop stays deterministic
 [2026-04-12] React + Tailwind for frontend, WebSockets to local engine — standard pairing, matches cockpit UI requirements
+[2026-04-30] Zwift Click v2 uses plain unencrypted protocol, not ECDH — activation = write RideOn\x02\x03 + \x00\x08\x00 + \x00\x08\x10 to SYNC_RX; buttons arrive as 7-byte bitmask frames (0x23 0x08 header, byte[3] bit-5 = plus, bit-1 = minus); keepalive = write \x00\x08\x10 every 5s. Hardware confirmed working 2026-04-30.

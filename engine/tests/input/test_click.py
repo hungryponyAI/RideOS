@@ -1,22 +1,18 @@
-"""Unit tests for ClickShifter — all RED until Task 2 creates the implementation.
+"""Unit tests for ClickShifter.
 
-Mirrors the style of test_keyboard.py: injectable clock, fake BLE objects,
-no real BLE hardware required.
+Button byte fixtures use the v2 bitmask format:
+  V2_PLUS_PRESS   = bytes([0x23, 0x08, 0xFF, 0xDF, 0xFF, 0xFF, 0x0F])  # byte[3] bit-5 cleared
+  V2_MINUS_PRESS  = bytes([0x23, 0x08, 0xFF, 0xFD, 0xFF, 0xFF, 0x0F])  # byte[3] bit-1 cleared
+  V2_IDLE         = bytes([0x23, 0x08, 0xFF, 0xFF, 0xFF, 0xFF, 0x0F])  # no button pressed
 
-Byte fixtures (from docs/click-ble-spike.md + RESEARCH.md):
-  PLUS_PRESS    = bytes([0x37, 0x08, 0x00])  # msg-type 0x37, tag 0x08 (field 1=plus),  value 0=pressed
-  PLUS_RELEASE  = bytes([0x37, 0x08, 0x01])  # value 1=released
-  MINUS_PRESS   = bytes([0x37, 0x10, 0x00])  # tag 0x10 (field 2=minus), value 0=pressed
-  MINUS_RELEASE = bytes([0x37, 0x10, 0x01])
-  IDLE_FRAME    = bytes([0x15, 0x00])         # first byte != 0x37 → silently ignored
-  BATTERY_FRAME = bytes([0x19, 0x64])         # another non-button message type
+V1-style fixtures are also tested to confirm the legacy path still works:
+  PLUS_PRESS    = bytes([0x37, 0x08, 0x00])
+  MINUS_PRESS   = bytes([0x37, 0x10, 0x00])
 """
 import asyncio
 from contextlib import asynccontextmanager
 
 import pytest
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, generate_private_key
 
 from engine.gears.engine import GearEngine
 from engine.input.click import (
@@ -30,45 +26,31 @@ from engine.input.click import (
 # ---------------------------------------------------------------------------
 
 def _make_handshake_connect(on_main_notify_registered=None):
-    """Return a fake_connect context manager that simulates the ECDH handshake.
+    """Return a fake_connect context manager for testing.
 
-    Handles the v1/v2 two-UUID subscribe pattern:
-      start_notify(ASYNC)    ← handshake listener 1
-      start_notify(SYNC_TX)  ← handshake listener 2
-      write_gatt_char        ← triggers handshake response on ASYNC
-      stop_notify × 2
-      start_notify(ASYNC)    ← main notify (on_main_notify_registered fires here)
+    Accepts the v2 activation writes (write_gatt_char calls) without response.
+    Fires on_main_notify_registered when start_notify(ASYNC, on_notify) is called —
+    that is the first start_notify OUTSIDE _activate (after the brief handshake listener).
     """
-    dev_key = generate_private_key(SECP256R1())
-    dev_pub = dev_key.public_key().public_bytes(
-        serialization.Encoding.X962,
-        serialization.PublicFormat.UncompressedPoint,
-    )
-    # Response: RIDE_ON + two control bytes + 64 raw key bytes (strip leading 0x04)
-    handshake_response = RIDE_ON + bytes([0x01, 0x03]) + dev_pub[1:]
-
     @asynccontextmanager
     async def _connect(device):
         class _Stub:
             def __init__(self):
-                self._handlers = {}
-                self._start_notify_count = 0
+                self._notify_count = 0
 
             async def write_gatt_char(self, uuid, data, *a, **k):
-                # Deliver handshake response to whichever handler is registered first
-                handler = self._handlers.get(ZWIFT_ASYNC_CHAR_UUID)
-                if handler:
-                    handler(None, handshake_response)
+                pass  # accept all writes (activation + keepalive)
 
             async def start_notify(self, uuid, handler, *a, **k):
-                self._handlers[uuid] = handler
-                self._start_notify_count += 1
-                # Handshake subscribes ASYNC + SYNC_TX (2 calls), then main notify (3rd call)
-                if self._start_notify_count == 3 and on_main_notify_registered:
+                self._notify_count += 1
+                # _activate subscribes ASYNC once (handshake listener), then
+                # connect_and_listen subscribes ASYNC again (main on_notify).
+                # Fire the callback on the 2nd start_notify call.
+                if self._notify_count == 2 and on_main_notify_registered:
                     on_main_notify_registered()
 
             async def stop_notify(self, uuid, *a, **k):
-                self._handlers.pop(uuid, None)
+                pass
 
         yield _Stub()
 
@@ -92,12 +74,17 @@ class _FakeClock:
         return self._times[-1]
 
 
-PLUS_PRESS    = bytes([0x37, 0x08, 0x00])
-PLUS_RELEASE  = bytes([0x37, 0x08, 0x01])
-MINUS_PRESS   = bytes([0x37, 0x10, 0x00])
-MINUS_RELEASE = bytes([0x37, 0x10, 0x01])
-IDLE_FRAME    = bytes([0x15, 0x00])
-BATTERY_FRAME = bytes([0x19, 0x64])
+# V2 bitmask frames
+PLUS_PRESS    = bytes([0x23, 0x08, 0xFF, 0xDF, 0xFF, 0xFF, 0x0F])  # byte[3] = 0xDF
+PLUS_RELEASE  = bytes([0x23, 0x08, 0xFF, 0xFF, 0xFF, 0xFF, 0x0F])  # idle
+MINUS_PRESS   = bytes([0x23, 0x08, 0xFF, 0xFD, 0xFF, 0xFF, 0x0F])  # byte[3] = 0xFD
+MINUS_RELEASE = bytes([0x23, 0x08, 0xFF, 0xFF, 0xFF, 0xFF, 0x0F])  # idle
+IDLE_FRAME    = bytes([0x23, 0x08, 0xFF, 0xFF, 0xFF, 0xFF, 0x0F])
+BATTERY_FRAME = bytes([0x19, 0x64])  # non-v2-button frame, should be ignored
+
+# V1 legacy frames (for backward-compat path test)
+V1_PLUS_PRESS  = bytes([0x37, 0x08, 0x00])
+V1_MINUS_PRESS = bytes([0x37, 0x10, 0x00])
 
 
 def _make(times):
@@ -141,29 +128,39 @@ def test_debounce_allows_after_window():
 
 
 def test_release_not_dispatched():
-    """A plus-RELEASE frame alone must not shift (value=1 = released)."""
+    """An idle/release frame alone must not shift."""
     gears, sh = _make([0.0])
     sh.on_notify(None, PLUS_RELEASE)
-    assert gears.current_gear == 5  # release alone never shifts
+    assert gears.current_gear == 5
 
 
 def test_unknown_message_type_ignored():
-    """Frames with first byte != 0x37 must be silently ignored."""
+    """Frames that are not v2-button and not 0x37 must be silently ignored."""
     gears, sh = _make([0.0, 0.0])
-    sh.on_notify(None, IDLE_FRAME)
-    sh.on_notify(None, BATTERY_FRAME)
+    sh.on_notify(None, IDLE_FRAME)    # v2 idle (no button pressed)
+    sh.on_notify(None, BATTERY_FRAME)  # non-button frame
     assert gears.current_gear == 5
 
 
 def test_press_then_release_one_shift():
-    """A press frame followed by a release frame within 30 ms → exactly one shift.
-
-    The press triggers the shift; the release frame must NOT also shift.
-    """
+    """A press frame followed by an idle/release frame within 30 ms → exactly one shift."""
     gears, sh = _make([0.00, 0.03])
     sh.on_notify(None, PLUS_PRESS)
-    sh.on_notify(None, PLUS_RELEASE)
-    assert gears.current_gear == 6  # press shifts; release does not add
+    sh.on_notify(None, PLUS_RELEASE)  # idle frame — must not shift
+    assert gears.current_gear == 6
+
+
+def test_v1_plus_button_still_works():
+    """Legacy v1 0x37 frame still dispatches when no AES key is set (unencrypted v1)."""
+    gears, sh = _make([0.0])
+    sh.on_notify(None, V1_PLUS_PRESS)
+    assert gears.current_gear == 6
+
+
+def test_v1_minus_button_still_works():
+    gears, sh = _make([0.0])
+    sh.on_notify(None, V1_MINUS_PRESS)
+    assert gears.current_gear == 4
 
 
 # ---------------------------------------------------------------------------
@@ -172,14 +169,7 @@ def test_press_then_release_one_shift():
 
 @pytest.mark.asyncio
 async def test_connection_failure_retries():
-    """Scanner returns None first, then a fake device.
-
-    run_click_shifter (via ClickShifter.connect_and_listen) must:
-    - log a warning on the first None result (no assertion; just must not raise)
-    - retry and succeed on the second call
-    - stop cleanly when stop_event is set
-    - never raise an exception out of the coroutine
-    """
+    """Scanner returns None first, then a fake device; must retry and stop cleanly."""
     gears = GearEngine()
     stop_event = asyncio.Event()
     attempts = {"n": 0}
@@ -187,15 +177,13 @@ async def test_connection_failure_retries():
     async def fake_scanner(*args, **kwargs):
         attempts["n"] += 1
         if attempts["n"] == 1:
-            return None  # first call: simulate not found
-        # second call: signal stop and return a truthy stand-in
+            return None
         stop_event.set()
         return object()
 
     fake_connect = _make_handshake_connect()
 
     sh = ClickShifter(gears)
-    # Bound the test so it cannot hang.
     await asyncio.wait_for(
         sh.connect_and_listen(
             scanner=fake_scanner,
@@ -205,7 +193,7 @@ async def test_connection_failure_retries():
         ),
         timeout=2.0,
     )
-    assert attempts["n"] >= 2  # confirmed: retried after first None
+    assert attempts["n"] >= 2
 
 
 # ---------------------------------------------------------------------------
@@ -221,17 +209,19 @@ async def test_state_change_called_on_connect():
     async def fake_scanner(*, timeout):
         return object()
 
-    # stop_event set on the 2nd start_notify (main notify phase, after handshake)
     fake_connect = _make_handshake_connect(on_main_notify_registered=stop_event.set)
 
     sh = ClickShifter(gears, on_state_change=states.append)
     await asyncio.wait_for(
-        sh.connect_and_listen(scanner=fake_scanner, connect=fake_connect, stop_event=stop_event, retry_backoff=0.01),
+        sh.connect_and_listen(
+            scanner=fake_scanner, connect=fake_connect,
+            stop_event=stop_event, retry_backoff=0.01,
+        ),
         timeout=2.0,
     )
-    assert True in states     # connect was reported
-    assert False in states    # disconnect was reported (finally branch)
-    assert states.index(True) < states.index(False)  # ordering
+    assert True in states
+    assert False in states
+    assert states.index(True) < states.index(False)
 
 
 @pytest.mark.asyncio
@@ -252,15 +242,17 @@ async def test_state_change_called_on_disconnect_via_bleak_error():
 
     sh = ClickShifter(gears, on_state_change=states.append)
     await asyncio.wait_for(
-        sh.connect_and_listen(scanner=fake_scanner, connect=fake_connect, stop_event=stop_event, retry_backoff=0.01),
+        sh.connect_and_listen(
+            scanner=fake_scanner, connect=fake_connect,
+            stop_event=stop_event, retry_backoff=0.01,
+        ),
         timeout=2.0,
     )
-    assert states == [] or states[-1] is False  # never claimed connected, or last state is False
+    assert states == [] or states[-1] is False
 
 
 @pytest.mark.asyncio
 async def test_state_change_callback_optional():
-    # No callback → no crash. Same fast-exit shape as the connect test above.
     gears = GearEngine()
     stop_event = asyncio.Event()
 
@@ -271,7 +263,10 @@ async def test_state_change_callback_optional():
 
     sh = ClickShifter(gears)  # no on_state_change
     await asyncio.wait_for(
-        sh.connect_and_listen(scanner=fake_scanner, connect=fake_connect, stop_event=stop_event, retry_backoff=0.01),
+        sh.connect_and_listen(
+            scanner=fake_scanner, connect=fake_connect,
+            stop_event=stop_event, retry_backoff=0.01,
+        ),
         timeout=2.0,
     )
     # Reaches here without exception = pass.

@@ -25,3 +25,4 @@ class RideState:
     athlete_weight_kg: float = 75.0
     athlete_height_cm: float = 180.0
     athlete_ftp_w: float = 200.0
+    paused: bool = True  # starts paused; UI sends set_paused:false on play

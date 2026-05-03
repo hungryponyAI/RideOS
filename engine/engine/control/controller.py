@@ -130,7 +130,7 @@ async def run_control_loop(
     last_sent_grade: Optional[float] = None
     last_write_t: float = 0.0
     while not stop_event.is_set():
-        grade = state.gear_engine.effective_grade(state.real_grade_percent)
+        grade = 0.0 if state.paused else state.gear_engine.effective_grade(state.real_grade_percent)
         crr = 0.004
         cw = _estimate_cw(state.athlete_weight_kg, state.athlete_height_cm)
         now = clock()

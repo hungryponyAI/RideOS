@@ -48,6 +48,11 @@ export interface RouteLibraryEntry {
   elevation_thumbnail: number[];
   best_time_s: number | null;
   ride_count: number;
+  // Strava-sourced fields (null for locally uploaded GPX routes)
+  strava_id: string | null;
+  sport_type: string | null;
+  activity_date: string | null;
+  moving_time_s: number | null;
 }
 
 export interface RouteLibraryMessage {
@@ -71,13 +76,35 @@ export interface RenameRouteMessage {
   name: string;
 }
 
+// --- Strava types ---
+
+export interface StravaStatusMessage {
+  type: "strava_status";
+  connected: boolean;
+  athlete_name: string | null;
+  syncing: boolean;
+}
+
+export interface StravaAuthUrlMessage {
+  type: "strava_auth_url";
+  url: string;
+}
+
+export interface StravaErrorMessage {
+  type: "strava_error";
+  message: string;
+}
+
 export type IncomingMessage =
   | TelemetryMessage
   | RouteDataMessage
   | RouteErrorMessage
   | ClickStatusMessage
   | KickrStatusMessage
-  | RouteLibraryMessage;
+  | RouteLibraryMessage
+  | StravaStatusMessage
+  | StravaAuthUrlMessage
+  | StravaErrorMessage;
 
 // ---------------------------------------------------------------------------
 // Outbound (UI → engine)
@@ -100,13 +127,20 @@ export interface AthleteSettingsMessage {
   ftp_w: number;
 }
 
+export interface SetGhostMessage {
+  type: "set_ghost";
+  mode: "strava" | "estimated" | "none";
+  strava_id?: string;
+}
+
 export type OutgoingMessage =
   | GearShiftMessage
   | LoadRouteMessage
   | AthleteSettingsMessage
   | LoadSavedRouteMessage
   | DeleteRouteMessage
-  | RenameRouteMessage;
+  | RenameRouteMessage
+  | SetGhostMessage;
 
 // ---------------------------------------------------------------------------
 // Convenience type for UI consumers: pre-mapped elevation-chart data

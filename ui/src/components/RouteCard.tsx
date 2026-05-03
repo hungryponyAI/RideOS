@@ -8,6 +8,7 @@ interface Props {
   onDelete: (routeId: string) => void;
   onRename: (routeId: string, name: string) => void;
   athleteSettings: AthleteSettings;
+  isSelected?: boolean;
 }
 
 function formatTime(seconds: number): string {
@@ -61,7 +62,21 @@ function MiniProfile({ thumbnail }: { thumbnail: number[] }) {
   );
 }
 
-export const RouteCard = memo(function RouteCard({ route, onLoad, onDelete, onRename, athleteSettings }: Props) {
+function StravaBadge() {
+  return (
+    <span
+      title="Strava-Aktivität"
+      className="inline-flex items-center gap-0.5 text-[#FC4C02] shrink-0"
+      aria-label="Strava"
+    >
+      <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
+      </svg>
+    </span>
+  );
+}
+
+export const RouteCard = memo(function RouteCard({ route, onLoad, onDelete, onRename, athleteSettings, isSelected }: Props) {
   const [editing, setEditing] = useState(false);
   const [nameVal, setNameVal] = useState(route.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -82,7 +97,7 @@ export const RouteCard = memo(function RouteCard({ route, onLoad, onDelete, onRe
   );
 
   return (
-    <div className="flex flex-col bg-[var(--surface)] border border-[var(--border)] overflow-hidden cursor-pointer group hover:border-[#FFF200] transition-colors duration-150">
+    <div className={`flex flex-col bg-[var(--surface)] border overflow-hidden cursor-pointer group transition-colors duration-150 ${isSelected ? "border-[#FFF200]" : "border-[var(--border)] hover:border-[#FFF200]"}`}>
       {/* Mini elevation profile */}
       <div className="h-[48px] overflow-hidden shrink-0 border-b border-[var(--border)]" onClick={() => onLoad(route.id)}>
         <MiniProfile thumbnail={route.elevation_thumbnail} />
@@ -91,7 +106,7 @@ export const RouteCard = memo(function RouteCard({ route, onLoad, onDelete, onRe
       {/* Content row */}
       <div className="flex items-start gap-2 px-3 py-2">
         <div className="flex-1 min-w-0 flex flex-col gap-1" onClick={() => !editing && onLoad(route.id)}>
-          {/* Name */}
+          {/* Name row with optional Strava badge */}
           {editing ? (
             <input
               ref={inputRef}
@@ -103,13 +118,16 @@ export const RouteCard = memo(function RouteCard({ route, onLoad, onDelete, onRe
               className="w-full bg-[var(--bg)] border border-[#FFF200] text-[var(--text)] font-condensed font-bold text-[12px] tracking-wide px-1 py-0 focus:outline-none"
             />
           ) : (
-            <span
-              className="text-[12px] font-condensed font-bold text-[var(--text)] leading-tight truncate cursor-pointer"
-              onDoubleClick={e => { e.stopPropagation(); setEditing(true); }}
-              title={route.name}
-            >
-              {route.name}
-            </span>
+            <div className="flex items-center gap-1 min-w-0">
+              {route.strava_id && <StravaBadge />}
+              <span
+                className="text-[12px] font-condensed font-bold text-[var(--text)] leading-tight truncate cursor-pointer"
+                onDoubleClick={e => { e.stopPropagation(); setEditing(true); }}
+                title={route.name}
+              >
+                {route.name}
+              </span>
+            </div>
           )}
 
           {/* Stats row */}

@@ -1,17 +1,19 @@
 """Zwift Click BLE shifter — runs as a sibling asyncio.Task alongside KeyboardShifter.
 
-Hardware-confirmed constants (v1 from docs/click-ble-spike.md, v2 from live nRF Connect):
-  - ASYNC char (NOTIFY):    00000002-19ca-4651-86e5-fa29dcdd09d1  (both v1 and v2)
-  - SYNC_RX char (WRITE):   00000003-19ca-4651-86e5-fa29dcdd09d1  (both)
-  - SYNC_TX char (INDICATE): 00000004-19ca-4651-86e5-fa29dcdd09d1 (v2 only — handshake response)
-  - v1 device type byte: 0x09, v2 device type byte: 0x0b (manufacturer ID 0x094A for both)
-  - v2 advertises short service UUID FC82 in addition to the custom long-form UUID
+Hardware-confirmed constants:
+  - ASYNC char (NOTIFY):    00000002-19ca-4651-86e5-fa29dcdd09d1
+  - SYNC_RX char (WRITE):   00000003-19ca-4651-86e5-fa29dcdd09d1
+  - SYNC_TX char (INDICATE): 00000004-19ca-4651-86e5-fa29dcdd09d1  (v1 only)
+  - v1 device type byte: 0x09, v2 device type byte: 0x0B
+  - v2 advertises short service UUID FC82
+
+V2 protocol: unencrypted, no ECDH. Activation = three writes to SYNC_RX.
+Button events arrive as 7-byte bitmask frames on ASYNC (see V2_BUTTON_HEADER).
+
+V1 protocol: RideOn ECDH handshake + AES-CCM encrypted 0x37 frames.
 
 BLE callback pitfall: on_notify MUST be plain def, never async def.
-Gear state pitfall: both keyboard and Click run on the same asyncio loop — no
-  run_in_executor for notify callbacks.
-Single-owner rule: ClickShifter owns its own BleakClient; it never imports or
-  shares the KICKR's BleakClient.
+Single-owner rule: ClickShifter owns its BleakClient; never shares the KICKR's client.
 """
 from __future__ import annotations
 
@@ -30,26 +32,40 @@ if TYPE_CHECKING:
 _log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Hardware-confirmed constants (docs/click-ble-spike.md)
+# Shared constants
 # ---------------------------------------------------------------------------
 
 ZWIFT_CUSTOM_SERVICE_UUID  = "00000001-19ca-4651-86e5-fa29dcdd09d1"
 ZWIFT_ASYNC_CHAR_UUID      = "00000002-19ca-4651-86e5-fa29dcdd09d1"
 ZWIFT_SYNC_RX_CHAR_UUID    = "00000003-19ca-4651-86e5-fa29dcdd09d1"
-ZWIFT_SYNC_TX_CHAR_UUID    = "00000004-19ca-4651-86e5-fa29dcdd09d1"  # v2: INDICATE, handshake response
+ZWIFT_SYNC_TX_CHAR_UUID    = "00000004-19ca-4651-86e5-fa29dcdd09d1"  # v1 only
 ZWIFT_MANUFACTURER_ID      = 0x094A
-CLICK_DEVICE_TYPE_BYTES    = {0x09, 0x0B}  # 0x09 = v1 Click, 0x0B = v2 Click
-ZWIFT_FC82_SERVICE_UUID    = "0000fc82-0000-1000-8000-00805f9b34fb"  # v2 advertised service
-CLICK_NOTIFY_MSG_TYPE     = 0x37      # decimal 55 — button event message type
-PLUS_FIELD_TAG            = 0x08      # protobuf tag for field 1 (key '1' = plus)
-MINUS_FIELD_TAG           = 0x10      # protobuf tag for field 2 (key '2' = minus)
-BUTTON_VALUE_PRESSED      = 0x00
-BUTTON_VALUE_RELEASED     = 0x01
-RIDE_ON                   = b"RideOn"
-REQUEST_START             = bytes([1, 2])  # ECDH handshake prefix after RIDE_ON
-HANDSHAKE_TIMEOUT_S       = 5.0           # seconds to wait for Click's key response
-DEFAULT_SCAN_TIMEOUT_S    = 30.0
-DEFAULT_RETRY_BACKOFF_S   = 2.0
+CLICK_DEVICE_TYPE_BYTES    = {0x09, 0x0B}
+ZWIFT_FC82_SERVICE_UUID    = "0000fc82-0000-1000-8000-00805f9b34fb"
+
+# V1 protocol constants (ECDH + AES-CCM encrypted 0x37 frames)
+RIDE_ON                    = b"RideOn"
+CLICK_NOTIFY_MSG_TYPE      = 0x37
+PLUS_FIELD_TAG             = 0x08
+MINUS_FIELD_TAG            = 0x10
+BUTTON_VALUE_PRESSED       = 0x00
+BUTTON_VALUE_RELEASED      = 0x01
+
+# V2 protocol constants (unencrypted bitmask mode)
+# Activation sequence (three writes to SYNC_RX):
+V2_ACTIVATE_WRITE          = b"RideOn\x02\x03"          # 8-byte activation password
+V2_CONFIG_1                = bytes([0x00, 0x08, 0x00])  # enable button reporting
+V2_CONFIG_2                = bytes([0x00, 0x08, 0x10])  # keepalive / maintain mode
+
+# V2 button bitmask frame: [0x23][0x08][byte2][byte3][byte4][byte5][byte6]
+# byte[3] carries plus/minus state; 0 bit = button pressed, 1 bit = not pressed.
+V2_BUTTON_HEADER           = bytes([0x23, 0x08])
+V2_PLUS_BIT                = 0x20   # bit 5 of byte[3]: 0 → plus pressed
+V2_MINUS_BIT               = 0x02   # bit 1 of byte[3]: 0 → minus pressed
+
+V2_KEEPALIVE_INTERVAL_S    = 5.0
+DEFAULT_SCAN_TIMEOUT_S     = 30.0
+DEFAULT_RETRY_BACKOFF_S    = 2.0
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +98,7 @@ class ClickShifter:
         self._clock = clock
         self._last_shift_t: float = float("-inf")
         self._on_state_change = on_state_change
+        # V1 ECDH state (set only when connected to a v1 Click)
         self._aes_key: bytes | None = None
         self._iv_prefix: bytes | None = None
 
@@ -90,7 +107,6 @@ class ClickShifter:
     # ------------------------------------------------------------------
 
     def _emit_state(self, connected: bool) -> None:
-        """Fire the on_state_change callback safely — never raises out of connect_and_listen."""
         if self._on_state_change is None:
             return
         try:
@@ -99,50 +115,43 @@ class ClickShifter:
             _log.warning("Click on_state_change callback raised: %s", e)
 
     # ------------------------------------------------------------------
-    # Notify callback — MUST be plain def (Pitfall 4)
+    # Notify callback — MUST be plain def (BLE callback pitfall)
     # ------------------------------------------------------------------
 
-    def _decrypt_frame(self, data: bytes) -> bytes | None:
-        """AES-CCM decrypt an encrypted notify frame. Returns plaintext or None on failure.
-
-        Frame format: [counter: 4 bytes][ciphertext][tag: 4 bytes]
-        Nonce: iv_prefix (4 bytes) || counter (4 bytes) = 8 bytes total.
-        """
-        if len(data) < 9:  # 4 counter + ≥1 payload + 4 tag
-            return None
-        from cryptography.hazmat.primitives.ciphers.aead import AESCCM
-        counter = data[:4]
-        ciphertext_and_tag = data[4:]
-        nonce = self._iv_prefix + counter
-        try:
-            return AESCCM(self._aes_key, tag_length=4).decrypt(nonce, ciphertext_and_tag, None)
-        except Exception:
-            return None
-
     def on_notify(self, sender, data: bytes | bytearray) -> None:
-        """Decode a BLE notification frame and dispatch a shift if appropriate.
-
-        Silently ignores:
-        - Empty frames
-        - Frames whose first byte is not CLICK_NOTIFY_MSG_TYPE (0x37)
-        - Release events (value = 1)
-        - Rapid repeated presses within the debounce window
-        """
+        """Decode a BLE notification frame and dispatch a shift if appropriate."""
         if not data:
             return
         data = bytes(data)
 
+        # V2 bitmask format: 7-byte frame [0x23][0x08][b2][b3][b4][b5][b6]
+        # byte[3] bit-5 = plus, bit-1 = minus (0 = pressed)
+        if len(data) == 7 and data[:2] == V2_BUTTON_HEADER:
+            b3 = data[3]
+            plus_pressed  = (b3 & V2_PLUS_BIT)  == 0
+            minus_pressed = (b3 & V2_MINUS_BIT) == 0
+            if not plus_pressed and not minus_pressed:
+                return  # idle frame or unhandled button (left/up/right/down)
+            now = self._clock()
+            if (now - self._last_shift_t) < self._DEBOUNCE_S:
+                return
+            self._last_shift_t = now
+            if plus_pressed:
+                self._gears.shift_up()
+            else:
+                self._gears.shift_down()
+            return
+
+        # V1 encrypted path
         if self._aes_key is not None:
-            data = self._decrypt_frame(data) or b""
+            data = self._decrypt_v1_frame(data) or b""
             if not data:
                 return
 
         if data[0] != CLICK_NOTIFY_MSG_TYPE:
-            return  # idle, battery, heartbeat frame
+            return  # idle, battery, or other non-button frame
 
-        # Walk the payload as sequential (tag, value) byte pairs.
-        # Click frames are short (3–5 bytes); varint multibyte values are not
-        # used for the press/release state field (value is always 0 or 1).
+        # Walk v1 payload as sequential (tag, value) byte pairs
         payload = bytes(data[1:])
         i = 0
         while i + 1 < len(payload):
@@ -151,18 +160,29 @@ class ClickShifter:
             i += 2
 
             if val != BUTTON_VALUE_PRESSED:
-                continue  # release event — never shift on release
+                continue  # release event
 
-            # Pressed event. Apply debounce then dispatch.
             now = self._clock()
             if (now - self._last_shift_t) < self._DEBOUNCE_S:
-                continue  # within debounce window — ignore
+                continue
 
             self._last_shift_t = now
             if tag == PLUS_FIELD_TAG:
                 self._gears.shift_up()
             elif tag == MINUS_FIELD_TAG:
                 self._gears.shift_down()
+
+    def _decrypt_v1_frame(self, data: bytes) -> bytes | None:
+        """AES-CCM decrypt a v1 encrypted frame: [counter:4][ciphertext][tag:4]."""
+        if len(data) < 9:
+            return None
+        from cryptography.hazmat.primitives.ciphers.aead import AESCCM
+        counter = data[:4]
+        nonce = self._iv_prefix + counter
+        try:
+            return AESCCM(self._aes_key, tag_length=4).decrypt(nonce, data[4:], None)
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -178,11 +198,8 @@ class ClickShifter:
     ) -> None:
         """Scan for the Zwift Click, connect, subscribe to notifications, and loop.
 
-        Retries with *retry_backoff* seconds between attempts on scan failure or
-        BLE error. Returns cleanly when *stop_event* is set.
-
-        *scanner* and *connect* are dependency-injection points for testing.
-        Production code uses the defaults (_default_scanner / BleakClient).
+        Retries with *retry_backoff* seconds between attempts. Returns cleanly
+        when *stop_event* is set.
         """
         _scanner = scanner if scanner is not None else self._default_scanner
         _connect = connect if connect is not None else self._default_connect
@@ -195,29 +212,36 @@ class ClickShifter:
                         "Zwift Click not found; retrying in %.1fs", retry_backoff
                     )
                     try:
-                        await asyncio.wait_for(
-                            stop_event.wait(), timeout=retry_backoff
-                        )
+                        await asyncio.wait_for(stop_event.wait(), timeout=retry_backoff)
                     except asyncio.TimeoutError:
                         pass
                     continue
 
                 async with _connect(device) as client:
                     try:
-                        await self._handshake_encrypted(client)
+                        await self._activate(client)
                         await client.start_notify(ZWIFT_ASYNC_CHAR_UUID, self.on_notify)
                         self._emit_state(True)
                         _log.info("Zwift Click connected and notifying")
-                        await stop_event.wait()
+
+                        # Keepalive: send V2_CONFIG_2 every 5 s to maintain button reporting
+                        while not stop_event.is_set():
+                            try:
+                                await asyncio.wait_for(
+                                    stop_event.wait(), timeout=V2_KEEPALIVE_INTERVAL_S
+                                )
+                            except asyncio.TimeoutError:
+                                await client.write_gatt_char(
+                                    ZWIFT_SYNC_RX_CHAR_UUID, V2_CONFIG_2, response=False
+                                )
                         try:
                             await client.stop_notify(ZWIFT_ASYNC_CHAR_UUID)
                         except Exception:
-                            pass  # ignore cleanup errors on shutdown
+                            pass
                     finally:
                         self._emit_state(False)
 
             except asyncio.TimeoutError:
-                # stop_event.wait() timed out — retry, not exit
                 continue
             except BleakError as exc:
                 _log.warning(
@@ -239,20 +263,61 @@ class ClickShifter:
                     pass
 
     # ------------------------------------------------------------------
-    # ECDH encrypted handshake (firmware 1.1.0 mandatory)
+    # Activation — v2 unencrypted (3 writes) or v1 ECDH
     # ------------------------------------------------------------------
 
-    async def _handshake_encrypted(self, client: "BleakClient") -> None:
-        """Perform the full ECDH key exchange required by firmware >= 1.1.0.
+    async def _activate(self, client: "BleakClient") -> None:
+        """Activate the Zwift Click.
 
-        Protocol (source: ajchellew/zwiftplay + makinolo.com + jat255/zwift_click_handling):
-          1. Generate ephemeral SECP256R1 key pair.
-          2. Write RIDE_ON + REQUEST_START + our uncompressed pub (raw x||y) to SYNC_RX.
-          3. Click responds on ASYNC with RIDE_ON + \x01\x03 + device pub (64 raw bytes).
-          4. Derive shared secret via ECDH; apply HKDF-SHA256(length=36,
-             salt=device_pub_full || our_pub_full, info=b'handshake data').
-          5. Split: first 32 bytes → AES-CCM key; last 4 bytes → IV prefix for nonces.
+        V2 (type 0x0B): writes RideOn\\x02\\x03 + two config bytes → unencrypted
+        bitmask mode. Device will emit 7-byte 0x23 0x08 button frames on ASYNC.
+
+        V1 (type 0x09): if the device responds to the activation write with a
+        RideOn + [0x01, 0x03] key frame, completes the ECDH handshake.
         """
+        self._aes_key = None
+        self._iv_prefix = None
+
+        key_received = asyncio.Event()
+        v1_dev_pub: list[bytes] = []
+
+        def _handshake_listener(sender, data: bytes | bytearray) -> None:
+            data = bytes(data)
+            # V1 key response: RideOn + [0x01, 0x03] + 64-byte raw x||y
+            if (
+                data[:6] == RIDE_ON
+                and data[6:8] == b'\x01\x03'
+                and len(data) >= 72
+                and not key_received.is_set()
+            ):
+                candidate = bytes(data[8:72])
+                if candidate.count(0) <= 48:
+                    v1_dev_pub.append(candidate)
+                    key_received.set()
+
+        # Subscribe ASYNC briefly to detect a v1 key response
+        await client.start_notify(ZWIFT_ASYNC_CHAR_UUID, _handshake_listener)
+        try:
+            await client.write_gatt_char(ZWIFT_SYNC_RX_CHAR_UUID, V2_ACTIVATE_WRITE, response=False)
+            try:
+                await asyncio.wait_for(key_received.wait(), timeout=1.0)
+            except asyncio.TimeoutError:
+                pass  # v2 device: no key response expected
+        finally:
+            await client.stop_notify(ZWIFT_ASYNC_CHAR_UUID)
+
+        if v1_dev_pub:
+            await self._complete_v1_ecdh(client, v1_dev_pub[0])
+        else:
+            # V2: send the two config writes that enable button reporting
+            await asyncio.sleep(0.05)
+            await client.write_gatt_char(ZWIFT_SYNC_RX_CHAR_UUID, V2_CONFIG_1, response=False)
+            await asyncio.sleep(0.1)
+            await client.write_gatt_char(ZWIFT_SYNC_RX_CHAR_UUID, V2_CONFIG_2, response=False)
+            _log.info("Zwift Click v2 activated (unencrypted mode)")
+
+    async def _complete_v1_ecdh(self, client: "BleakClient", dev_pub_raw64: bytes) -> None:
+        """Derive AES-CCM key from v1 ECDH key exchange."""
         from cryptography.hazmat.primitives import hashes, serialization
         from cryptography.hazmat.primitives.asymmetric.ec import (
             ECDH, SECP256R1, EllipticCurvePublicKey, generate_private_key,
@@ -261,60 +326,30 @@ class ClickShifter:
 
         private_key = generate_private_key(SECP256R1())
         pub_bytes = private_key.public_key().public_bytes(
-            serialization.Encoding.X962,
-            serialization.PublicFormat.UncompressedPoint,
+            serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint,
         )
-        # Strip leading 0x04 uncompressed-point marker — Click expects raw x||y (64 bytes).
-        payload = RIDE_ON + REQUEST_START + pub_bytes[1:]
+        await client.write_gatt_char(
+            ZWIFT_SYNC_RX_CHAR_UUID,
+            RIDE_ON + bytes([1, 2]) + pub_bytes[1:],
+            response=False,
+        )
 
-        key_received = asyncio.Event()
-        dev_pub_raw: list[bytes] = []
-
-        def _key_handler(sender, data: bytes | bytearray) -> None:
-            data = bytes(data)
-            # Device response: 'RideOn' prefix + 2 control bytes + 64 raw key bytes = 72 total
-            if data[:6] == RIDE_ON and len(data) >= 72 and not key_received.is_set():
-                dev_pub_raw.append(data[8:72])
-                key_received.set()
-
-        # v1 responds on ASYNC (00000002); v2 responds on SYNC_TX (00000004, INDICATE).
-        # Subscribe both; whichever fires first wins; stop both after.
-        subscribed: list[str] = []
-        for char_uuid in (ZWIFT_ASYNC_CHAR_UUID, ZWIFT_SYNC_TX_CHAR_UUID):
-            try:
-                await client.start_notify(char_uuid, _key_handler)
-                subscribed.append(char_uuid)
-            except Exception:
-                pass  # char may not exist on this hardware version
-
-        try:
-            await client.write_gatt_char(ZWIFT_SYNC_RX_CHAR_UUID, payload, response=False)
-            try:
-                await asyncio.wait_for(key_received.wait(), timeout=HANDSHAKE_TIMEOUT_S)
-            except asyncio.TimeoutError:
-                raise BleakError("ECDH handshake timeout: Zwift Click did not respond")
-        finally:
-            for char_uuid in subscribed:
-                try:
-                    await client.stop_notify(char_uuid)
-                except Exception:
-                    pass
-
-        dev_pub_bytes = b'\x04' + dev_pub_raw[0]   # restore uncompressed-point prefix
-        dev_pub_key = EllipticCurvePublicKey.from_encoded_point(SECP256R1(), dev_pub_bytes)
+        dev_pub_key = EllipticCurvePublicKey.from_encoded_point(
+            SECP256R1(), b'\x04' + dev_pub_raw64
+        )
+        dev_pub_bytes = dev_pub_key.public_bytes(
+            serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint
+        )
         shared_secret = private_key.exchange(ECDH(), dev_pub_key)
-
-        # salt = device_pub (65 bytes) || our_pub (65 bytes), per ajchellew/zwiftplay
         key_material = HKDF(
             algorithm=hashes.SHA256(),
             length=36,
-            salt=dev_pub_bytes + pub_bytes,
-            info=b'handshake data',
+            salt=dev_pub_bytes[1:] + pub_bytes[1:],
+            info=b'',
         ).derive(shared_secret)
-
         self._aes_key = key_material[:32]
         self._iv_prefix = key_material[32:]
-        _log.debug("ECDH session key derived")
+        _log.info("Zwift Click v1 ECDH key exchange complete")
 
     # ------------------------------------------------------------------
     # Default scanner / connector (production paths)
@@ -339,7 +374,6 @@ class ClickShifter:
 
     @staticmethod
     def _default_connect(device: "BLEDevice") -> BleakClient:
-        """Return a BleakClient as an async context manager."""
         return BleakClient(device)
 
 
@@ -353,17 +387,7 @@ async def run_click_shifter(
     *,
     on_state_change: Callable[[bool], None] | None = None,
 ) -> None:
-    """Scan for the Zwift Click, connect, and dispatch shifts until stop_event.
-
-    Intended usage in main.py::
-
-        from engine.input.click import run_click_shifter
-        click_task = asyncio.create_task(
-            run_click_shifter(gear_engine, stop_event, on_state_change=callback),
-            name="click_shifter",
-        )
-
-    The Click's BleakClient is owned entirely by ClickShifter — it is completely
-    separate from the KICKR's BleakClient (single-owner rule).
-    """
-    await ClickShifter(gear_engine, on_state_change=on_state_change).connect_and_listen(stop_event=stop_event)
+    """Scan for the Zwift Click, connect, and dispatch shifts until stop_event."""
+    await ClickShifter(
+        gear_engine, on_state_change=on_state_change
+    ).connect_and_listen(stop_event=stop_event)

@@ -1,8 +1,10 @@
 import { memo, useEffect, useMemo } from "react";
+import L from "leaflet";
 import {
   MapContainer,
   TileLayer,
   Polyline,
+  Marker,
   useMap,
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -12,6 +14,10 @@ interface MiniMapProps {
   cumDist: number[] | null;
   positionM: number | null;
   isDark: boolean;
+  ghostLat: number | null;
+  ghostLng: number | null;
+  ghostBearingDeg: number | null;
+  ghostTimeGapS: number | null;
 }
 
 const CARTO_DARK  = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
@@ -87,11 +93,29 @@ function RouteLayer({
   );
 }
 
+function GhostLayer({ lat, lng, bearingDeg }: { lat: number; lng: number; bearingDeg: number }) {
+  const icon = useMemo(
+    () =>
+      L.divIcon({
+        html: `<svg width="18" height="18" viewBox="0 0 24 24" style="transform:rotate(${bearingDeg}deg);transform-origin:50% 50%"><polygon points="12,2 21,20 12,15 3,20" fill="rgba(210,210,210,0.85)" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linejoin="round"/></svg>`,
+        className: "",
+        iconSize: [18, 18],
+        iconAnchor: [9, 9],
+      }),
+    [bearingDeg],
+  );
+  return <Marker position={[lat, lng]} icon={icon} />;
+}
+
 export const MiniMap = memo(function MiniMap({
   coords,
   cumDist,
   positionM,
   isDark,
+  ghostLat,
+  ghostLng,
+  ghostBearingDeg,
+  ghostTimeGapS,
 }: MiniMapProps) {
   const hasRoute = coords !== null && coords.length > 0 && cumDist !== null;
   const tileUrl = isDark ? CARTO_DARK : CARTO_LIGHT;
@@ -150,8 +174,29 @@ export const MiniMap = memo(function MiniMap({
               positionM={positionM}
             />
           )}
+          {ghostLat !== null && ghostLng !== null && ghostBearingDeg !== null && (
+            <GhostLayer lat={ghostLat} lng={ghostLng} bearingDeg={ghostBearingDeg} />
+          )}
         </MapContainer>
       </div>
+
+      {/* Ghost gap indicator: top-left corner, outside rotating layer. */}
+      {ghostTimeGapS !== null && ghostLat !== null && (
+        <div className="absolute top-2 left-2 z-[1000] pointer-events-none">
+          <div
+            className={`flex items-center gap-1 bg-black/75 px-2 py-1 text-[10px] font-condensed font-bold tracking-widest uppercase ${
+              ghostTimeGapS > 0 ? "text-red-400" : "text-[#22C55E]"
+            }`}
+          >
+            <svg width="8" height="8" viewBox="0 0 24 24" aria-hidden="true">
+              <polygon points="12,2 21,20 12,15 3,20" fill="currentColor" opacity="0.8" />
+            </svg>
+            {ghostTimeGapS > 0
+              ? `+${Math.round(Math.abs(ghostTimeGapS))}s`
+              : `−${Math.round(Math.abs(ghostTimeGapS))}s`}
+          </div>
+        </div>
+      )}
 
       {/* Ego marker: fixed at screen centre, outside the rotating layer. */}
       {showEgo && (
