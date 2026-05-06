@@ -484,17 +484,24 @@ async def _handler(
                     "mode": msg.get("mode", "none"),
                     "strava_id": msg.get("strava_id"),
                 }
-                if route_context.current_route is not None:
-                    # Route already loaded — apply immediately.
+                # If a load_saved_route task is in flight, defer to its tail —
+                # otherwise we'd apply the ghost to the *previous* route and
+                # _do_load_route would clear it before the new route loads.
+                load_in_flight = (
+                    route_context.tracker_task is not None
+                    and not route_context.tracker_task.done()
+                )
+                if route_context.current_route is not None and not load_in_flight:
                     route_context.pending_ghost = ghost_cfg
                     _apply_ghost(route_context, route_context.current_route)
                     route_context.pending_ghost = None
+                    deferred = False
                 else:
-                    # Route not yet loaded — store; _do_load_route will pick it up.
                     route_context.pending_ghost = ghost_cfg
+                    deferred = True
                 _log.info(
-                    "Ghost config: mode=%s strava_id=%s (route_loaded=%s)",
-                    ghost_cfg["mode"], ghost_cfg.get("strava_id"), route_context.current_route is not None,
+                    "Ghost config: mode=%s strava_id=%s (deferred=%s, load_in_flight=%s)",
+                    ghost_cfg["mode"], ghost_cfg.get("strava_id"), deferred, load_in_flight,
                 )
 
             elif msg.get("type") == "strava_disconnect":

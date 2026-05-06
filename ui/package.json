@@ -13,6 +13,7 @@
     "autoprefixer": "^10.5.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.8.0",
+    "maplibre-gl": "^5.24.0",
     "postcss": "^8.5.10",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",

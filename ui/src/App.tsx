@@ -5,7 +5,7 @@ import { MetricDisplay } from "./components/MetricDisplay";
 import { GearStrip } from "./components/GearStrip";
 import { GradeBar } from "./components/GradeBar";
 import { ElevationProfile } from "./components/ElevationProfile";
-import { MiniMap } from "./components/MiniMap";
+import { MiniMap, type MapViewMode } from "./components/MiniMap";
 import { PreRideScreen } from "./components/PreRideScreen";
 import { SettingsPanel, loadAthleteSettings } from "./components/SettingsPanel";
 
@@ -109,6 +109,7 @@ function App() {
     return localStorage.getItem('rideos-theme') === 'dark';
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<MapViewMode>("chase");
   const prevStatusRef = useRef(status);
 
   const toggleTheme = () => setIsDark(d => !d);
@@ -136,6 +137,8 @@ function App() {
         sendMessage({ type: "gear_shift", direction: "down" });
       } else if (e.key === "k" || e.key === "K") {
         sendMessage({ type: "gear_shift", direction: "up" });
+      } else if ((e.key === "m" || e.key === "M") && started) {
+        setViewMode((m) => (m === "chase" ? "birdseye" : "chase"));
       } else if (e.key === " " && started) {
         e.preventDefault();
         togglePause();
@@ -252,6 +255,7 @@ function App() {
             cumDist={stored?.cumDist ?? null}
             positionM={positionM}
             isDark={isDark}
+            viewMode={viewMode}
             ghostLat={t?.ghost_lat ?? null}
             ghostLng={t?.ghost_lng ?? null}
             ghostBearingDeg={t?.ghost_bearing_deg ?? null}

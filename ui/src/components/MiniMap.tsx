@@ -1,36 +1,56 @@
-import { memo, useEffect, useMemo, useState } from "react";
-import {
-  MapContainer,
-  TileLayer,
-  Polyline,
-  useMap,
-} from "react-leaflet";
-import "leaflet/dist/leaflet.css";
+import { useEffect, useRef, useState } from "react";
+import * as maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+
+export type MapViewMode = "chase" | "birdseye";
 
 interface MiniMapProps {
   coords: Array<[number, number]> | null;
   cumDist: number[] | null;
   positionM: number | null;
-
-  // ✅ BOTH supported now
-  ghostPositionM?: number | null;
   ghostLat?: number | null;
   ghostLng?: number | null;
-
-  isDark: boolean;
-  ghostBearingDeg: number | null;
+  ghostBearingDeg?: number | null;
   ghostTimeGapS: number | null;
+  isDark: boolean;
+  viewMode: MapViewMode;
 }
 
-const CARTO_DARK  = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-const CARTO_LIGHT = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
-const ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>';
+// Inline style — no external style.json fetch. OSM raster tiles are stable,
+// keyless, and acceptable for low-volume personal use.
+const STYLE: maplibregl.StyleSpecification = {
+  version: 8,
+  sources: {
+    osm: {
+      type: "raster",
+      tiles: [
+        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      ],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: "© OpenStreetMap contributors",
+    },
+  },
+  layers: [
+    {
+      id: "osm",
+      type: "raster",
+      source: "osm",
+    },
+  ],
+};
 
-const DEFAULT_CENTER: [number, number] = [50, 10];
-const DEFAULT_ZOOM = 5;
-const RIDING_ZOOM = 16;
-const BEARING_LOOKAHEAD_M = 300;
+const BEARING_LOOKAHEAD_M = 200;
+
+const CHASE_PITCH = 60;
+const CHASE_ZOOM = 17;
+const CHASE_OFFSET: [number, number] = [0, 150];
+
+const BIRDSEYE_PITCH = 0;
+const BIRDSEYE_ZOOM = 14;
+const BIRDSEYE_OFFSET: [number, number] = [0, 0];
 
 function bisectRight(arr: number[], x: number): number {
   let lo = 0;
@@ -41,16 +61,6 @@ function bisectRight(arr: number[], x: number): number {
     else hi = mid;
   }
   return lo;
-}
-
-function calcBearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLng = toRad(lng2 - lng1);
-  const y = Math.sin(dLng) * Math.cos(toRad(lat2));
-  const x =
-    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
-    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
-  return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
 }
 
 function interpolatePosition(
@@ -72,229 +82,239 @@ function interpolatePosition(
   const [lat0, lng0] = coords[idx];
   const [lat1, lng1] = coords[idx + 1];
 
-  return [
-    lat0 + (lat1 - lat0) * t,
-    lng0 + (lng1 - lng0) * t,
-  ];
+  return [lat0 + (lat1 - lat0) * t, lng0 + (lng1 - lng0) * t];
 }
 
-/* ========================= */
-function RouteLayer({
+function calcBearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLng = toRad(lng2 - lng1);
+  const y = Math.sin(dLng) * Math.cos(toRad(lat2));
+  const x =
+    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
+  return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
+}
+
+export function MiniMap({
   coords,
   cumDist,
   positionM,
-}: {
-  coords: Array<[number, number]>;
-  cumDist: number[];
-  positionM: number | null;
-}) {
-  const map = useMap();
-
-  const pos = positionM !== null
-    ? interpolatePosition(coords, cumDist, positionM)
-    : coords[0];
-
-  useEffect(() => {
-    if (coords.length > 0) {
-      map.fitBounds(coords, { animate: false });
-    }
-  }, [coords.length]);
-
-  useEffect(() => {
-    if (!pos) return;
-    map.setView(pos, RIDING_ZOOM, { animate: false });
-  }, [pos]);
-
-  return <Polyline positions={coords} pathOptions={{ color: "#FFF200", weight: 2 }} />;
-}
-
-/* ========================= */
-function GhostProjector({
-  lat,
-  lng,
-  onUpdate,
-}: {
-  lat: number;
-  lng: number;
-  onUpdate: (p: { x: number; y: number }) => void;
-}) {
-  const map = useMap();
-
-  useEffect(() => {
-    const update = () => {
-      const p = map.latLngToContainerPoint([lat, lng]);
-      const size = map.getSize();
-
-      onUpdate({
-        x: p.x - size.x / 2,
-        y: p.y - size.y / 2,
-      });
-    };
-
-    update();
-    map.on("move", update);
-    map.on("zoom", update);
-
-    return () => {
-      map.off("move", update);
-      map.off("zoom", update);
-    };
-  }, [lat, lng, map, onUpdate]);
-
-  return null;
-}
-
-/* ========================= */
-export const MiniMap = memo(function MiniMap({
-  coords,
-  cumDist,
-  positionM,
-  ghostPositionM,
   ghostLat,
   ghostLng,
-  isDark,
-  ghostBearingDeg,
   ghostTimeGapS,
+  viewMode,
 }: MiniMapProps) {
-  const hasRoute = !!(coords && cumDist && coords.length > 1);
-  const tileUrl = isDark ? CARTO_DARK : CARTO_LIGHT;
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
-  const [ghostScreen, setGhostScreen] = useState<{ x: number; y: number } | null>(null);
+  // init — must null mapRef in cleanup so React 19 double-mount re-creates the map
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-  // Ego
-  const ego = useMemo(() => {
-    if (!hasRoute || positionM === null) return null;
-    return interpolatePosition(coords!, cumDist!, positionM);
-  }, [coords, cumDist, positionM, hasRoute]);
+    const map = new maplibregl.Map({
+      container,
+      style: STYLE,
+      center: [10, 50],
+      zoom: 13,
+      pitch: viewMode === "chase" ? CHASE_PITCH : BIRDSEYE_PITCH,
+      attributionControl: false,
+    });
 
-  // Ghost (distance OR lat/lng fallback)
-  const ghost = useMemo(() => {
-    if (ghostPositionM !== null && ghostPositionM !== undefined && hasRoute) {
-      return interpolatePosition(coords!, cumDist!, ghostPositionM);
+    // 'styledata' fires as soon as the style is parsed (works for inline styles
+    // that don't need a network roundtrip). 'load' is too late if tiles stall.
+    const markLoaded = () => {
+      map.resize();
+      setLoaded(true);
+    };
+    map.once("styledata", markLoaded);
+    map.once("load", markLoaded);
+
+    // Keep the canvas in sync with container size for the lifetime of the map.
+    const ro = new ResizeObserver(() => {
+      map.resize();
+    });
+    ro.observe(container);
+
+    mapRef.current = map;
+
+    return () => {
+      ro.disconnect();
+      setLoaded(false);
+      map.remove();
+      mapRef.current = null;
+    };
+    // viewMode intentionally omitted — handled by camera effect, no need to recreate map
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // draw route line once loaded / when coords change
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded || !coords) return;
+
+    const geojson = {
+      type: "Feature" as const,
+      geometry: {
+        type: "LineString" as const,
+        coordinates: coords.map(([lat, lng]) => [lng, lat]),
+      },
+      properties: {},
+    };
+
+    const src = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
+    if (src) {
+      src.setData(geojson);
+    } else {
+      map.addSource("route", { type: "geojson", data: geojson });
+      map.addLayer({
+        id: "route",
+        type: "line",
+        source: "route",
+        paint: {
+          "line-color": "#FFF200",
+          "line-width": 4,
+        },
+      });
     }
-    if (ghostLat != null && ghostLng != null) {
-      return [ghostLat, ghostLng] as [number, number];
+
+    // Fit to route bounds on first load (only if no live position yet)
+    if (positionM == null) {
+      const lons = coords.map(([, lng]) => lng);
+      const lats = coords.map(([lat]) => lat);
+      const bounds = new maplibregl.LngLatBounds(
+        [Math.min(...lons), Math.min(...lats)],
+        [Math.max(...lons), Math.max(...lats)]
+      );
+      map.fitBounds(bounds, { padding: 40, duration: 0 });
     }
-    return null;
-  }, [ghostPositionM, ghostLat, ghostLng, coords, cumDist, hasRoute]);
+  }, [coords, loaded, positionM]);
 
-  const bearingDeg = useMemo(() => {
-    if (!hasRoute || !ego || positionM === null) return 0;
+  // camera + ego marker — re-runs on viewMode change to animate the perspective switch
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded || !coords || !cumDist || positionM == null) return;
 
-    const ahead = interpolatePosition(
-      coords!,
-      cumDist!,
-      positionM + BEARING_LOOKAHEAD_M
-    );
+    const ego = interpolatePosition(coords, cumDist, positionM);
+    if (!ego) return;
 
-    if (!ahead) return 0;
+    let bearing = 0;
+    if (viewMode === "chase") {
+      const ahead = interpolatePosition(
+        coords,
+        cumDist,
+        positionM + BEARING_LOOKAHEAD_M
+      );
+      bearing = ahead ? calcBearing(ego[0], ego[1], ahead[0], ahead[1]) : 0;
+    }
 
-    return calcBearing(ego[0], ego[1], ahead[0], ahead[1]);
-  }, [coords, cumDist, positionM, ego, hasRoute]);
+    map.easeTo({
+      center: [ego[1], ego[0]],
+      bearing,
+      pitch: viewMode === "chase" ? CHASE_PITCH : BIRDSEYE_PITCH,
+      zoom: viewMode === "chase" ? CHASE_ZOOM : BIRDSEYE_ZOOM,
+      offset: viewMode === "chase" ? CHASE_OFFSET : BIRDSEYE_OFFSET,
+      duration: 300,
+    });
+
+    const egoGeo = {
+      type: "Feature" as const,
+      geometry: { type: "Point" as const, coordinates: [ego[1], ego[0]] },
+      properties: {},
+    };
+
+    const egoSrc = map.getSource("ego") as maplibregl.GeoJSONSource | undefined;
+    if (egoSrc) {
+      egoSrc.setData(egoGeo);
+    } else {
+      map.addSource("ego", { type: "geojson", data: egoGeo });
+      map.addLayer({
+        id: "ego",
+        type: "circle",
+        source: "ego",
+        paint: {
+          "circle-radius": 7,
+          "circle-color": "#E10600",
+          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 2,
+        },
+      });
+    }
+    // Stacking: route → ghost → ego. Re-asserted on every frame so order
+    // survives layers being added in arbitrary effect-firing order.
+    if (map.getLayer("ego")) map.moveLayer("ego");
+  }, [coords, cumDist, positionM, loaded, viewMode]);
+
+  // ghost marker — driven by backend lat/lng (not derived from positionM)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+
+    const hasGhost =
+      ghostLat != null &&
+      ghostLng != null &&
+      Number.isFinite(ghostLat) &&
+      Number.isFinite(ghostLng);
+
+    const ghostSrc = map.getSource("ghost") as maplibregl.GeoJSONSource | undefined;
+
+    if (!hasGhost) {
+      // Hide marker by clearing data; layer stays so we don't have to re-add on next ghost
+      if (ghostSrc) {
+        ghostSrc.setData({
+          type: "FeatureCollection",
+          features: [],
+        });
+      }
+      return;
+    }
+
+    const ghostGeo = {
+      type: "Feature" as const,
+      geometry: { type: "Point" as const, coordinates: [ghostLng, ghostLat] },
+      properties: {},
+    };
+
+    if (ghostSrc) {
+      ghostSrc.setData(ghostGeo);
+    } else {
+      map.addSource("ghost", { type: "geojson", data: ghostGeo });
+      map.addLayer({
+        id: "ghost",
+        type: "circle",
+        source: "ghost",
+        paint: {
+          "circle-radius": 6,
+          "circle-color": "#bbbbbb",
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1.5,
+          "circle-opacity": 0.85,
+        },
+      });
+    }
+    // Keep ghost above route + ego regardless of insertion order.
+    if (map.getLayer("ghost")) map.moveLayer("ghost");
+  }, [ghostLat, ghostLng, loaded]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-[var(--map-bg)]">
+    <div className="relative w-full h-full min-h-[300px]">
+      {/* maplibre-gl.css forces .maplibregl-map { position: relative }, which
+          overrides Tailwind's .absolute. Use w-full h-full so the size works
+          regardless of position. */}
+      <div ref={containerRef} className="w-full h-full" />
 
-      <div
-        className="absolute w-[150%] h-[150%] -top-[25%] -left-[25%]"
-        style={{ transform: `rotate(${-bearingDeg}deg)` }}
-      >
-        <MapContainer
-          center={DEFAULT_CENTER}
-          zoom={DEFAULT_ZOOM}
-          className="w-full h-full"
-          zoomControl={false}
-          attributionControl={false}
-          dragging={false}
-        >
-          <TileLayer url={tileUrl} attribution={ATTRIBUTION} />
-
-          {hasRoute && (
-            <RouteLayer
-              coords={coords!}
-              cumDist={cumDist!}
-              positionM={positionM}
-            />
-          )}
-
-          {ghost && (
-            <GhostProjector
-              lat={ghost[0]}
-              lng={ghost[1]}
-              onUpdate={setGhostScreen}
-            />
-          )}
-        </MapContainer>
-      </div>
-
-      {/* Ghost */}
-      {ghostScreen && (
-        (() => {
-          const theta = (-bearingDeg * Math.PI) / 180;
-
-          const x =
-            ghostScreen.x * Math.cos(theta) -
-            ghostScreen.y * Math.sin(theta);
-
-          const y =
-            ghostScreen.x * Math.sin(theta) +
-            ghostScreen.y * Math.cos(theta);
-
-          return (
-            <div
-              className="absolute inset-0 flex items-center justify-center z-[1000] pointer-events-none"
-              style={{
-                transform: `translate(${x}px, ${y}px)`
-              }}
-            >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                style={{
-                  transform: `rotate(${(ghostBearingDeg ?? 0) - bearingDeg}deg)`
-                }}
-              >
-                <polygon
-                  points="12,2 21,20 12,15 3,20"
-                  fill="rgba(210,210,210,0.9)"
-                  stroke="white"
-                  strokeWidth="1.5"
-                />
-              </svg>
-            </div>
-          );
-        })()
-      )}
-
-      {/* Ego */}
-      {ego && (
-        <div className="absolute inset-0 flex items-center justify-center z-[1000] pointer-events-none">
-          <svg width="18" height="18" viewBox="0 0 24 24">
-            <polygon
-              points="12,2 21,20 12,15 3,20"
-              fill="#E10600"
-              stroke="white"
-              strokeWidth="1.5"
-            />
-          </svg>
-        </div>
-      )}
-
-      {/* Gap (ALWAYS visible now) */}
-      {ghostTimeGapS !== null && (
-        <div className="absolute top-2 left-2 z-[1000] text-[10px] font-bold bg-black/70 px-2 py-1 text-white">
+      {ghostTimeGapS != null && (
+        <div className="absolute top-2 left-2 z-[1000] bg-black/70 text-white px-2 py-1 text-xs font-bold font-condensed tracking-widest">
           {ghostTimeGapS > 0
             ? `+${Math.round(ghostTimeGapS)}s`
             : `${Math.round(ghostTimeGapS)}s`}
         </div>
       )}
 
-      {!hasRoute && (
-        <span className="absolute inset-0 flex items-center justify-center text-[11px] text-gray-400">
-          KEINE STRECKE
-        </span>
-      )}
+      <div className="absolute bottom-2 right-2 z-[1000] bg-black/60 text-white/90 px-2 py-1 text-[10px] font-condensed tracking-widest uppercase pointer-events-none">
+        {viewMode === "chase" ? "CHASE · M" : "BIRDSEYE · M"}
+      </div>
     </div>
   );
-});
+}
