@@ -1,27 +1,21 @@
-"""RouteTracker: drive RideState.real_grade_percent from GPX position (ROUTE-02 + ROUTE-03).
+"""RouteTracker asyncio adapter — drives RideState from GPX position (ROUTE-02 + ROUTE-03).
 
-Runs as a sibling asyncio.Task alongside reconnect_loop / telemetry_consumer /
-broadcast_loop. Every tick_s seconds:
-
-1. Compute dt from monotonic clock
-2. Read state.last_speed_kmh (None → 0.0 per Pitfall 4)
-3. Advance self._position_m by speed_ms * dt, clamped at route.total_dist_m
-4. If at end: set real_grade_percent = ROUTE_COMPLETE_GRADE (0.0), log, exit task
-5. Otherwise: bisect cum_dist_m for segment index; write grades_pct[idx] into state
+Pure position math lives in engine.domain.tracker. This module owns the
+asyncio loop, the clock, and the state mutation.
 
 Key invariants:
 - Only this task mutates state.real_grade_percent once a route is loaded.
 - position_m is monotonically non-decreasing until route completion.
-- No BLE/WS/FTMS imports — pure logic, unit-testable against a fake RideState.
+- No BLE/WS/FTMS imports — testable against a fake RideState.
 """
 from __future__ import annotations
 
 import asyncio
-import bisect
 import logging
 import time
 from typing import TYPE_CHECKING, Callable, Optional
 
+from engine.domain.tracker import advance_position, grade_at
 from engine.route.model import RouteData
 
 if TYPE_CHECKING:
@@ -29,11 +23,7 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger("rideos.route")
 
-# Grade written to RideState once the rider reaches the end of the route.
-# Flat cool-down so the trainer doesn't stick at the last segment's grade.
 ROUTE_COMPLETE_GRADE: float = 0.0
-
-# Tolerance (metres) for deciding "we've arrived at the end of the route".
 _ROUTE_END_EPSILON_M: float = 0.5
 
 
@@ -54,7 +44,6 @@ class RouteTracker:
 
     @property
     def position_m(self) -> float:
-        """Current integrated position along the route (metres, 0..total_dist_m)."""
         return self._position_m
 
     async def run(
@@ -76,9 +65,8 @@ class RouteTracker:
             last_t = now
 
             speed_ms = (state.last_speed_kmh or 0.0) / 3.6
-            self._position_m = min(
-                self._position_m + speed_ms * dt,
-                self._route.total_dist_m,
+            self._position_m = advance_position(
+                self._position_m, speed_ms, dt, self._route.total_dist_m
             )
 
             if self._position_m >= self._route.total_dist_m - _ROUTE_END_EPSILON_M:
@@ -96,13 +84,15 @@ class RouteTracker:
                     if self._on_complete is not None:
                         self._on_complete(elapsed_s)
                     return
-                # Wrap around for next lap
                 self._position_m = 0.0
                 _log.info("Lap %d/%d complete; restarting from 0", self._lap_index, self._laps)
 
-            idx = bisect.bisect_right(self._route.cum_dist_m, self._position_m) - 1
-            idx = max(0, min(idx, len(self._route.grades_pct) - 1))
-            state.real_grade_percent = self._route.grades_pct[idx]
+            idx, grade = grade_at(
+                self._position_m,
+                self._route.cum_dist_m,
+                self._route.grades_pct,
+            )
+            state.real_grade_percent = grade
             state.current_grade_idx = idx
 
             await asyncio.sleep(tick_s)
