@@ -15,6 +15,7 @@ FMS_UUID  = "00002ada-0000-1000-8000-00805f9b34fb"  # Fitness Machine Status
 class OpCode(enum.IntEnum):
     REQUEST_CONTROL                       = 0x00
     RESET                                 = 0x01
+    SET_TARGET_POWER                      = 0x05
     START_OR_RESUME                       = 0x07
     STOP_OR_PAUSE                         = 0x08
     SET_INDOOR_BIKE_SIMULATION_PARAMETERS = 0x11
@@ -35,6 +36,15 @@ def encode_request_control() -> bytes:
 
 def encode_reset() -> bytes:
     return bytes([OpCode.RESET])
+
+
+def encode_set_target_power(watts: int) -> bytes:
+    """Opcode 0x05. Byte layout: <B H>
+      opcode   uint8   0x05
+      power    uint16  unit 1 W, little-endian
+    """
+    w = max(0, min(65535, watts))
+    return bytes([OpCode.SET_TARGET_POWER]) + w.to_bytes(2, "little")
 
 
 def encode_start_or_resume() -> bytes:

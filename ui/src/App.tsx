@@ -95,6 +95,15 @@ function PlayPauseOverlay({
   );
 }
 
+function formatTime(totalS: number): string {
+  const s = Math.max(0, Math.floor(totalS));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
 function App() {
   const {
     telemetry: t, status, sendMessage, routeRef, routeLoaded, routeError, clearRouteError,
@@ -138,7 +147,9 @@ function App() {
       } else if (e.key === "k" || e.key === "K") {
         sendMessage({ type: "gear_shift", direction: "up" });
       } else if ((e.key === "m" || e.key === "M") && started) {
-        setViewMode((m) => (m === "chase" ? "birdseye" : "chase"));
+        setViewMode((m) =>
+          m === "chase" ? "follow" : m === "follow" ? "birdseye" : "chase"
+        );
       } else if (e.key === " " && started) {
         e.preventDefault();
         togglePause();
@@ -235,16 +246,41 @@ function App() {
           {/* Speed — primary metric */}
           <MetricDisplay value={t?.speed_kmh?.toFixed(1) ?? "–"} unit="KM/H" size="display" />
 
-          {/* Gear: chainring icon + number */}
-          <GearStrip gear={t?.gear ?? null} />
+          {/* Gear (hidden in erg mode) */}
+          {!t?.erg_mode && <GearStrip gear={t?.gear ?? null} />}
 
-          {/* Grade: slope icon + effective grade */}
-          <GradeBar effective={t?.effective_grade_pct ?? 0} />
+          {/* Grade (hidden in erg mode) */}
+          {!t?.erg_mode && <GradeBar effective={t?.effective_grade_pct ?? 0} />}
 
-          {/* Power + cadence pushed to bottom */}
+          {/* Lap counter — always shown when a route is active */}
+          {t?.lap_count != null && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] font-condensed font-bold tracking-widest uppercase text-[var(--text-muted)]">LAP</span>
+              <span className="text-[16px] font-data font-bold tabular-nums text-[var(--text)]">
+                {(t?.lap_index ?? 0) + 1}
+              </span>
+              <span className="text-[11px] font-condensed text-[var(--text-muted)]">/ {t.lap_count}</span>
+            </div>
+          )}
+
+          {/* Power + cadence pushed to bottom, with erg targets inline */}
           <div className="flex flex-col gap-5 mt-auto">
-            <MetricDisplay value={t?.power_w ?? "–"} unit="WATT" size="body" />
-            <MetricDisplay value={t?.cadence_rpm ?? "–"} unit="U/MIN" size="body" />
+            <div className="flex flex-col gap-0.5">
+              <MetricDisplay value={t?.power_w ?? "–"} unit="WATT" size="body" />
+              {t?.erg_mode && t?.target_power_w != null && (
+                <span className="text-[9px] font-condensed font-bold tracking-[0.15em] uppercase text-[#FFF200]">
+                  ZIEL {Math.round(t.target_power_w)} W
+                </span>
+              )}
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <MetricDisplay value={t?.cadence_rpm ?? "–"} unit="U/MIN" size="body" />
+              {t?.erg_mode && t?.target_cadence_rpm != null && (
+                <span className="text-[9px] font-condensed font-bold tracking-[0.15em] uppercase text-[#FFF200]">
+                  ZIEL {t.target_cadence_rpm} RPM
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -259,8 +295,57 @@ function App() {
             ghostLat={t?.ghost_lat ?? null}
             ghostLng={t?.ghost_lng ?? null}
             ghostBearingDeg={t?.ghost_bearing_deg ?? null}
-            ghostTimeGapS={t?.ghost_time_gap_s ?? null}
           />
+
+          {/* Top-left overlay: ghost time gap · elapsed time · distance remaining */}
+          <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5 flex-wrap">
+            {t?.ghost_time_gap_s != null && (
+              <div className="bg-black/70 text-white px-2 py-1 text-[10px] font-bold font-condensed tracking-widest">
+                {t.ghost_time_gap_s > 0
+                  ? `+${Math.round(t.ghost_time_gap_s)}s`
+                  : `${Math.round(t.ghost_time_gap_s)}s`}
+              </div>
+            )}
+            {t?.elapsed_s != null && (
+              <div className="bg-black/70 text-white/90 px-2 py-1 text-[10px] font-condensed font-bold tracking-widest tabular-nums">
+                {formatTime(t.elapsed_s)}
+              </div>
+            )}
+            {t?.dist_remaining_m != null && (
+              <div className="bg-black/70 text-white/90 px-2 py-1 text-[10px] font-condensed font-bold tracking-widest tabular-nums">
+                {(t.dist_remaining_m / 1000).toFixed(1)} KM
+              </div>
+            )}
+          </div>
+
+          {/* Phase banner: warmup / cooldown with countdown */}
+          {(t?.ride_phase === "warmup" || t?.ride_phase === "cooldown") && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 bg-black/80 border border-[#FFF200] px-4 py-2">
+              <span className="text-[11px] font-condensed font-bold tracking-widest uppercase text-[#FFF200]">
+                {t.ride_phase === "warmup" ? "WARM-UP" : "COOL-DOWN"}
+              </span>
+              <span className="text-[11px] font-condensed text-[var(--text-muted)]">
+                {t.target_power_w != null ? `${Math.round(t.target_power_w)} W` : "90 W"}
+              </span>
+              {t.phase_remaining_s != null && (
+                <span className="text-[11px] font-data font-bold tabular-nums text-white">
+                  {formatTime(t.phase_remaining_s)}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Erg mode: change countdown (last 10 s before a target switch) */}
+          {t?.erg_mode && t?.erg_change_countdown_s != null && t.erg_change_countdown_s <= 10 && (
+            <div className="absolute top-4 right-4 z-10 flex items-center gap-2 bg-[#FFF200] text-black px-3 py-1.5">
+              <span className="text-[10px] font-condensed font-bold tracking-widest uppercase">
+                ERG WECHSEL IN
+              </span>
+              <span className="text-[13px] font-data font-bold tabular-nums">
+                {Math.ceil(t.erg_change_countdown_s)}s
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

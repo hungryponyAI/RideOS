@@ -127,10 +127,17 @@ export interface AthleteSettingsMessage {
   ftp_w: number;
 }
 
-export interface SetGhostMessage {
-  type: "set_ghost";
-  mode: "strava" | "estimated" | "none";
-  strava_id?: string;
+export interface StartRideMessage {
+  type: "start_ride";
+  route_id: string;
+  reverse: boolean;
+  cutout_start_m: number | null;
+  cutout_end_m: number | null;
+  laps: number;
+  ghost: boolean;
+  warmup_s: number;
+  cooldown_s: number;
+  erg_mode: boolean;
 }
 
 export type OutgoingMessage =
@@ -140,7 +147,7 @@ export type OutgoingMessage =
   | LoadSavedRouteMessage
   | DeleteRouteMessage
   | RenameRouteMessage
-  | SetGhostMessage;
+  | StartRideMessage;
 
 // ---------------------------------------------------------------------------
 // Convenience type for UI consumers: pre-mapped elevation-chart data

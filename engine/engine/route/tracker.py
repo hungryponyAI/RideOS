@@ -40,10 +40,17 @@ _ROUTE_END_EPSILON_M: float = 0.5
 class RouteTracker:
     """Advances position along a RouteData and updates RideState.real_grade_percent."""
 
-    def __init__(self, route: RouteData, on_complete: Optional[Callable[[int], None]] = None) -> None:
+    def __init__(
+        self,
+        route: RouteData,
+        on_complete: Optional[Callable[[int], None]] = None,
+        laps: int = 1,
+    ) -> None:
         self._route = route
         self._position_m: float = 0.0
         self._on_complete = on_complete
+        self._laps = max(1, laps)
+        self._lap_index: int = 0
 
     @property
     def position_m(self) -> float:
@@ -57,39 +64,45 @@ class RouteTracker:
         *,
         tick_s: float = 0.25,
     ) -> None:
-        """Main tracker loop. Exits when stop_event fires OR route completes."""
+        """Main tracker loop. Exits when stop_event fires OR all laps complete."""
         last_t = time.monotonic()
         start_t = time.monotonic()
+        state.lap_index = 0
+        state.lap_count = self._laps
+
         while not stop_event.is_set():
             now = time.monotonic()
             dt = now - last_t
             last_t = now
 
-            # Pitfall 4: None speed during BLE reconnect gap — do not crash.
             speed_ms = (state.last_speed_kmh or 0.0) / 3.6
             self._position_m = min(
                 self._position_m + speed_ms * dt,
                 self._route.total_dist_m,
             )
 
-            # Pitfall 5: route ends mid-ride — cool down, log, exit task.
             if self._position_m >= self._route.total_dist_m - _ROUTE_END_EPSILON_M:
-                elapsed_s = int(now - start_t)
-                state.real_grade_percent = ROUTE_COMPLETE_GRADE
-                _log.info(
-                    "Route complete at %.0f m in %ds; grade -> %.1f%%",
-                    self._route.total_dist_m,
-                    elapsed_s,
-                    ROUTE_COMPLETE_GRADE,
-                )
-                if self._on_complete is not None:
-                    self._on_complete(elapsed_s)
-                return
+                self._lap_index += 1
+                state.lap_index = self._lap_index
+                if self._lap_index >= self._laps:
+                    elapsed_s = int(now - start_t)
+                    state.real_grade_percent = ROUTE_COMPLETE_GRADE
+                    _log.info(
+                        "Route complete: %d lap(s) in %ds; grade -> %.1f%%",
+                        self._laps,
+                        elapsed_s,
+                        ROUTE_COMPLETE_GRADE,
+                    )
+                    if self._on_complete is not None:
+                        self._on_complete(elapsed_s)
+                    return
+                # Wrap around for next lap
+                self._position_m = 0.0
+                _log.info("Lap %d/%d complete; restarting from 0", self._lap_index, self._laps)
 
-            # bisect_right returns insertion index; -1 gives "current segment".
-            # Clamp to valid grades_pct index range defensively.
             idx = bisect.bisect_right(self._route.cum_dist_m, self._position_m) - 1
             idx = max(0, min(idx, len(self._route.grades_pct) - 1))
             state.real_grade_percent = self._route.grades_pct[idx]
+            state.current_grade_idx = idx
 
             await asyncio.sleep(tick_s)

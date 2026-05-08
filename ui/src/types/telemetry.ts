@@ -5,14 +5,26 @@ export interface TelemetryState {
   gear: number;
   real_grade_pct: number;
   effective_grade_pct: number;
-  // Phase 4: position along the route (null when no route loaded)
   position_m?: number | null;
   route_loaded?: boolean;
-  // Ghost ride fields (null when no ghost active)
+  // Ghost
   ghost_lat?: number | null;
   ghost_lng?: number | null;
   ghost_bearing_deg?: number | null;
   ghost_time_gap_s?: number | null;
+  // Ride phase machine
+  ride_phase?: "warmup" | "route" | "cooldown" | "done";
+  lap_index?: number;
+  lap_count?: number;
+  // Erg / target-power
+  target_power_w?: number | null;
+  target_cadence_rpm?: number | null;
+  erg_mode?: boolean;
+  erg_change_countdown_s?: number | null;
+  // Timing / distance
+  phase_remaining_s?: number | null;
+  elapsed_s?: number | null;
+  dist_remaining_m?: number | null;
 }
 
 export type ConnectionStatus =

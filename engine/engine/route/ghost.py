@@ -81,6 +81,38 @@ class GhostTracker:
         return cls(times, lats, lons, cum)
 
     @classmethod
+    def from_strava_streams_clipped(
+        cls, streams: dict, start_m: float, end_m: float
+    ) -> "GhostTracker":
+        """Build from Strava streams, clipped to [start_m, end_m] of the ghost's own cum-dist."""
+        time_data = streams.get("time", {}).get("data", [])
+        latlng_data = streams.get("latlng", {}).get("data", [])
+        if not time_data or not latlng_data:
+            raise ValueError("Strava streams missing time or latlng data")
+        n = min(len(time_data), len(latlng_data))
+        times = [float(time_data[i]) for i in range(n)]
+        lats = [float(latlng_data[i][0]) for i in range(n)]
+        lons = [float(latlng_data[i][1]) for i in range(n)]
+        cum: list[float] = [0.0]
+        for i in range(1, n):
+            cum.append(cum[-1] + _haversine_m(lats[i - 1], lons[i - 1], lats[i], lons[i]))
+        # Find slice indices within ghost's own cum-dist
+        import bisect as _bisect
+        i_start = max(0, _bisect.bisect_right(cum, start_m) - 1)
+        i_end = min(n, _bisect.bisect_left(cum, end_m) + 1)
+        if i_end <= i_start + 1:
+            raise ValueError("Ghost stream clip range is too narrow")
+        times = times[i_start:i_end]
+        lats = lats[i_start:i_end]
+        lons = lons[i_start:i_end]
+        cum = cum[i_start:i_end]
+        t0 = times[0]
+        c0 = cum[0]
+        times = [t - t0 for t in times]
+        cum = [c - c0 for c in cum]
+        return cls(times, lats, lons, cum)
+
+    @classmethod
     def from_fallback(
         cls,
         lats: list[float],
@@ -105,14 +137,20 @@ class GhostTracker:
         if not paused and dt >= self._MIN_DT:
             self._elapsed_s += dt
 
-    def snapshot(self, rider_position_m: float) -> GhostSnapshot:
-        """Return ghost position + time gap for current elapsed time."""
+    def snapshot(self, rider_position_m: float, lap_index: int = 0) -> GhostSnapshot:
+        """Return ghost position + time gap for current elapsed time.
+
+        With laps the ghost loops using modulo on ghost_total. time_gap_s is
+        computed within the current lap for both ghost and rider.
+        """
         n = len(self._times)
         if n == 0:
             return GhostSnapshot(0.0, 0.0, 0.0, 0.0)
 
-        elapsed = self._elapsed_s
-        idx = max(0, min(bisect.bisect_right(self._times, elapsed) - 1, n - 1))
+        ghost_total = self._times[-1] if self._times[-1] > 0 else 1.0
+        elapsed_mod = self._elapsed_s % ghost_total
+
+        idx = max(0, min(bisect.bisect_right(self._times, elapsed_mod) - 1, n - 1))
         lat, lng = self._lats[idx], self._lons[idx]
 
         next_idx = min(idx + 1, n - 1)
@@ -122,11 +160,9 @@ class GhostTracker:
             else 0.0
         )
 
-        # time_gap_s = elapsed - ghost_time_at_rider_pos
-        # > 0: ghost already passed rider position → ghost leads
-        # < 0: ghost hasn't reached rider position yet → rider leads
+        # time_gap within current lap
         ghost_time_at_rider = self._time_at_dist(rider_position_m)
-        time_gap_s = elapsed - ghost_time_at_rider
+        time_gap_s = elapsed_mod - ghost_time_at_rider
 
         return GhostSnapshot(lat, lng, bearing, time_gap_s)
 

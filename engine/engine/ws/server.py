@@ -43,16 +43,13 @@ _log = logging.getLogger("rideos.ws")
 
 @dataclass
 class RouteContext:
-    """Mutable container shared between main.py and _handler for route lifecycle.
-
-    Created in main.py, passed to broadcast_loop via kwarg, then to _handler via partial.
-    Inbound load_route messages mutate tracker / tracker_task.
-    """
+    """Mutable container shared between main.py and _handler for route lifecycle."""
     state: "RideState"
     broadcast_queue: "asyncio.Queue[dict]"
     stop_event: asyncio.Event
     tracker: "RouteTracker | None" = None
-    tracker_task: "asyncio.Task | None" = None
+    tracker_task: "asyncio.Task | None" = None  # used by legacy load_route_content path
+    phase_task: "asyncio.Task | None" = None     # used by start_ride path
     library: "RouteLibrary | None" = None
     current_route_id: "str | None" = None
     current_route: "RouteData | None" = None
@@ -60,7 +57,7 @@ class RouteContext:
     strava_importer: "StravaImporter | None" = None
     strava_syncing: bool = False
     ghost_tracker: "GhostTracker | None" = None
-    pending_ghost: "dict | None" = None  # {mode, strava_id} — applied after route loads
+    pending_ghost: "dict | None" = None  # only used by legacy load_route_content path
     streams_dir: "Path | None" = None
 
 # Module-level client registry — mutated by _handler coroutines.
@@ -319,6 +316,180 @@ async def _do_load_route(
         ctx.pending_ghost = None
 
 
+def _resolve_auto_ghost(
+    ctx: RouteContext, route_id: Optional[str]
+) -> tuple[str, Optional[str]]:
+    """Resolve 'auto' ghost mode → ('strava', strava_id) or ('estimated', None)."""
+    if ctx.streams_dir and ctx.library and route_id:
+        entry = next((e for e in ctx.library.list_routes() if e.id == route_id), None)
+        if entry and entry.strava_id:
+            path = ctx.streams_dir / f"{entry.strava_id}.json"
+            if path.exists():
+                return "strava", entry.strava_id
+    return "estimated", None
+
+
+async def _cancel_active_ride(ctx: RouteContext) -> None:
+    """Cancel any running phase_task or legacy tracker_task."""
+    for task_attr in ("phase_task", "tracker_task"):
+        task = getattr(ctx, task_attr)
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+        setattr(ctx, task_attr, None)
+    ctx.tracker = None
+    ctx.ghost_tracker = None
+    ctx.current_route = None
+    # Reset erg state
+    ctx.state.erg_mode = False
+    ctx.state.erg_power_table = None
+    ctx.state.erg_cadence_table = None
+    ctx.state.target_power_w = None
+    ctx.state.erg_committed_power_w = None
+    ctx.state.erg_committed_cadence = None
+    ctx.state.erg_pending_power_w = None
+    ctx.state.erg_pending_cadence = None
+    ctx.state.erg_commit_at_monotonic = 0.0
+    ctx.state.ride_phase = "route"
+    ctx.state.lap_index = 0
+    ctx.state.lap_count = 1
+    ctx.state.phase_end_monotonic = None
+    ctx.state.ride_start_monotonic = None
+
+
+async def _start_ride(ctx: RouteContext, msg: dict) -> None:
+    """Handle start_ride message: load, transform, configure, spawn phase machine."""
+    from engine.route.loader import load_gpx, reverse_route, slice_route
+    from engine.route.ghost import GhostTracker
+    from engine.route.erg import compute_target_power_table, compute_cadence_table
+    from engine.control.phases import run_phases
+
+    route_id = msg.get("route_id")
+    if not isinstance(route_id, str) or not route_id or ctx.library is None:
+        return
+
+    gpx_path = ctx.library.get_gpx_path(route_id)
+    if gpx_path is None or not gpx_path.exists():
+        _put(ctx.broadcast_queue, {"type": "route_error", "message": "Strecke nicht gefunden"})
+        return
+
+    await _cancel_active_ride(ctx)
+
+    try:
+        route = await asyncio.to_thread(load_gpx, str(gpx_path))
+    except Exception as exc:
+        _put(ctx.broadcast_queue, {"type": "route_error", "message": f"{type(exc).__name__}: {exc}"})
+        ctx.state.real_grade_percent = 0.0
+        return
+
+    if msg.get("reverse", False):
+        route = reverse_route(route)
+
+    cut_start = msg.get("cutout_start_m")
+    cut_end = msg.get("cutout_end_m")
+    if cut_start is not None or cut_end is not None:
+        try:
+            route = slice_route(
+                route,
+                float(cut_start or 0.0),
+                float(cut_end or route.total_dist_m),
+            )
+        except ValueError as exc:
+            _put(ctx.broadcast_queue, {"type": "route_error", "message": str(exc)})
+            return
+
+    ctx.current_route = route
+    ctx.current_route_id = route_id
+
+    _put(ctx.broadcast_queue, {
+        "type": "route_data",
+        "lats": list(route.lats),
+        "lons": list(route.lons),
+        "elevations_m": list(route.elevations_m),
+        "cum_dist_m": list(route.cum_dist_m),
+        "grades_pct": list(route.grades_pct),
+        "total_dist_m": route.total_dist_m,
+    })
+
+    erg_mode = bool(msg.get("erg_mode", False))
+    ctx.state.erg_mode = erg_mode
+    if erg_mode:
+        ctx.state.erg_power_table = compute_target_power_table(
+            route.grades_pct, ctx.state.athlete_ftp_w
+        )
+        ctx.state.erg_cadence_table = compute_cadence_table(route.grades_pct)
+    else:
+        ctx.state.erg_power_table = None
+        ctx.state.erg_cadence_table = None
+
+    # Ghost (disabled in erg mode)
+    use_ghost = bool(msg.get("ghost", False)) and not erg_mode
+    if use_ghost:
+        ghost_mode, strava_id = _resolve_auto_ghost(ctx, route_id)
+        if ghost_mode == "strava" and strava_id and ctx.streams_dir:
+            path = ctx.streams_dir / f"{strava_id}.json"
+            try:
+                streams = json.loads(path.read_text(encoding="utf-8"))
+                if cut_start is not None or cut_end is not None:
+                    s = float(cut_start or 0.0)
+                    e = float(cut_end or route.total_dist_m)
+                    try:
+                        ctx.ghost_tracker = GhostTracker.from_strava_streams_clipped(streams, s, e)
+                    except Exception as exc2:
+                        _log.warning("Ghost: stream clip failed, using unclipped: %s", exc2)
+                        ctx.ghost_tracker = GhostTracker.from_strava_streams(streams)
+                else:
+                    ctx.ghost_tracker = GhostTracker.from_strava_streams(streams)
+                _log.info("Ghost: strava %s loaded", strava_id)
+            except Exception as exc:
+                _log.warning("Ghost: strava load failed: %s", exc)
+                ghost_mode = "estimated"
+
+        if ghost_mode == "estimated":
+            entry = next((e for e in ctx.library.list_routes() if e.id == route_id), None)
+            total_time_s: Optional[float] = None
+            if entry:
+                total_time_s = float(entry.moving_time_s or entry.best_time_s or 0) or None
+            if not total_time_s:
+                total_time_s = (route.total_dist_m / 1000.0 / 20.0) * 3600.0
+            ctx.ghost_tracker = GhostTracker.from_fallback(
+                list(route.lats), list(route.lons), list(route.cum_dist_m), total_time_s
+            )
+            _log.info("Ghost: estimated pace %.0fs loaded", total_time_s)
+
+    laps = max(1, int(msg.get("laps", 1)))
+    warmup_s = max(0, int(msg.get("warmup_s", 0)))
+    cooldown_s = max(0, int(msg.get("cooldown_s", 0)))
+    rid_snapshot = route_id
+
+    def _on_complete(elapsed_s: int) -> None:
+        if ctx.library and rid_snapshot:
+            ctx.library.update_best_time(rid_snapshot, elapsed_s)
+            _put(ctx.broadcast_queue, ctx.library.to_ws_message())
+
+    ctx.phase_task = asyncio.create_task(
+        run_phases(
+            ctx.state,
+            route,
+            ctx.stop_event,
+            warmup_s=warmup_s,
+            cooldown_s=cooldown_s,
+            laps=laps,
+            on_tracker_ready=lambda t: setattr(ctx, "tracker", t),
+            on_tracker_done=lambda: setattr(ctx, "tracker", None),
+            on_complete=_on_complete,
+        ),
+        name="ride_phases",
+    )
+    _log.info(
+        "start_ride: route=%s reverse=%s laps=%d warmup=%ds cooldown=%ds erg=%s ghost=%s",
+        route_id, msg.get("reverse", False), laps, warmup_s, cooldown_s, erg_mode, use_ghost,
+    )
+
+
 async def _handler(
     ws: ServerConnection,
     gear_engine: GearEngine | None = None,
@@ -405,22 +576,10 @@ async def _handler(
                         "syncing": route_context.strava_syncing,
                     }))
 
-            elif msg.get("type") == "load_saved_route":
-                if route_context is None or route_context.library is None:
+            elif msg.get("type") == "start_ride":
+                if route_context is None:
                     continue
-                rid = msg.get("route_id")
-                if not isinstance(rid, str) or not rid:
-                    continue
-                gpx_path = route_context.library.get_gpx_path(rid)
-                if gpx_path is None or not gpx_path.exists():
-                    await ws.send(json.dumps({"type": "route_error", "message": "Strecke nicht gefunden"}))
-                    continue
-                from engine.route.loader import load_gpx as _load_gpx
-                asyncio.create_task(
-                    _do_load_route(route_context, lambda p=gpx_path: _load_gpx(str(p)),
-                                   label=repr(str(gpx_path)), route_id=rid),
-                    name="load_saved_route",
-                )
+                asyncio.create_task(_start_ride(route_context, msg), name="start_ride")
 
             elif msg.get("type") == "delete_route":
                 if route_context is None or route_context.library is None:
@@ -476,33 +635,6 @@ async def _handler(
             elif msg.get("type") == "set_paused":
                 if route_context is not None:
                     route_context.state.paused = bool(msg.get("paused", False))
-
-            elif msg.get("type") == "set_ghost":
-                if route_context is None:
-                    continue
-                ghost_cfg = {
-                    "mode": msg.get("mode", "none"),
-                    "strava_id": msg.get("strava_id"),
-                }
-                # If a load_saved_route task is in flight, defer to its tail —
-                # otherwise we'd apply the ghost to the *previous* route and
-                # _do_load_route would clear it before the new route loads.
-                load_in_flight = (
-                    route_context.tracker_task is not None
-                    and not route_context.tracker_task.done()
-                )
-                if route_context.current_route is not None and not load_in_flight:
-                    route_context.pending_ghost = ghost_cfg
-                    _apply_ghost(route_context, route_context.current_route)
-                    route_context.pending_ghost = None
-                    deferred = False
-                else:
-                    route_context.pending_ghost = ghost_cfg
-                    deferred = True
-                _log.info(
-                    "Ghost config: mode=%s strava_id=%s (deferred=%s, load_in_flight=%s)",
-                    ghost_cfg["mode"], ghost_cfg.get("strava_id"), deferred, load_in_flight,
-                )
 
             elif msg.get("type") == "strava_disconnect":
                 if route_context is not None and route_context.strava_auth is not None:

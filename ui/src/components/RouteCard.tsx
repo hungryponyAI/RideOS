@@ -9,6 +9,7 @@ interface Props {
   onRename: (routeId: string, name: string) => void;
   athleteSettings: AthleteSettings;
   isSelected?: boolean;
+  compact?: boolean;
 }
 
 function formatTime(seconds: number): string {
@@ -76,7 +77,7 @@ function StravaBadge() {
   );
 }
 
-export const RouteCard = memo(function RouteCard({ route, onLoad, onDelete, onRename, athleteSettings, isSelected }: Props) {
+export const RouteCard = memo(function RouteCard({ route, onLoad, onDelete, onRename, athleteSettings, isSelected, compact }: Props) {
   const [editing, setEditing] = useState(false);
   const [nameVal, setNameVal] = useState(route.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -97,9 +98,9 @@ export const RouteCard = memo(function RouteCard({ route, onLoad, onDelete, onRe
   );
 
   return (
-    <div className={`flex flex-col bg-[var(--surface)] border overflow-hidden cursor-pointer group transition-colors duration-150 ${isSelected ? "border-[#FFF200]" : "border-[var(--border)] hover:border-[#FFF200]"}`}>
+    <div className={`flex flex-col bg-[var(--surface)] border overflow-hidden cursor-pointer group transition-colors duration-150 ${isSelected ? "border-[#FFF200]" : "border-[var(--border)] hover:border-[#FFF200]"} ${compact ? "opacity-70 hover:opacity-100" : ""}`}>
       {/* Mini elevation profile */}
-      <div className="h-[48px] overflow-hidden shrink-0 border-b border-[var(--border)]" onClick={() => onLoad(route.id)}>
+      <div className={`${compact ? "h-[32px]" : "h-[48px]"} overflow-hidden shrink-0 border-b border-[var(--border)]`} onClick={() => onLoad(route.id)}>
         <MiniProfile thumbnail={route.elevation_thumbnail} />
       </div>
 

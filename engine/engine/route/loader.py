@@ -10,6 +10,7 @@ Responsibilities:
 """
 from __future__ import annotations
 
+import bisect
 import logging
 from typing import List
 
@@ -120,6 +121,67 @@ def extract_gpx_name(content: str) -> str:
         pass
     from datetime import datetime as _dt
     return f"Route {_dt.now().strftime('%d.%m.%Y %H:%M')}"
+
+
+def reverse_route(route: RouteData) -> RouteData:
+    """Return a new RouteData with direction reversed.
+
+    Distances are symmetric (haversine is commutative), so cum_dist_m can be
+    derived without recomputing haversine. Grades flip sign and reverse index.
+    """
+    n = len(route.lats)
+    if n < 2:
+        return route
+    total = route.total_dist_m
+    rev_lats = tuple(reversed(route.lats))
+    rev_lons = tuple(reversed(route.lons))
+    rev_eles = tuple(reversed(route.elevations_m))
+    # cum_dist_reversed[i] = total - cum_dist_m[n-1-i]
+    rev_cum = tuple(total - route.cum_dist_m[n - 1 - i] for i in range(n))
+    # grades: reversed_grades[j] = -grades[n-j] for j>=1, else 0
+    grades = route.grades_pct
+    rev_grades: List[float] = [0.0]
+    for j in range(1, n):
+        rev_grades.append(-grades[n - j])
+    return RouteData(
+        lats=rev_lats,
+        lons=rev_lons,
+        elevations_m=rev_eles,
+        cum_dist_m=rev_cum,
+        grades_pct=tuple(rev_grades),
+        total_dist_m=total,
+    )
+
+
+def slice_route(route: RouteData, start_m: float, end_m: float) -> RouteData:
+    """Return a new RouteData cut to [start_m, end_m] with rebased cum_dist_m."""
+    cum = route.cum_dist_m
+    n = len(cum)
+    if n < 2:
+        return route
+    end_m = min(end_m, cum[-1])
+    start_m = max(0.0, start_m)
+    if start_m >= end_m:
+        raise ValueError(f"slice_route: start_m ({start_m:.1f}) >= end_m ({end_m:.1f})")
+    i_start = max(0, bisect.bisect_right(cum, start_m) - 1)
+    i_end = min(n, bisect.bisect_left(cum, end_m) + 1)
+    if i_end <= i_start + 1:
+        raise ValueError("slice_route: resulting route has fewer than 2 points")
+    lats = route.lats[i_start:i_end]
+    lons = route.lons[i_start:i_end]
+    eles = route.elevations_m[i_start:i_end]
+    orig_cum = route.cum_dist_m[i_start:i_end]
+    grades = route.grades_pct[i_start:i_end]
+    offset = orig_cum[0]
+    new_cum = tuple(c - offset for c in orig_cum)
+    return RouteData(
+        lats=lats,
+        lons=lons,
+        elevations_m=eles,
+        cum_dist_m=new_cum,
+        grades_pct=grades,
+        total_dist_m=new_cum[-1],
+    )
 
 
 def _rolling_mean(values: List[float], window: int = 5) -> List[float]:

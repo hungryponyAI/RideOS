@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import * as maplibregl from "maplibre-gl";
-import "maplibre-gl/dist/maplibre-gl.css";
+import mapboxgl from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
 
-export type MapViewMode = "chase" | "birdseye";
+mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN as string;
+if (!mapboxgl.accessToken) {
+  throw new Error("VITE_MAPBOX_TOKEN is not set");
+}
+
+export type MapViewMode = "chase" | "follow" | "birdseye";
 
 interface MiniMapProps {
   coords: Array<[number, number]> | null;
@@ -11,46 +16,45 @@ interface MiniMapProps {
   ghostLat?: number | null;
   ghostLng?: number | null;
   ghostBearingDeg?: number | null;
-  ghostTimeGapS: number | null;
   isDark: boolean;
   viewMode: MapViewMode;
 }
 
-// Inline style — no external style.json fetch. OSM raster tiles are stable,
-// keyless, and acceptable for low-volume personal use.
-const STYLE: maplibregl.StyleSpecification = {
-  version: 8,
-  sources: {
-    osm: {
-      type: "raster",
-      tiles: [
-        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      ],
-      tileSize: 256,
-      maxzoom: 19,
-      attribution: "© OpenStreetMap contributors",
-    },
-  },
-  layers: [
-    {
-      id: "osm",
-      type: "raster",
-      source: "osm",
-    },
-  ],
-};
+// Mapbox Standard renders real 3D building volumes + named landmarks (not flat
+// extrusions). lightPreset controls brightness: dawn | day | dusk | night.
+const STYLE = "mapbox://styles/mapbox/standard";
+const LIGHT_PRESET: "dawn" | "day" | "dusk" | "night" = "day";
+
+// Mapbox-hosted global DEM. Standard already enables terrain internally, but
+// we re-assert exaggeration to make hills feel tangible during chase view.
+const DEM_SOURCE_ID = "mapbox-dem";
+const DEM_URL = "mapbox://mapbox.mapbox-terrain-dem-v1";
+const TERRAIN_EXAGGERATION = 1.5;
 
 const BEARING_LOOKAHEAD_M = 200;
 
+// chase = elevated trailing camera (default)
 const CHASE_PITCH = 60;
 const CHASE_ZOOM = 17;
 const CHASE_OFFSET: [number, number] = [0, 150];
 
+// follow = Zwift-style behind-the-rider POV: heavy pitch, close zoom, ego sits
+// near the bottom of the viewport so the road ahead dominates.
+const FOLLOW_PITCH = 78;
+const FOLLOW_ZOOM = 18.5;
+const FOLLOW_OFFSET: [number, number] = [0, 220];
+
 const BIRDSEYE_PITCH = 0;
 const BIRDSEYE_ZOOM = 14;
 const BIRDSEYE_OFFSET: [number, number] = [0, 0];
+
+// Position updates arrive faster than the camera animation duration. Keep the
+// duration shorter than the telemetry tick (~120ms typical from the engine) so
+// each easeTo finishes before the next interrupts it. Linear easing prevents
+// visible deceleration handoff between consecutive frames.
+const POS_TWEEN_MS = 80;
+const VIEW_TWEEN_MS = 600;
+const LINEAR = (t: number) => t;
 
 function bisectRight(arr: number[], x: number): number {
   let lo = 0;
@@ -101,19 +105,22 @@ export function MiniMap({
   positionM,
   ghostLat,
   ghostLng,
-  ghostTimeGapS,
   viewMode,
 }: MiniMapProps) {
-  const mapRef = useRef<maplibregl.Map | null>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const lastViewModeRef = useRef<MapViewMode>(viewMode);
+  // Last computed ego position + bearing. Lets the camera tween still run
+  // when positionM goes null (e.g. paused / no telemetry) so M-key works.
+  const lastEgoRef = useRef<{ ego: [number, number]; bearing: number } | null>(null);
 
   // init — must null mapRef in cleanup so React 19 double-mount re-creates the map
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const map = new maplibregl.Map({
+    const map = new mapboxgl.Map({
       container,
       style: STYLE,
       center: [10, 50],
@@ -122,14 +129,33 @@ export function MiniMap({
       attributionControl: false,
     });
 
-    // 'styledata' fires as soon as the style is parsed (works for inline styles
-    // that don't need a network roundtrip). 'load' is too late if tiles stall.
+    // 'load' fires after the style is fully parsed and ready for source/layer
+    // mutations — the right moment to attach terrain + sky. styledata as a
+    // backup for environments where 'load' stalls.
     const markLoaded = () => {
+      // Brightness/atmosphere of the Standard basemap.
+      try {
+        map.setConfigProperty("basemap", "lightPreset", LIGHT_PRESET);
+        map.setConfigProperty("basemap", "theme", "monochrome");
+        map.setConfigProperty("basemap", "show3dObjects", true);
+      } catch {
+        // Older mapbox-gl or non-Standard styles silently ignore.
+      }
+      // Re-assert exaggerated terrain — Standard's default is subtle.
+      if (!map.getSource(DEM_SOURCE_ID)) {
+        map.addSource(DEM_SOURCE_ID, {
+          type: "raster-dem",
+          url: DEM_URL,
+          tileSize: 512,
+          maxzoom: 14,
+        });
+      }
+      map.setTerrain({ source: DEM_SOURCE_ID, exaggeration: TERRAIN_EXAGGERATION });
       map.resize();
       setLoaded(true);
     };
-    map.once("styledata", markLoaded);
     map.once("load", markLoaded);
+    map.once("styledata", markLoaded);
 
     // Keep the canvas in sync with container size for the lifetime of the map.
     const ro = new ResizeObserver(() => {
@@ -163,7 +189,7 @@ export function MiniMap({
       properties: {},
     };
 
-    const src = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
+    const src = map.getSource("route") as mapboxgl.GeoJSONSource | undefined;
     if (src) {
       src.setData(geojson);
     } else {
@@ -178,12 +204,16 @@ export function MiniMap({
         },
       });
     }
+    // dark-v11 ships a `building-extrusion` layer that would bury the route
+    // line when the camera is pitched. Keep route above all built-in layers;
+    // ego/ghost will moveLayer over it on every telemetry frame.
+    if (map.getLayer("route")) map.moveLayer("route");
 
     // Fit to route bounds on first load (only if no live position yet)
     if (positionM == null) {
       const lons = coords.map(([, lng]) => lng);
       const lats = coords.map(([lat]) => lat);
-      const bounds = new maplibregl.LngLatBounds(
+      const bounds = new mapboxgl.LngLatBounds(
         [Math.min(...lons), Math.min(...lats)],
         [Math.max(...lons), Math.max(...lats)]
       );
@@ -194,29 +224,72 @@ export function MiniMap({
   // camera + ego marker — re-runs on viewMode change to animate the perspective switch
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !loaded || !coords || !cumDist || positionM == null) return;
+    if (!map || !loaded) return;
 
-    const ego = interpolatePosition(coords, cumDist, positionM);
-    if (!ego) return;
-
+    // Resolve ego: prefer live telemetry, fall back to cache, then to nothing
+    // (we still tween the camera in place so a viewMode toggle is always
+    // visible — even before the first telemetry frame).
+    let ego: [number, number] | null = null;
     let bearing = 0;
-    if (viewMode === "chase") {
-      const ahead = interpolatePosition(
-        coords,
-        cumDist,
-        positionM + BEARING_LOOKAHEAD_M
-      );
-      bearing = ahead ? calcBearing(ego[0], ego[1], ahead[0], ahead[1]) : 0;
+    let liveUpdate = false;
+
+    if (coords && cumDist && positionM != null) {
+      const fresh = interpolatePosition(coords, cumDist, positionM);
+      if (fresh) {
+        ego = fresh;
+        if (viewMode === "chase" || viewMode === "follow") {
+          const ahead = interpolatePosition(
+            coords,
+            cumDist,
+            positionM + BEARING_LOOKAHEAD_M
+          );
+          bearing = ahead ? calcBearing(ego[0], ego[1], ahead[0], ahead[1]) : 0;
+        }
+        lastEgoRef.current = { ego, bearing };
+        liveUpdate = true;
+      }
+    }
+    if (!ego && lastEgoRef.current) {
+      ego = lastEgoRef.current.ego;
+      bearing = viewMode === "birdseye" ? 0 : lastEgoRef.current.bearing;
     }
 
+    let pitch = BIRDSEYE_PITCH;
+    let zoom = BIRDSEYE_ZOOM;
+    let offset: [number, number] = BIRDSEYE_OFFSET;
+    if (viewMode === "chase") {
+      pitch = CHASE_PITCH;
+      zoom = CHASE_ZOOM;
+      offset = CHASE_OFFSET;
+    } else if (viewMode === "follow") {
+      pitch = FOLLOW_PITCH;
+      zoom = FOLLOW_ZOOM;
+      offset = FOLLOW_OFFSET;
+    }
+
+    // Slow tween only on perspective swap; fast linear tween on every
+    // telemetry-driven position update so consecutive frames don't fight.
+    const viewChanged = lastViewModeRef.current !== viewMode;
+    lastViewModeRef.current = viewMode;
+
+    // If ego is unknown (no telemetry yet) keep the current map center so the
+    // perspective change is still visible.
+    const center: [number, number] = ego
+      ? [ego[1], ego[0]]
+      : (map.getCenter().toArray() as [number, number]);
+    const targetBearing = ego ? bearing : map.getBearing();
     map.easeTo({
-      center: [ego[1], ego[0]],
-      bearing,
-      pitch: viewMode === "chase" ? CHASE_PITCH : BIRDSEYE_PITCH,
-      zoom: viewMode === "chase" ? CHASE_ZOOM : BIRDSEYE_ZOOM,
-      offset: viewMode === "chase" ? CHASE_OFFSET : BIRDSEYE_OFFSET,
-      duration: 300,
+      center,
+      bearing: targetBearing,
+      pitch,
+      zoom,
+      offset,
+      duration: viewChanged ? VIEW_TWEEN_MS : POS_TWEEN_MS,
+      easing: viewChanged ? undefined : LINEAR,
+      essential: true,
     });
+
+    if (!ego) return;
 
     const egoGeo = {
       type: "Feature" as const,
@@ -224,26 +297,34 @@ export function MiniMap({
       properties: {},
     };
 
-    const egoSrc = map.getSource("ego") as maplibregl.GeoJSONSource | undefined;
+    const egoSrc = map.getSource("ego") as mapboxgl.GeoJSONSource | undefined;
     if (egoSrc) {
-      egoSrc.setData(egoGeo);
+      // Only push new data on live telemetry; on a paused viewMode-only run the
+      // marker is already at the cached position, no need to re-setData.
+      if (liveUpdate) egoSrc.setData(egoGeo);
     } else {
       map.addSource("ego", { type: "geojson", data: egoGeo });
+      // Brighter base red compensates for the canvas brightness(0.7) filter.
       map.addLayer({
         id: "ego",
         type: "circle",
         source: "ego",
         paint: {
-          "circle-radius": 7,
-          "circle-color": "#E10600",
-          "circle-stroke-color": "#fff",
+          "circle-radius": 8,
+          "circle-color": "#FF1A1A",
+          "circle-stroke-color": "#ffffff",
           "circle-stroke-width": 2,
         },
       });
+      map.moveLayer("ego");
     }
-    // Stacking: route → ghost → ego. Re-asserted on every frame so order
-    // survives layers being added in arbitrary effect-firing order.
-    if (map.getLayer("ego")) map.moveLayer("ego");
+    // Only re-stack when something else has been appended above ego — calling
+    // moveLayer every telemetry frame forces a renderer flush and is the main
+    // contributor to the on-the-move flicker.
+    const layers = map.getStyle().layers;
+    if (layers && layers.length && layers[layers.length - 1].id !== "ego") {
+      map.moveLayer("ego");
+    }
   }, [coords, cumDist, positionM, loaded, viewMode]);
 
   // ghost marker — driven by backend lat/lng (not derived from positionM)
@@ -257,7 +338,7 @@ export function MiniMap({
       Number.isFinite(ghostLat) &&
       Number.isFinite(ghostLng);
 
-    const ghostSrc = map.getSource("ghost") as maplibregl.GeoJSONSource | undefined;
+    const ghostSrc = map.getSource("ghost") as mapboxgl.GeoJSONSource | undefined;
 
     if (!hasGhost) {
       // Hide marker by clearing data; layer stays so we don't have to re-add on next ghost
@@ -280,40 +361,40 @@ export function MiniMap({
       ghostSrc.setData(ghostGeo);
     } else {
       map.addSource("ghost", { type: "geojson", data: ghostGeo });
-      map.addLayer({
-        id: "ghost",
-        type: "circle",
-        source: "ghost",
-        paint: {
-          "circle-radius": 6,
-          "circle-color": "#bbbbbb",
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 1.5,
-          "circle-opacity": 0.85,
+      // Insert ghost BELOW ego if ego exists, so ego stays the most prominent
+      // marker without per-frame moveLayer churn.
+      const beforeId = map.getLayer("ego") ? "ego" : undefined;
+      map.addLayer(
+        {
+          id: "ghost",
+          type: "circle",
+          source: "ghost",
+          paint: {
+            "circle-radius": 7,
+            "circle-color": "#3a3a3a",
+            "circle-stroke-color": "#ffffff",
+            "circle-stroke-width": 1.5,
+            "circle-opacity": 0.95,
+          },
         },
-      });
+        beforeId
+      );
     }
-    // Keep ghost above route + ego regardless of insertion order.
-    if (map.getLayer("ghost")) map.moveLayer("ghost");
   }, [ghostLat, ghostLng, loaded]);
 
   return (
     <div className="relative w-full h-full min-h-[300px]">
-      {/* maplibre-gl.css forces .maplibregl-map { position: relative }, which
+      {/* mapbox-gl.css forces .mapboxgl-map { position: relative }, which
           overrides Tailwind's .absolute. Use w-full h-full so the size works
           regardless of position. */}
       <div ref={containerRef} className="w-full h-full" />
 
-      {ghostTimeGapS != null && (
-        <div className="absolute top-2 left-2 z-[1000] bg-black/70 text-white px-2 py-1 text-xs font-bold font-condensed tracking-widest">
-          {ghostTimeGapS > 0
-            ? `+${Math.round(ghostTimeGapS)}s`
-            : `${Math.round(ghostTimeGapS)}s`}
-        </div>
-      )}
-
       <div className="absolute bottom-2 right-2 z-[1000] bg-black/60 text-white/90 px-2 py-1 text-[10px] font-condensed tracking-widest uppercase pointer-events-none">
-        {viewMode === "chase" ? "CHASE · M" : "BIRDSEYE · M"}
+        {viewMode === "chase"
+          ? "CHASE · M"
+          : viewMode === "follow"
+          ? "FOLLOW · M"
+          : "BIRDSEYE · M"}
       </div>
     </div>
   );
