@@ -19,13 +19,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import partial
-from typing import Optional, TYPE_CHECKING
-
 from pathlib import Path
+from typing import TYPE_CHECKING, Optional
 
-from websockets.asyncio.server import serve, ServerConnection
+from websockets.asyncio.server import ServerConnection, serve
 
 from engine.route.library import RouteLibrary
 
@@ -130,6 +129,7 @@ def _broadcast_strava_status(ctx: RouteContext, syncing: bool = False) -> None:
 async def _strava_exchange_and_sync(
     ctx: RouteContext, code: str, ws: ServerConnection
 ) -> None:
+    assert ctx.strava_auth is not None
     try:
         await asyncio.to_thread(ctx.strava_auth.exchange_code, code)
     except Exception as exc:
@@ -144,6 +144,8 @@ async def _strava_exchange_and_sync(
 
 
 async def _strava_sync(ctx: RouteContext) -> None:
+    assert ctx.strava_auth is not None
+    assert ctx.strava_importer is not None
     if ctx.strava_syncing:
         _log.info("Strava sync already in progress, ignoring duplicate request")
         return
@@ -191,7 +193,7 @@ async def _load_route(ctx: RouteContext, path: str) -> None:
 
 async def _load_route_content(ctx: RouteContext, content: str) -> None:
     """Handle inbound load_route_content (browser file upload): parse GPX string."""
-    from engine.route.loader import load_gpx_content, extract_gpx_name
+    from engine.route.loader import extract_gpx_name, load_gpx_content
     name = await asyncio.to_thread(extract_gpx_name, content)
     await _do_load_route(ctx, lambda: load_gpx_content(content), label="<browser upload>",
                          gpx_content=content, route_name=name)
@@ -362,10 +364,10 @@ async def _cancel_active_ride(ctx: RouteContext) -> None:
 
 async def _start_ride(ctx: RouteContext, msg: dict) -> None:
     """Handle start_ride message: load, transform, configure, spawn phase machine."""
-    from engine.route.loader import load_gpx, reverse_route, slice_route
-    from engine.route.ghost import GhostTracker
-    from engine.route.erg import compute_target_power_table, compute_cadence_table
     from engine.control.phases import run_phases
+    from engine.route.erg import compute_cadence_table, compute_target_power_table
+    from engine.route.ghost import GhostTracker
+    from engine.route.loader import load_gpx, reverse_route, slice_route
 
     route_id = msg.get("route_id")
     if not isinstance(route_id, str) or not route_id or ctx.library is None:

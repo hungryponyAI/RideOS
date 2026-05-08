@@ -20,7 +20,7 @@ import asyncio
 import bisect
 import logging
 import time
-from typing import Callable, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Optional
 
 from engine.route.model import RouteData
 

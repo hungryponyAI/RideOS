@@ -9,6 +9,7 @@ Read by:
 - run_control_loop (only)  — writes to the trainer
 """
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional
 

@@ -176,6 +176,8 @@ class ClickShifter:
         """AES-CCM decrypt a v1 encrypted frame: [counter:4][ciphertext][tag:4]."""
         if len(data) < 9:
             return None
+        if self._iv_prefix is None or self._aes_key is None:
+            return None
         from cryptography.hazmat.primitives.ciphers.aead import AESCCM
         counter = data[:4]
         nonce = self._iv_prefix + counter
@@ -320,7 +322,10 @@ class ClickShifter:
         """Derive AES-CCM key from v1 ECDH key exchange."""
         from cryptography.hazmat.primitives import hashes, serialization
         from cryptography.hazmat.primitives.asymmetric.ec import (
-            ECDH, SECP256R1, EllipticCurvePublicKey, generate_private_key,
+            ECDH,
+            SECP256R1,
+            EllipticCurvePublicKey,
+            generate_private_key,
         )
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
@@ -357,7 +362,6 @@ class ClickShifter:
 
     @staticmethod
     async def _default_scanner(*, timeout: float) -> "BLEDevice | None":
-        from bleak.backends.device import BLEDevice
         from bleak.backends.scanner import AdvertisementData
 
         def _is_click(device: BLEDevice, adv: AdvertisementData) -> bool:

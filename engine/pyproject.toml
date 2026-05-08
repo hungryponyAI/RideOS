@@ -8,6 +8,7 @@ dependencies = [
     "websockets>=16.0,<17.0",
     "gpxpy>=1.6.2,<2.0",
     "cryptography>=47.0.0",
+    "structlog>=25.5.0",
 ]
 
 [project.optional-dependencies]
@@ -27,3 +28,29 @@ packages = ["engine"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-ra"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+# E/F: pycodestyle errors + pyflakes (basic correctness)
+# I: isort (import order)
+# Phase 1+: add UP, B, SIM once domain/ is extracted and cleaned
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = false
+# Strict checks enabled on domain/ once extracted (Phase 1+)
+# For now: check for obvious bugs only
+check_untyped_defs = true
+
+[dependency-groups]
+dev = [
+    "mypy>=2.0.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.12",
+]

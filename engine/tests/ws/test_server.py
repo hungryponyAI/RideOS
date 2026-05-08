@@ -184,15 +184,15 @@ async def test_inbound_gear_shift():
 
     try:
         async with connect(f"ws://localhost:{port}") as ws:
-            # Shift up: gear 5 -> 6
+            # Shift up: gear 6 (default) -> 7
             await ws.send(json.dumps({"type": "gear_shift", "direction": "up"}))
             await asyncio.sleep(0.1)
-            assert gear_engine.current_gear == 6
+            assert gear_engine.current_gear == 7
 
-            # Shift down: gear 6 -> 5
+            # Shift down: gear 7 -> 6
             await ws.send(json.dumps({"type": "gear_shift", "direction": "down"}))
             await asyncio.sleep(0.1)
-            assert gear_engine.current_gear == 5
+            assert gear_engine.current_gear == 6
     finally:
         stop_event.set()
         await asyncio.wait_for(server_task, timeout=2.0)

@@ -113,9 +113,11 @@ async def reconnect_loop(
                     await controller.start()
 
                 if on_client_ready is not None:
-                    on_client_ready(client, controller)
+                    on_client_ready(client, controller)  # type: ignore[arg-type]  # controller may be None when ride_state absent
 
                 if controller is not None:
+                    assert ride_state is not None  # controller is only set when ride_state is not None
+                    assert stop_event is not None   # always provided from main.py
                     control_task = asyncio.create_task(
                         run_control_loop(controller, ride_state, stop_event)
                     )

@@ -107,6 +107,7 @@ async def test_tick_writes_on_grade_change(fake_bleak_client_factory):
 
     gears = GearEngine(current_gear=5)
     state = RideState(gear_engine=gears, real_grade_percent=2.0)
+    state.paused = False  # must be unpaused so grade-sim path is active
     stop = asyncio.Event()
 
     tick_count = {"n": 0}

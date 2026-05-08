@@ -50,7 +50,7 @@ def _parse_gpx(content: str, source_label: str) -> RouteData:
         for pt in seg.points
     ]
     if not points:
-        points = [pt for route in gpx.routes for pt in route.points]
+        points = [pt for route in gpx.routes for pt in route.points]  # type: ignore[misc]  # GPXRoutePoint shares the same lat/lon/ele interface
     if not points:
         raise ValueError(
             f"GPX {source_label} contains no track points or route points"

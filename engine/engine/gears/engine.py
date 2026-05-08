@@ -2,8 +2,9 @@
 
 effective_grade = real_grade / gear_factor  (Focus Project.md)
 
-Factor curve is a geometric progression anchored to the note's anchors:
-G1 = 0.5, G10 = 1.8, so factor[i] = 0.5 * 3.6 ** ((i-1)/9), rounded to 3dp.
+Factor curve is a geometric progression: 12 gears spanning 0.4 → 2.4
+(a 6× ratio, wider than the original 0.5 → 1.8 / 3.6× range).
+factor[i] = 0.4 * 6 ** ((i-1)/11), pinned to 3 decimal places.
 Geometric (not linear) so every shift feels like the same relative jump.
 """
 from __future__ import annotations
@@ -11,16 +12,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Tuple
 
-# factor[i] = 0.5 * 3.6 ** ((i-1)/9) — pinned to 3 decimal places.
+# factor[i] = 0.4 * 6 ** ((i-1)/11) — pinned to 3 decimal places.
 _FACTORS: Tuple[float, ...] = (
-    0.500, 0.578, 0.668, 0.772, 0.892,
-    1.031, 1.192, 1.378, 1.593, 1.800,
+    0.400, 0.471, 0.554, 0.652, 0.767, 0.903,
+    1.063, 1.251, 1.472, 1.733, 2.039, 2.400,
 )
 
 
 @dataclass
 class GearEngine:
-    current_gear: int = 5
+    current_gear: int = 6
     factors: Tuple[float, ...] = field(default_factory=lambda: _FACTORS)
 
     @property

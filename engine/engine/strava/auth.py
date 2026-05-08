@@ -145,7 +145,7 @@ class StravaAuth:
 
     def get_access_token(self) -> str:
         self._refresh_if_needed()
-        return self._tokens["access_token"]
+        return self._tokens["access_token"]  # type: ignore[index]  # _refresh_if_needed() guarantees non-None
 
     def disconnect(self) -> None:
         self._tokens = None

@@ -25,6 +25,7 @@ from bleak.backends.device import BLEDevice
 from engine.ble.client import telemetry_consumer
 from engine.ble.reconnect import ReconnectConfig, reconnect_loop
 from engine.ble.scanner import find_kickr
+from engine.config.logging import configure_logging
 from engine.control.state import RideState
 from engine.ftms.parsers import IndoorBikeData
 from engine.gears.engine import GearEngine
@@ -33,7 +34,7 @@ from engine.input.keyboard import KeyboardShifter
 from engine.route.library import RouteLibrary
 from engine.strava.auth import StravaAuth
 from engine.strava.importer import StravaImporter
-from engine.ws.server import broadcast_loop, RouteContext
+from engine.ws.server import RouteContext, broadcast_loop
 
 _log = logging.getLogger("rideos.engine")
 
@@ -70,8 +71,8 @@ async def _gear_status_logger(state: RideState, stop_event: asyncio.Event) -> No
         real = state.real_grade_percent
         eff = state.gear_engine.effective_grade(real)
         _log.info(
-            "RIDE | gear=%d/10 factor=%.3f real=%.1f%% eff=%.1f%%",
-            gear, factor, real, eff,
+            "RIDE | gear=%d/%d factor=%.3f real=%.1f%% eff=%.1f%%",
+            gear, len(state.gear_engine.factors), factor, real, eff,
         )
         try:
             await asyncio.wait_for(asyncio.shield(stop_event.wait()), timeout=5.0)
@@ -80,10 +81,8 @@ async def _gear_status_logger(state: RideState, stop_event: asyncio.Event) -> No
 
 
 async def main() -> int:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    import os
+    configure_logging(level=os.getenv("LOG_LEVEL", "INFO"), json=os.getenv("LOG_JSON", "") == "1")
 
     queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
     stop_event = asyncio.Event()

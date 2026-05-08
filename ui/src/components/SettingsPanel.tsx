@@ -21,7 +21,7 @@ export function loadAthleteSettings(): AthleteSettings {
         ftp_w:     typeof p.ftp_w     === "number" && p.ftp_w     > 0 ? p.ftp_w     : DEFAULTS.ftp_w,
       };
     }
-  } catch {}
+  } catch { /* ignore parse errors — fall through to defaults */ }
   return { ...DEFAULTS };
 }
 

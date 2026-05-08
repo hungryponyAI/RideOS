@@ -8,7 +8,7 @@ import urllib.parse
 import urllib.request
 from typing import Any, Optional
 
-from engine.strava.auth import StravaAuth, CYCLING_SPORT_TYPES
+from engine.strava.auth import CYCLING_SPORT_TYPES, StravaAuth
 
 _log = logging.getLogger("rideos.strava.client")
 

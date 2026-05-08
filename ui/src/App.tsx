@@ -268,7 +268,7 @@ function App() {
             <div className="flex flex-col gap-0.5">
               <MetricDisplay value={t?.power_w ?? "–"} unit="WATT" size="body" />
               {t?.erg_mode && t?.target_power_w != null && (
-                <span className="text-[9px] font-condensed font-bold tracking-[0.15em] uppercase text-[#FFF200]">
+                <span className="text-[9px] font-condensed font-bold tracking-[0.15em] uppercase text-[var(--label-accent)]">
                   ZIEL {Math.round(t.target_power_w)} W
                 </span>
               )}
@@ -276,7 +276,7 @@ function App() {
             <div className="flex flex-col gap-0.5">
               <MetricDisplay value={t?.cadence_rpm ?? "–"} unit="U/MIN" size="body" />
               {t?.erg_mode && t?.target_cadence_rpm != null && (
-                <span className="text-[9px] font-condensed font-bold tracking-[0.15em] uppercase text-[#FFF200]">
+                <span className="text-[9px] font-condensed font-bold tracking-[0.15em] uppercase text-[var(--label-accent)]">
                   ZIEL {t.target_cadence_rpm} RPM
                 </span>
               )}

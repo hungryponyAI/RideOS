@@ -253,7 +253,8 @@ export function PreRideScreen({
   const isStravaConnected = stravaStatus?.connected ?? false;
   const isStravaSyncing = stravaStatus?.syncing ?? false;
 
-  const otherRoutes = routeLibrary.filter(r => r.id !== selectedRoute?.id);
+  const selectedRouteId: string | null = selectedRoute !== null ? selectedRoute.id : null;
+  const otherRoutes = routeLibrary.filter(r => r.id !== selectedRouteId);
 
   return (
     <div className="w-screen h-screen bg-[var(--bg)] flex flex-col overflow-hidden">
@@ -428,7 +429,7 @@ export function PreRideScreen({
               ) : (
                 <div className="flex-1 overflow-y-auto min-h-0 pr-1">
                   <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
-                    {routeLibrary.map(route => (
+                    {routeLibrary.map((route: RouteLibraryEntry) => (
                       <RouteCard
                         key={route.id}
                         route={route}
@@ -436,7 +437,7 @@ export function PreRideScreen({
                         onDelete={handleDelete}
                         onRename={handleRename}
                         athleteSettings={athleteSettings}
-                        isSelected={selectedRoute?.id === route.id}
+                        isSelected={selectedRouteId === route.id}
                       />
                     ))}
                   </div>

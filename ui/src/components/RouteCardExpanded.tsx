@@ -37,7 +37,7 @@ function estimateTimeS(
   return Math.round((distanceKm * 1000) / ((lo + hi) / 2));
 }
 
-function buildDefaultConfig(totalDistM: number): RideConfig {
+function buildDefaultConfig(): RideConfig {
   return {
     ghost: false,
     reverse: false,
@@ -54,7 +54,7 @@ export const RouteCardExpanded = memo(function RouteCardExpanded({
   route, athleteSettings, onStart, onClose, onRename,
 }: Props) {
   const totalDistM = route.distance_km * 1000;
-  const [config, setConfig] = useState<RideConfig>(() => buildDefaultConfig(totalDistM));
+  const [config, setConfig] = useState<RideConfig>(() => buildDefaultConfig());
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(totalDistM);
   const [trimEnabled, setTrimEnabled] = useState(false);
