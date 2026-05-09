@@ -22,15 +22,27 @@ from typing import Optional
 from bleak import BleakClient
 from bleak.backends.device import BLEDevice
 
+from engine.adapters.eventbus.asyncio_bus import AsyncioEventBus
+from engine.adapters.input.keyboard_shifter import KeyboardShifterAdapter
 from engine.ble.client import telemetry_consumer
 from engine.ble.reconnect import ReconnectConfig, reconnect_loop
 from engine.ble.scanner import find_kickr
 from engine.config.logging import configure_logging
 from engine.control.state import RideState
+from engine.domain.events import (
+    ErgTargetCommitted,
+    GearShifted,
+    PositionAdvanced,
+    RideEnded,
+    RidePhaseChanged,
+    RideStarted,
+    RouteLoaded,
+    TelemetryReading,
+)
+from engine.domain.projection import RideStateProjection
 from engine.ftms.parsers import IndoorBikeData
 from engine.gears.engine import GearEngine
 from engine.input.click import run_click_shifter
-from engine.input.keyboard import KeyboardShifter
 from engine.route.library import RouteLibrary
 from engine.strava.auth import StravaAuth
 from engine.strava.importer import StravaImporter
@@ -99,6 +111,24 @@ async def main() -> int:
     gear_engine = GearEngine()
     state = RideState(gear_engine=gear_engine, real_grade_percent=DEFAULT_GRADE)
 
+    # Phase 4 — event bus + read-model projection.
+    # RideState remains the source of truth for now; the projection runs in
+    # parallel so subscribers (broadcast loop, future event log) can migrate
+    # off RideState in subsequent slices.
+    bus = AsyncioEventBus()
+    projection = RideStateProjection()
+    for event_type in (
+        TelemetryReading,
+        GearShifted,
+        PositionAdvanced,
+        RidePhaseChanged,
+        ErgTargetCommitted,
+        RideStarted,
+        RideEnded,
+        RouteLoaded,
+    ):
+        bus.subscribe(event_type, projection.apply)
+
     _ROUTES_DIR = Path(__file__).parent.parent / "routes"
     _CONFIG_DIR = Path(__file__).parent.parent / "config"
     library = RouteLibrary(_ROUTES_DIR)
@@ -122,204 +152,210 @@ async def main() -> int:
         streams_dir=_ROUTES_DIR / "streams",
     )
 
-    shifter = KeyboardShifter(gear_engine)
-    shifter.start()
+    shifter_adapter = KeyboardShifterAdapter(gear_engine, bus)
+
+    def _on_kickr_state_change(connected: bool) -> None:
+        msg = {"type": "kickr_status", "connected": connected}
+        try:
+            broadcast_queue.put_nowait(msg)
+        except asyncio.QueueFull:
+            try:
+                broadcast_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            broadcast_queue.put_nowait(msg)
+        _log.info("KICKR %s", "connected" if connected else "disconnected")
+
+    def _on_click_state_change(connected: bool) -> None:
+        """Push click_status onto the WS broadcast queue so cockpit shows indicator.
+
+        Mirrors _on_reading drop-oldest pattern (RESEARCH.md Pattern 1, INFRA-01).
+        Plain def — no await allowed; runs on the asyncio event loop thread.
+        """
+        msg = {"type": "click_status", "connected": connected}
+        try:
+            broadcast_queue.put_nowait(msg)
+        except asyncio.QueueFull:
+            try:
+                broadcast_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            broadcast_queue.put_nowait(msg)
+        _log.info("Zwift Click %s", "connected" if connected else "disconnected")
+
+    def _on_reading(reading: IndoorBikeData) -> None:
+        """Update RideState sensor fields and publish TelemetryReading."""
+        state.last_speed_kmh = reading.speed_kmh
+        state.last_power_w = reading.power_watts
+        state.last_cadence_rpm = reading.cadence_rpm
+        bus.publish(TelemetryReading(
+            speed_kmh=reading.speed_kmh,
+            power_w=reading.power_watts,
+            cadence_rpm=reading.cadence_rpm,
+            t_mono=time.monotonic(),
+        ))
+        _log_reading(reading)
+
+    async def _state_broadcast_loop() -> None:
+        """Broadcast telemetry at 4 Hz, independent of KICKR connection."""
+        while not stop_event.is_set():
+            try:
+                now_t = time.monotonic()
+                rider_pos = route_ctx.tracker.position_m if route_ctx.tracker is not None else 0.0
+
+                ghost_snap = None
+                if route_ctx.ghost_tracker is not None:
+                    route_ctx.ghost_tracker.tick(state.paused)
+                    ghost_snap = route_ctx.ghost_tracker.snapshot(rider_pos, state.lap_index)
+
+                phase_remaining_s = None
+                if state.phase_end_monotonic is not None:
+                    phase_remaining_s = max(0, int(state.phase_end_monotonic - now_t))
+
+                elapsed_s = None
+                if state.ride_start_monotonic is not None:
+                    elapsed_s = int(now_t - state.ride_start_monotonic)
+
+                dist_remaining_m = None
+                if route_ctx.tracker is not None and route_ctx.current_route is not None:
+                    dist_remaining_m = max(0.0, route_ctx.current_route.total_dist_m - rider_pos)
+
+                erg_change_countdown_s = None
+                if state.erg_mode and state.erg_pending_power_w is not None and state.erg_commit_at_monotonic > 0:
+                    erg_change_countdown_s = max(0.0, state.erg_commit_at_monotonic - now_t)
+
+                broadcast_target_w = state.target_power_w
+                broadcast_target_cadence = None
+                if broadcast_target_w is None and state.erg_mode:
+                    broadcast_target_w = state.erg_committed_power_w
+                if state.erg_mode:
+                    broadcast_target_cadence = state.erg_committed_cadence
+
+                snapshot = {
+                    "type": "telemetry",
+                    "speed_kmh": state.last_speed_kmh,
+                    "power_w": state.last_power_w,
+                    "cadence_rpm": state.last_cadence_rpm,
+                    "gear": state.gear_engine.current_gear,
+                    "real_grade_pct": state.real_grade_percent,
+                    "effective_grade_pct": state.gear_engine.effective_grade(state.real_grade_percent),
+                    "position_m": rider_pos if route_ctx.tracker is not None else None,
+                    "route_loaded": route_ctx.tracker is not None,
+                    "ghost_lat": ghost_snap.lat if ghost_snap is not None else None,
+                    "ghost_lng": ghost_snap.lng if ghost_snap is not None else None,
+                    "ghost_bearing_deg": ghost_snap.bearing_deg if ghost_snap is not None else None,
+                    "ghost_time_gap_s": ghost_snap.time_gap_s if ghost_snap is not None else None,
+                    "ride_phase": state.ride_phase,
+                    "lap_index": state.lap_index,
+                    "lap_count": state.lap_count,
+                    "target_power_w": broadcast_target_w,
+                    "target_cadence_rpm": broadcast_target_cadence,
+                    "erg_mode": state.erg_mode,
+                    "phase_remaining_s": phase_remaining_s,
+                    "elapsed_s": elapsed_s,
+                    "dist_remaining_m": dist_remaining_m,
+                    "erg_change_countdown_s": erg_change_countdown_s,
+                }
+                try:
+                    broadcast_queue.put_nowait(snapshot)
+                except asyncio.QueueFull:
+                    try:
+                        broadcast_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                    broadcast_queue.put_nowait(snapshot)
+            except Exception:
+                _log.exception("State broadcast tick failed")
+
+            await asyncio.sleep(0.25)
+
+    async def find_device():
+        return await find_kickr(timeout=10.0)
+
+    reconnect_task = asyncio.create_task(
+        reconnect_loop(
+            queue=queue,
+            find_device=find_device,
+            connect_client=_connect_client,
+            config=ReconnectConfig(initial_backoff=1.0, max_backoff=60.0),
+            stop_event=stop_event,
+            ride_state=state,
+            on_kickr_state_change=_on_kickr_state_change,
+        ),
+        name="reconnect_loop",
+    )
+
+    consumer_task = asyncio.create_task(
+        telemetry_consumer(queue, _on_reading),
+        name="telemetry_consumer",
+    )
+
+    broadcast_task = asyncio.create_task(
+        _state_broadcast_loop(),
+        name="state_broadcast",
+    )
+
+    gear_logger_task = asyncio.create_task(
+        _gear_status_logger(state, stop_event),
+        name="gear_status_logger",
+    )
+
+    ws_task = asyncio.create_task(
+        broadcast_loop(
+            broadcast_queue,
+            stop_event,
+            gear_engine=gear_engine,
+            route_context=route_ctx,
+        ),
+        name="ws_broadcast",
+    )
+
+    click_task = asyncio.create_task(
+        run_click_shifter(
+            gear_engine,
+            stop_event,
+            on_state_change=_on_click_state_change,
+        ),
+        name="click_shifter",
+    )
+    _log.debug("click_task spawned — scanning for Zwift Click in background")
+
+    keyboard_task = asyncio.create_task(
+        shifter_adapter.run(stop_event),
+        name="keyboard_shifter",
+    )
+
+    # Wait for shutdown signal, then drain cleanly.
+    await stop_event.wait()
+    _log.info("Shutdown requested; stopping tasks")
+
+    # Cancel phase_task (start_ride path) or tracker_task (legacy upload path).
+    for _task in (route_ctx.phase_task, route_ctx.tracker_task):
+        if _task is not None and not _task.done():
+            _task.cancel()
+            try:
+                await asyncio.wait_for(_task, timeout=1.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+                pass
+
+    # Tell the consumer to exit; let the reconnect loop finish its current await.
+    await queue.put(None)
 
     try:
-        def _on_kickr_state_change(connected: bool) -> None:
-            msg = {"type": "kickr_status", "connected": connected}
-            try:
-                broadcast_queue.put_nowait(msg)
-            except asyncio.QueueFull:
-                try:
-                    broadcast_queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    pass
-                broadcast_queue.put_nowait(msg)
-            _log.info("KICKR %s", "connected" if connected else "disconnected")
-
-        def _on_click_state_change(connected: bool) -> None:
-            """Push click_status onto the WS broadcast queue so cockpit shows indicator.
-
-            Mirrors _on_reading drop-oldest pattern (RESEARCH.md Pattern 1, INFRA-01).
-            Plain def — no await allowed; runs on the asyncio event loop thread.
-            """
-            msg = {"type": "click_status", "connected": connected}
-            try:
-                broadcast_queue.put_nowait(msg)
-            except asyncio.QueueFull:
-                try:
-                    broadcast_queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    pass
-                broadcast_queue.put_nowait(msg)
-            _log.info("Zwift Click %s", "connected" if connected else "disconnected")
-
-        def _on_reading(reading: IndoorBikeData) -> None:
-            """Update RideState sensor fields from BLE notification."""
-            state.last_speed_kmh = reading.speed_kmh
-            state.last_power_w = reading.power_watts
-            state.last_cadence_rpm = reading.cadence_rpm
-            _log_reading(reading)
-
-        async def _state_broadcast_loop() -> None:
-            """Broadcast telemetry at 4 Hz, independent of KICKR connection."""
-            while not stop_event.is_set():
-                try:
-                    now_t = time.monotonic()
-                    rider_pos = route_ctx.tracker.position_m if route_ctx.tracker is not None else 0.0
-
-                    ghost_snap = None
-                    if route_ctx.ghost_tracker is not None:
-                        route_ctx.ghost_tracker.tick(state.paused)
-                        ghost_snap = route_ctx.ghost_tracker.snapshot(rider_pos, state.lap_index)
-
-                    phase_remaining_s = None
-                    if state.phase_end_monotonic is not None:
-                        phase_remaining_s = max(0, int(state.phase_end_monotonic - now_t))
-
-                    elapsed_s = None
-                    if state.ride_start_monotonic is not None:
-                        elapsed_s = int(now_t - state.ride_start_monotonic)
-
-                    dist_remaining_m = None
-                    if route_ctx.tracker is not None and route_ctx.current_route is not None:
-                        dist_remaining_m = max(0.0, route_ctx.current_route.total_dist_m - rider_pos)
-
-                    erg_change_countdown_s = None
-                    if state.erg_mode and state.erg_pending_power_w is not None and state.erg_commit_at_monotonic > 0:
-                        erg_change_countdown_s = max(0.0, state.erg_commit_at_monotonic - now_t)
-
-                    broadcast_target_w = state.target_power_w
-                    broadcast_target_cadence = None
-                    if broadcast_target_w is None and state.erg_mode:
-                        broadcast_target_w = state.erg_committed_power_w
-                    if state.erg_mode:
-                        broadcast_target_cadence = state.erg_committed_cadence
-
-                    snapshot = {
-                        "type": "telemetry",
-                        "speed_kmh": state.last_speed_kmh,
-                        "power_w": state.last_power_w,
-                        "cadence_rpm": state.last_cadence_rpm,
-                        "gear": state.gear_engine.current_gear,
-                        "real_grade_pct": state.real_grade_percent,
-                        "effective_grade_pct": state.gear_engine.effective_grade(state.real_grade_percent),
-                        "position_m": rider_pos if route_ctx.tracker is not None else None,
-                        "route_loaded": route_ctx.tracker is not None,
-                        "ghost_lat": ghost_snap.lat if ghost_snap is not None else None,
-                        "ghost_lng": ghost_snap.lng if ghost_snap is not None else None,
-                        "ghost_bearing_deg": ghost_snap.bearing_deg if ghost_snap is not None else None,
-                        "ghost_time_gap_s": ghost_snap.time_gap_s if ghost_snap is not None else None,
-                        "ride_phase": state.ride_phase,
-                        "lap_index": state.lap_index,
-                        "lap_count": state.lap_count,
-                        "target_power_w": broadcast_target_w,
-                        "target_cadence_rpm": broadcast_target_cadence,
-                        "erg_mode": state.erg_mode,
-                        "phase_remaining_s": phase_remaining_s,
-                        "elapsed_s": elapsed_s,
-                        "dist_remaining_m": dist_remaining_m,
-                        "erg_change_countdown_s": erg_change_countdown_s,
-                    }
-                    try:
-                        broadcast_queue.put_nowait(snapshot)
-                    except asyncio.QueueFull:
-                        try:
-                            broadcast_queue.get_nowait()
-                        except asyncio.QueueEmpty:
-                            pass
-                        broadcast_queue.put_nowait(snapshot)
-                except Exception:
-                    _log.exception("State broadcast tick failed")
-
-                await asyncio.sleep(0.25)
-
-        async def find_device():
-            return await find_kickr(timeout=10.0)
-
-        reconnect_task = asyncio.create_task(
-            reconnect_loop(
-                queue=queue,
-                find_device=find_device,
-                connect_client=_connect_client,
-                config=ReconnectConfig(initial_backoff=1.0, max_backoff=60.0),
-                stop_event=stop_event,
-                ride_state=state,
-                on_kickr_state_change=_on_kickr_state_change,
+        await asyncio.wait_for(
+            asyncio.gather(
+                reconnect_task, consumer_task, broadcast_task,
+                gear_logger_task, ws_task, click_task, keyboard_task,
+                return_exceptions=True,
             ),
-            name="reconnect_loop",
+            timeout=15.0,
         )
-
-        consumer_task = asyncio.create_task(
-            telemetry_consumer(queue, _on_reading),
-            name="telemetry_consumer",
-        )
-
-        broadcast_task = asyncio.create_task(
-            _state_broadcast_loop(),
-            name="state_broadcast",
-        )
-
-        gear_logger_task = asyncio.create_task(
-            _gear_status_logger(state, stop_event),
-            name="gear_status_logger",
-        )
-
-        ws_task = asyncio.create_task(
-            broadcast_loop(
-                broadcast_queue,
-                stop_event,
-                gear_engine=gear_engine,
-                route_context=route_ctx,
-            ),
-            name="ws_broadcast",
-        )
-
-        click_task = asyncio.create_task(
-            run_click_shifter(
-                gear_engine,
-                stop_event,
-                on_state_change=_on_click_state_change,
-            ),
-            name="click_shifter",
-        )
-        _log.debug("click_task spawned — scanning for Zwift Click in background")
-
-        # Wait for shutdown signal, then drain cleanly.
-        await stop_event.wait()
-        _log.info("Shutdown requested; stopping tasks")
-
-        # Cancel phase_task (start_ride path) or tracker_task (legacy upload path).
-        for _task in (route_ctx.phase_task, route_ctx.tracker_task):
-            if _task is not None and not _task.done():
-                _task.cancel()
-                try:
-                    await asyncio.wait_for(_task, timeout=1.0)
-                except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
-                    pass
-
-        # Tell the consumer to exit; let the reconnect loop finish its current await.
-        await queue.put(None)
-
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(
-                    reconnect_task, consumer_task, broadcast_task,
-                    gear_logger_task, ws_task, click_task,
-                    return_exceptions=True,
-                ),
-                timeout=15.0,
-            )
-        except asyncio.TimeoutError:
-            _log.warning("Shutdown timed out; cancelling remaining tasks")
-            for t in (reconnect_task, consumer_task, broadcast_task,
-                      gear_logger_task, ws_task, click_task):
-                if not t.done():
-                    t.cancel()
-
-    finally:
-        shifter.stop()
+    except asyncio.TimeoutError:
+        _log.warning("Shutdown timed out; cancelling remaining tasks")
+        for t in (reconnect_task, consumer_task, broadcast_task,
+                  gear_logger_task, ws_task, click_task, keyboard_task):
+            if not t.done():
+                t.cancel()
 
     return 0
 

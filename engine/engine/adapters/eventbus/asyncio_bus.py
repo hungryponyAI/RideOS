@@ -13,7 +13,7 @@ from typing import Any, Callable, Type
 
 _log = logging.getLogger("rideos.eventbus")
 
-Handler = Callable[[Any], None]
+Handler = Callable[[Any], Any]
 
 
 class AsyncioEventBus:

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Protocol, Type, runtime_checkable
 
-Handler = Callable[[Any], None]
+Handler = Callable[[Any], Any]
 
 
 @runtime_checkable
