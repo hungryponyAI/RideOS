@@ -33,9 +33,19 @@ async def run_phases(
     on_tracker_ready: Optional[Callable[["RouteTracker"], None]] = None,
     on_tracker_done: Optional[Callable[[], None]] = None,
     on_complete: Optional[Callable[[int], None]] = None,
+    on_phase_change: Optional[Callable[[str, Optional[float], Optional[float]], None]] = None,
 ) -> None:
-    """Run the full ride phase sequence, blocking until done or stop_event fires."""
+    """Run the full ride phase sequence, blocking until done or stop_event fires.
+
+    on_phase_change is invoked with (phase, target_power_w, phase_end_mono) every
+    time the phase machine transitions. RideService subscribes to publish a
+    RidePhaseChanged event.
+    """
     from engine.route.tracker import RouteTracker
+
+    def _emit(phase: str, target_w: Optional[float], end_mono: Optional[float]) -> None:
+        if on_phase_change is not None:
+            on_phase_change(phase, target_w, end_mono)
 
     start_t = time.monotonic()
     state.ride_start_monotonic = start_t
@@ -46,6 +56,7 @@ async def run_phases(
         state.ride_phase = "warmup"
         state.target_power_w = _WARMUP_POWER_W
         state.phase_end_monotonic = time.monotonic() + float(warmup_s)
+        _emit("warmup", _WARMUP_POWER_W, state.phase_end_monotonic)
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=float(warmup_s))
         except asyncio.TimeoutError:
@@ -56,11 +67,13 @@ async def run_phases(
         state.ride_phase = "done"
         state.target_power_w = None
         state.phase_end_monotonic = None
+        _emit("done", None, None)
         return
 
     # ── Route ─────────────────────────────────────────────────────────────
     state.ride_phase = "route"
     state.target_power_w = None
+    _emit("route", None, None)
 
     route_done_evt = asyncio.Event()
     elapsed_holder: list[int] = [0]
@@ -106,6 +119,7 @@ async def run_phases(
     if stop_event.is_set():
         state.ride_phase = "done"
         state.target_power_w = None
+        _emit("done", None, None)
         return
 
     # ── Cooldown ──────────────────────────────────────────────────────────
@@ -114,6 +128,7 @@ async def run_phases(
         state.ride_phase = "cooldown"
         state.target_power_w = _COOLDOWN_POWER_W
         state.phase_end_monotonic = time.monotonic() + float(cooldown_s)
+        _emit("cooldown", _COOLDOWN_POWER_W, state.phase_end_monotonic)
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=float(cooldown_s))
         except asyncio.TimeoutError:
@@ -125,6 +140,7 @@ async def run_phases(
     state.phase_end_monotonic = None
     total_elapsed = int(time.monotonic() - start_t)
     _log.info("Phase: DONE (total %ds)", total_elapsed)
+    _emit("done", None, None)
 
     if on_complete is not None:
         on_complete(elapsed_holder[0])

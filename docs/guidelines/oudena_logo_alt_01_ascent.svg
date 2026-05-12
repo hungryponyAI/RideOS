@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="180" viewBox="0 0 720 180" role="img" aria-labelledby="title desc">
+  <title id="title">OUDENA logo alternative 01 — ascent</title>
+  <desc id="desc">Minimal circular mark with a clearer ascending route line and wide tracked OUDENA wordmark.</desc>
+  <rect width="720" height="180" fill="none"/>
+  <g transform="translate(52 42)" fill="none" stroke="#74AFCB" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M90 28A48 48 0 1 1 47 0" stroke-width="7"/>
+    <path d="M24 62 C39 50 54 42 76 31" stroke-width="7" opacity="0.86"/>
+  </g>
+  <text x="190" y="106" fill="#1D242D" font-family="Inter, 'SF Pro Display', 'Segoe UI', Arial, sans-serif" font-size="52" font-weight="300" letter-spacing="22">OUDENA</text>
+</svg>

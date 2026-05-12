@@ -87,6 +87,14 @@ class RouteLoaded:
     t_mono: float
 
 
+@dataclass(frozen=True)
+class RidePauseToggled:
+    """User toggled pause/resume mid-ride. Distinct from RideStarted/RideEnded."""
+
+    paused: bool
+    t_mono: float
+
+
 DomainEvent = Union[
     TelemetryReading,
     GearShifted,
@@ -96,4 +104,5 @@ DomainEvent = Union[
     RideStarted,
     RideEnded,
     RouteLoaded,
+    RidePauseToggled,
 ]

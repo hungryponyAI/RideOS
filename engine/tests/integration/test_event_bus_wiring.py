@@ -13,6 +13,7 @@ from engine.domain.events import (
     GearShifted,
     PositionAdvanced,
     RideEnded,
+    RidePauseToggled,
     RidePhaseChanged,
     RideStarted,
     RouteLoaded,
@@ -29,6 +30,7 @@ ALL_EVENT_TYPES = (
     RideStarted,
     RideEnded,
     RouteLoaded,
+    RidePauseToggled,
 )
 
 

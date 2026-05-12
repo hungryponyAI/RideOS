@@ -24,6 +24,7 @@ from bleak.backends.device import BLEDevice
 
 from engine.adapters.eventbus.asyncio_bus import AsyncioEventBus
 from engine.adapters.input.keyboard_shifter import KeyboardShifterAdapter
+from engine.application.ride_service import RideService
 from engine.ble.client import telemetry_consumer
 from engine.ble.reconnect import ReconnectConfig, reconnect_loop
 from engine.ble.scanner import find_kickr
@@ -34,6 +35,7 @@ from engine.domain.events import (
     GearShifted,
     PositionAdvanced,
     RideEnded,
+    RidePauseToggled,
     RidePhaseChanged,
     RideStarted,
     RouteLoaded,
@@ -126,6 +128,7 @@ async def main() -> int:
         RideStarted,
         RideEnded,
         RouteLoaded,
+        RidePauseToggled,
     ):
         bus.subscribe(event_type, projection.apply)
 
@@ -142,6 +145,8 @@ async def main() -> int:
         streams_dir=_ROUTES_DIR / "streams",
     )
 
+    ride_service = RideService(state, gear_engine, bus)
+
     route_ctx = RouteContext(
         state=state,
         broadcast_queue=broadcast_queue,
@@ -150,6 +155,7 @@ async def main() -> int:
         strava_auth=strava_auth,
         strava_importer=strava_importer,
         streams_dir=_ROUTES_DIR / "streams",
+        ride_service=ride_service,
     )
 
     shifter_adapter = KeyboardShifterAdapter(gear_engine, bus)

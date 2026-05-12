@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OUDENA — Design System Preview</title>
+  <style>
+    :root {
+      --bg: #F4F6F5;
+      --bg-2: #EBEFEE;
+      --surface: #FFFFFF;
+      --surface-soft: rgba(255,255,255,0.74);
+      --text: #1D242D;
+      --text-2: #5F6874;
+      --muted: #8D97A3;
+      --accent: #74AFCB;
+      --accent-2: #68707A;
+      --success: #6BAA75;
+      --warning: #C59A52;
+      --critical: #C76D6D;
+      --border: rgba(29,36,45,0.10);
+      --shadow: 0 14px 42px rgba(29,36,45,0.08);
+      --shadow-soft: 0 6px 20px rgba(29,36,45,0.06);
+      --radius-lg: 24px;
+      --radius-md: 18px;
+      --radius-sm: 12px;
+      --blur: blur(18px);
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    html[data-theme="dark"] {
+      --bg: #111417;
+      --bg-2: #1B2127;
+      --surface: #1B2127;
+      --surface-soft: rgba(27,33,39,0.76);
+      --text: #F3F5F7;
+      --text-2: #B7C0CA;
+      --muted: #798694;
+      --accent: #86C8E8;
+      --accent-2: #9AA5B1;
+      --border: rgba(243,245,247,0.10);
+      --shadow: 0 20px 54px rgba(0,0,0,0.28);
+      --shadow-soft: 0 8px 24px rgba(0,0,0,0.22);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif;
+      background:
+        radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 30%),
+        radial-gradient(circle at 100% 10%, color-mix(in srgb, var(--accent-2) 16%, transparent), transparent 28%),
+        var(--bg);
+      color: var(--text);
+      transition: background 450ms var(--ease), color 250ms var(--ease);
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+      padding: 0 32px;
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in srgb, var(--bg) 84%, transparent);
+      backdrop-filter: blur(18px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 600;
+      letter-spacing: 0.28em;
+      font-size: 13px;
+    }
+
+    .logo-mark {
+      width: 32px;
+      height: 32px;
+      border: 1.8px solid var(--accent);
+      border-right-color: transparent;
+      border-radius: 999px;
+      position: relative;
+    }
+    .logo-mark::after {
+      content: "";
+      position: absolute;
+      width: 17px;
+      height: 1.8px;
+      left: 7px;
+      top: 16px;
+      background: var(--accent);
+      transform: rotate(-7deg);
+      border-radius: 999px;
+      opacity: 0.8;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 13px;
+      color: var(--text-2);
+    }
+
+    .theme-toggle {
+      border: 1px solid var(--border);
+      background: var(--surface-soft);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 8px 14px;
+      cursor: pointer;
+      backdrop-filter: var(--blur);
+      transition: transform 150ms var(--ease), background 250ms var(--ease);
+    }
+    .theme-toggle:active { transform: scale(0.96); }
+
+    .container {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 28px;
+    }
+
+    .hero {
+      min-height: 78vh;
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      align-items: center;
+      gap: 48px;
+      padding: 90px 0 72px;
+    }
+
+    .eyebrow {
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 14px 0 18px;
+      font-size: clamp(48px, 7vw, 92px);
+      line-height: 0.96;
+      letter-spacing: -0.065em;
+      font-weight: 650;
+    }
+
+    .lead {
+      color: var(--text-2);
+      font-size: clamp(18px, 2.2vw, 25px);
+      line-height: 1.45;
+      max-width: 620px;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 14px;
+      margin-top: 30px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 12px 22px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      transition: transform 150ms var(--ease), box-shadow 150ms var(--ease), background 250ms var(--ease);
+      font-size: 15px;
+    }
+    .btn:active { transform: scale(0.96); }
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+      border-color: transparent;
+    }
+    .btn-secondary {
+      background: var(--surface-soft);
+      color: var(--text);
+      backdrop-filter: var(--blur);
+    }
+
+    .ride-card {
+      background: var(--surface-soft);
+      border: 1px solid var(--border);
+      border-radius: 34px;
+      box-shadow: var(--shadow);
+      backdrop-filter: var(--blur);
+      overflow: hidden;
+      min-height: 520px;
+      position: relative;
+    }
+
+    .map-preview {
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(145deg, color-mix(in srgb, var(--accent) 15%, transparent), transparent 45%),
+        repeating-linear-gradient(150deg, transparent 0 18px, color-mix(in srgb, var(--text) 5%, transparent) 19px 20px),
+        var(--bg-2);
+    }
+
+    .route-line {
+      position: absolute;
+      inset: 65px 42px 150px 42px;
+    }
+    svg { width: 100%; height: 100%; overflow: visible; }
+    .route-path {
+      fill: none;
+      stroke: var(--accent);
+      stroke-width: 9;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 0 14px color-mix(in srgb, var(--accent) 38%, transparent));
+    }
+    .ghost-path {
+      fill: none;
+      stroke: var(--accent-2);
+      stroke-width: 4;
+      opacity: 0.42;
+      stroke-dasharray: 10 12;
+      stroke-linecap: round;
+    }
+
+    .hud {
+      position: absolute;
+      top: 22px;
+      left: 22px;
+      right: 22px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .metric-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .metric {
+      min-width: 88px;
+      padding: 12px 14px;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: var(--surface-soft);
+      backdrop-filter: var(--blur);
+      box-shadow: var(--shadow-soft);
+    }
+    .metric-label {
+      display: block;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .metric-value {
+      display: block;
+      margin-top: 5px;
+      font-size: 26px;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.045em;
+      font-weight: 650;
+    }
+
+    .elevation {
+      position: absolute;
+      left: 22px;
+      right: 22px;
+      bottom: 22px;
+      padding: 18px 18px 12px;
+      border-radius: 24px;
+      border: 1px solid var(--border);
+      background: var(--surface-soft);
+      backdrop-filter: var(--blur);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .elevation-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+      color: var(--text-2);
+      font-size: 13px;
+    }
+
+    section {
+      padding: 72px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 24px;
+      margin-bottom: 30px;
+    }
+
+    h2 {
+      font-size: clamp(32px, 4vw, 56px);
+      line-height: 1;
+      letter-spacing: -0.05em;
+      margin: 0;
+    }
+    .section-copy {
+      color: var(--text-2);
+      max-width: 520px;
+      line-height: 1.55;
+      font-size: 17px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+    }
+    .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .grid-2 { grid-template-columns: repeat(2, 1fr); }
+
+    .panel {
+      background: var(--surface-soft);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 26px;
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: var(--blur);
+    }
+    .panel h3 {
+      margin: 0 0 10px;
+      font-size: 22px;
+      letter-spacing: -0.025em;
+    }
+    .panel p {
+      margin: 0;
+      color: var(--text-2);
+      line-height: 1.55;
+    }
+
+    .swatches {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 14px;
+    }
+    .swatch {
+      min-height: 132px;
+      border-radius: 22px;
+      border: 1px solid var(--border);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: end;
+      box-shadow: var(--shadow-soft);
+    }
+    .swatch b { font-size: 13px; }
+    .swatch span { font-size: 12px; color: rgba(0,0,0,.55); margin-top: 4px; }
+    html[data-theme="dark"] .swatch span { color: rgba(255,255,255,.6); }
+
+    .type-sample {
+      display: grid;
+      gap: 14px;
+    }
+    .type-row {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      align-items: baseline;
+      gap: 24px;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .type-name { color: var(--muted); font-size: 13px; }
+    .hero-metric { font-size: 56px; font-weight: 600; letter-spacing: -0.06em; line-height: 1; }
+    .large-metric { font-size: 40px; font-weight: 600; letter-spacing: -0.05em; line-height: 1; }
+    .section-title { font-size: 28px; font-weight: 600; letter-spacing: -0.035em; }
+    .card-title { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
+    .body-text { font-size: 16px; line-height: 1.5; }
+    .metadata { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+
+    .component-preview {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .logo-showcase {
+      display: grid;
+      grid-template-columns: 0.8fr 1.2fr;
+      gap: 18px;
+    }
+    .logo-large {
+      display: grid;
+      place-items: center;
+      min-height: 330px;
+      background: var(--surface-soft);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: var(--blur);
+    }
+    .logo-large .logo-mark {
+      width: 160px;
+      height: 160px;
+      border-width: 7px;
+    }
+    .logo-large .logo-mark::after {
+      width: 84px;
+      height: 7px;
+      left: 34px;
+      top: 80px;
+    }
+    .wordmark {
+      font-size: clamp(28px, 5vw, 70px);
+      letter-spacing: 0.42em;
+      font-weight: 300;
+      white-space: nowrap;
+    }
+
+    .mock-phone {
+      max-width: 340px;
+      margin: 0 auto;
+      border-radius: 42px;
+      border: 10px solid color-mix(in srgb, var(--text) 13%, transparent);
+      padding: 18px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .phone-card {
+      border-radius: 26px;
+      background: var(--bg-2);
+      padding: 20px;
+      min-height: 480px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .footer {
+      padding: 60px 0 80px;
+      color: var(--muted);
+      font-size: 14px;
+      text-align: center;
+    }
+
+    @media (max-width: 900px) {
+      .hero, .logo-showcase { grid-template-columns: 1fr; }
+      .grid-3, .grid-2, .swatches { grid-template-columns: 1fr; }
+      .section-head { display: block; }
+      .nav-links a { display: none; }
+      .type-row { grid-template-columns: 1fr; }
+      .hero { padding-top: 54px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand" href="#top"><span class="logo-mark"></span><span>OUDENA</span></a>
+    <div class="nav-links">
+      <a href="#tokens">Tokens</a>
+      <a href="#components">Components</a>
+      <a href="#ride">Ride UI</a>
+      <a href="#logo">Logo</a>
+      <button class="theme-toggle" onclick="toggleTheme()">Light / Dark</button>
+    </div>
+  </nav>
+
+  <main id="top" class="container">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">Design System Preview</div>
+        <h1>Calm performance for real rides.</h1>
+        <p class="lead">OUDENA turns GPS history, elevation, ghost pacing and trainer control into a quiet, premium indoor cycling experience designed for adults.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#ride">Preview Ride UI</a>
+          <a class="btn btn-secondary" href="#tokens">View Tokens</a>
+        </div>
+      </div>
+
+      <div class="ride-card" aria-label="OUDENA live ride preview">
+        <div class="map-preview"></div>
+        <div class="route-line">
+          <svg viewBox="0 0 600 360">
+            <path class="ghost-path" d="M40,270 C100,160 155,120 220,180 C285,240 305,70 390,100 C475,130 440,255 560,195" />
+            <path class="route-path" d="M35,280 C95,165 155,125 225,185 C290,245 310,75 395,104 C480,132 445,260 565,200" />
+          </svg>
+        </div>
+        <div class="hud">
+          <div class="metric-group">
+            <div class="metric"><span class="metric-label">Power</span><span class="metric-value">248</span></div>
+            <div class="metric"><span class="metric-label">Cadence</span><span class="metric-value">91</span></div>
+            <div class="metric"><span class="metric-label">HR</span><span class="metric-value">152</span></div>
+          </div>
+          <div class="metric"><span class="metric-label">Ghost</span><span class="metric-value">+12s</span></div>
+        </div>
+        <div class="elevation">
+          <div class="elevation-header">
+            <b>Harz Climb</b>
+            <span>4.2 km · 7.1% avg</span>
+          </div>
+          <svg viewBox="0 0 650 96">
+            <path d="M8,78 C75,65 116,55 170,60 C225,64 245,20 310,28 C378,36 395,78 455,66 C520,54 548,22 642,18" fill="none" stroke="var(--accent)" stroke-width="5" stroke-linecap="round"/>
+            <circle cx="355" cy="39" r="8" fill="var(--accent)" />
+            <circle cx="410" cy="67" r="6" fill="var(--accent-2)" opacity="0.6"/>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <section id="tokens">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">01 · Foundations</div>
+          <h2>Tokens with restraint.</h2>
+        </div>
+        <p class="section-copy">A reduced palette, tabular metrics, soft surfaces and disciplined spacing create a premium, non-gamified riding atmosphere.</p>
+      </div>
+
+      <div class="swatches">
+        <div class="swatch" style="background:#F4F6F5;"><b>Background</b><span>#F4F6F5</span></div>
+        <div class="swatch" style="background:#FFFFFF;"><b>Surface</b><span>#FFFFFF</span></div>
+        <div class="swatch" style="background:#1D242D;color:white;"><b>Text</b><span>#1D242D</span></div>
+        <div class="swatch" style="background:#74AFCB;color:white;"><b>Glacier</b><span>#74AFCB</span></div>
+        <div class="swatch" style="background:#68707A;color:white;"><b>Titanium</b><span>#68707A</span></div>
+      </div>
+    </section>
+
+    <section id="type">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">02 · Typography</div>
+          <h2>Precise, calm, readable.</h2>
+        </div>
+        <p class="section-copy">SF Pro or Inter, medium weight headlines and tabular numerals for ride metrics. Avoid aggressive racing typography.</p>
+      </div>
+      <div class="panel type-sample">
+        <div class="type-row"><div class="type-name">hero-metric · 56</div><div class="hero-metric">248 W</div></div>
+        <div class="type-row"><div class="type-name">metric-large · 40</div><div class="large-metric">+12s Ghost</div></div>
+        <div class="type-row"><div class="type-name">section-title · 28</div><div class="section-title">Ride your Harz climb again</div></div>
+        <div class="type-row"><div class="type-name">card-title · 20</div><div class="card-title">Routes Worth Revisiting</div></div>
+        <div class="type-row"><div class="type-name">body · 16</div><div class="body-text">Your pacing improved on sustained climbs.</div></div>
+        <div class="type-row"><div class="type-name">metadata · 12</div><div class="metadata">Best climb this spring</div></div>
+      </div>
+    </section>
+
+    <section id="components">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">03 · Components</div>
+          <h2>Soft controls, clear hierarchy.</h2>
+        </div>
+        <p class="section-copy">Buttons, route cards and HUD panels use rounded geometry, subtle elevation and progressive disclosure.</p>
+      </div>
+
+      <div class="grid grid-3">
+        <div class="panel">
+          <h3>Buttons</h3>
+          <p>Primary actions use glacier blue. Secondary actions stay quiet.</p>
+          <div class="component-preview" style="margin-top:18px;">
+            <a class="btn btn-primary">Start Ride</a>
+            <a class="btn btn-secondary">Preview</a>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Route Card</h3>
+          <p>Cards are memory objects, not dense data tables.</p>
+          <div style="height:120px;margin-top:18px;border-radius:18px;background:linear-gradient(135deg,var(--bg-2),color-mix(in srgb,var(--accent) 22%,var(--bg-2)));position:relative;overflow:hidden;">
+            <svg viewBox="0 0 300 120" style="position:absolute;inset:0;">
+              <path d="M20,80 C70,20 110,75 160,50 C210,25 215,95 280,44" fill="none" stroke="var(--accent)" stroke-width="5" stroke-linecap="round"/>
+            </svg>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>HUD Panel</h3>
+          <p>Frosted overlays float above the route without dominating it.</p>
+          <div class="metric" style="margin-top:18px;">
+            <span class="metric-label">Power</span>
+            <span class="metric-value">248</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="ride">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">04 · Ride Experience</div>
+          <h2>The road is the interface.</h2>
+        </div>
+        <p class="section-copy">The live ride screen is built around a 70/30 hierarchy: route first, interface second. Metrics appear only where they support riding.</p>
+      </div>
+
+      <div class="grid grid-2">
+        <div class="panel">
+          <h3>Ride States</h3>
+          <p><b>Normal:</b> balanced density.<br><b>Climb:</b> elevation expands, ghost becomes clearer.<br><b>Recovery:</b> visuals calm down.</p>
+        </div>
+        <div class="panel">
+          <h3>Ghost UX</h3>
+          <p>Ghost pacing is personal and subtle. No racing-game avatars, no exaggerated effects, no loud victory language.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="mobile">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">05 · Responsive</div>
+          <h2>Desktop cockpit. Mobile companion.</h2>
+        </div>
+        <p class="section-copy">Desktop is immersive and cinematic. Mobile focuses on route selection, controls, glanceable metrics and history.</p>
+      </div>
+      <div class="mock-phone">
+        <div class="phone-card">
+          <div class="metadata">Today’s Ride</div>
+          <h3 style="font-size:30px;letter-spacing:-.05em;margin:12px 0;">Ride your own world.</h3>
+          <p style="color:var(--text-2);line-height:1.5;">Harz Climb · 41 km · 720 m</p>
+          <div style="height:160px;margin-top:22px;border-radius:24px;background:linear-gradient(135deg,var(--bg),color-mix(in srgb,var(--accent) 25%,var(--bg)));position:relative;overflow:hidden;">
+            <svg viewBox="0 0 300 160" style="position:absolute;inset:0;">
+              <path d="M20,120 C60,45 98,80 142,62 C188,42 198,128 280,66" fill="none" stroke="var(--accent)" stroke-width="6" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <a class="btn btn-primary" style="width:100%;margin-top:22px;">Start Ride</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="logo">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">06 · Logo System</div>
+          <h2>Route, ascent, continuity.</h2>
+        </div>
+        <p class="section-copy">The symbol is an open circular route mark with a subtle ascending inner line. The wordmark uses wide tracking and thin geometric weight.</p>
+      </div>
+
+      <div class="logo-showcase">
+        <div class="logo-large"><span class="logo-mark"></span></div>
+        <div class="panel" style="display:grid;align-content:center;">
+          <div class="wordmark">OUDENA</div>
+          <p style="margin-top:28px;color:var(--text-2);line-height:1.6;">Avoid bicycle illustrations, chainrings, flames or racing clichés. The mark should feel like a premium vehicle interface, not a sports club logo.</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">
+      OUDENA Design System Preview · generated as a static HTML reference for designers and coding agents.
+    </div>
+  </main>
+
+  <script>
+    function toggleTheme() {
+      const root = document.documentElement;
+      root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+    }
+  </script>
+</body>
+</html>

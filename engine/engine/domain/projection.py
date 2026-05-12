@@ -18,6 +18,7 @@ from engine.domain.events import (
     GearShifted,
     PositionAdvanced,
     RideEnded,
+    RidePauseToggled,
     RidePhaseChanged,
     RideStarted,
     RouteLoaded,
@@ -119,6 +120,9 @@ class RideStateProjection:
 
         elif isinstance(event, RouteLoaded):
             v = replace(v, route_id=event.route_id, total_dist_m=event.total_dist_m)
+
+        elif isinstance(event, RidePauseToggled):
+            v = replace(v, paused=event.paused)
 
         self._view = v
         return v
