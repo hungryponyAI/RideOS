@@ -27,6 +27,9 @@ from engine.adapters.ble.click_shifter import ClickShifterAdapter
 from engine.adapters.eventbus.asyncio_bus import AsyncioEventBus
 from engine.adapters.input.keyboard_shifter import KeyboardShifterAdapter
 from engine.adapters.persistence.event_logger import InMemoryEventLog
+from engine.adapters.persistence.ride_repo_sink import RideRepoSink
+from engine.adapters.persistence.sqlite.connection import get_connection
+from engine.adapters.persistence.sqlite.ride_repo import SqliteRideRepo
 from engine.application.ride_service import RideService
 from engine.application.route_service import RouteService
 from engine.application.strava_service import StravaService
@@ -138,6 +141,14 @@ async def main() -> int:
         for event_type in _all_event_types:
             bus.subscribe(event_type, event_log.record)
         _log.info("Event log enabled (in-memory)")
+
+    _DB_PATH = Path(os.getenv("RIDEOS_DB_PATH", str(Path(__file__).parent.parent / "data" / "rideos.db")))
+    _db_conn = get_connection(_DB_PATH)
+    _ride_repo = SqliteRideRepo(_db_conn)
+    _ride_repo_sink = RideRepoSink(_ride_repo)
+    for event_type in _all_event_types:
+        bus.subscribe(event_type, _ride_repo_sink.on_event)
+    _log.info("Ride event log enabled (SQLite: %s)", _DB_PATH)
 
     _ROUTES_DIR = Path(__file__).parent.parent / "routes"
     _CONFIG_DIR = Path(__file__).parent.parent / "config"

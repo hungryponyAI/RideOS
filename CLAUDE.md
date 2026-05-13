@@ -1,76 +1,60 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Memory protocol
 
-### On session start — read all four files before doing anything else:
-
+On session start — read before anything else:
 ```
-memory/decisions.md   — architectural and technical decisions made so far
-memory/preferences.md — how the user likes to work and receive output
-memory/people.md      — owner, collaborators, contacts
-memory/users.md       — target users and personas for the app
+memory/decisions.md   — architectural/technical decisions
+memory/preferences.md — how user likes to work
 ```
 
-### On session end — update any file that changed:
+On session end — update any file that changed. Only write non-obvious info lost between sessions.
 
-- New decision made? Append it to `decisions.md` with today's date and the reason.
-- User corrected your approach or confirmed an unusual one? Update `preferences.md`.
-- New person mentioned? Add them to `people.md`.
-- Target user understanding shifted? Update `users.md`.
-
-Only write what is non-obvious and would be lost between sessions. Do not log routine work, file paths, or things derivable from reading the code.
+When creating or editing files try to focus on relevant information and try to reduce the number of words to optimize token consumption.
 
 ## Repository status
 
-This is **not a code repository yet** — it is an Obsidian vault (`vault/RideOS/`) containing German-language concept and planning notes for a project called **RideOS**. There is no source code, no package manager, no build system, and no tests. Do not invent commands. When the user asks to "build the MVP", expect to scaffold the project from scratch based on the notes.
+Code lives at `engine/` (Python). Obsidian vault at `vault/RideOS/` (German-language planning notes — authoritative source of intent).
 
-## The project being planned
+## Project
 
-RideOS is a custom indoor cycling app — a self-built "Zwift-light" — centered on:
+RideOS: personal macOS indoor cycling app.
+- Hardware: Wahoo KICKR Core + Zwift Cog + Zwift Click
+- BLE engine: Python + bleak → FTMS (read speed/power/cadence; write simulated grade)
+- Virtual gearing USP: `effective_grade = real_grade / gear_factor` (10 gears, G1=0.5 easy, G10=1.8 hard)
+- Zwift Click: no SDK → BLE sniffing required; keyboard is MVP stand-in + permanent fallback
+- LLM layer: optional, isolated — NEVER controls trainer directly
 
-- Controlling a **Wahoo KICKR Core** trainer via **FTMS** (Fitness Machine Service over BLE): read speed/power/cadence, write resistance/simulated grade.
-- A **virtual gearing system** as the core differentiating feature. Formula used throughout the notes: `effective_grade = real_grade / gear_factor`. Gears 1–10 with factors ~0.5 (easy) to ~1.8 (hard).
-- Integrating the **Zwift Click** shifter, which has **no official SDK** — requires BLE sniffing (nRF Connect) to reverse-engineer the notify characteristic bytes for up/down. The notes explicitly recommend starting with a keyboard stand-in and only tackling Click integration after the rest works.
+## Architecture
 
-## Planned architecture (from the notes)
+- Layer 1 (engine): Python asyncio + bleak — BLE, gear engine, 4 Hz FTMS control loop
+- Layer 2 (UI): React + Tailwind — cockpit display; talks to engine via WebSocket
+- LLM layer: alongside, never inside the control loop
 
-Two-layer split is intentional and load-bearing:
+## MVP phase order (respect when proposing work)
 
-1. **Deterministic core / local engine** — Node.js (`noble`) or Python (`bleak`). Owns the BLE connection, the gear engine, and the real-time control loop that pushes FTMS commands to the KICKR. This layer must be deterministic and low-latency.
-2. **Frontend** — React / Next.js (Tailwind) cockpit UI. Renders speed/gear/watt/cadence, mini-map (Mapbox or Leaflet), and elevation profile (D3 or Recharts). Communicates with the local engine (WebSockets implied).
+1. Connect to KICKR, read watts/speed ✅
+2. Set resistance via FTMS ✅
+3. Virtual gears via keyboard ✅ (in progress)
+4. GPX route integration (later)
+5. Zwift Click BLE integration (last)
 
-An **optional LLM layer** sits alongside — not inside — the core: route segmentation, workout generation from GPX, natural-language route requests, AI coach commentary, auto-tagging. **Hard rule from the notes: the LLM must never drive the trainer directly.** The control loop stays deterministic.
-
-## MVP phasing (from `Focus Project.md`)
-
-The notes define a specific incremental order; respect it when proposing work:
-
-1. Connect to KICKR, read watts/speed.
-2. Set resistance manually.
-3. Virtual gears via keyboard input.
-4. GPX integration (optional, later).
-5. Zwift Click integration (optional, last).
-
-Street View, multiplayer, and video overlay are explicitly deferred.
+Deferred: Street View, multiplayer, video overlay.
 
 ## UI principle
 
-The UI notes (`Design, UI, UX.md`) frame this as a **cockpit, not a dashboard** — glanceable in under a second, minimal touch interaction (Click + keyboard), dark theme with one accent color. Speed is the primary number, Gear is the USP and must be prominent. A secondary "broadcast layer" (mini-map top-right, elevation profile across the bottom) mirrors TV cycling overlays but must never dominate over speed/gear/resistance.
+Cockpit, not dashboard — glanceable in <1s, dark theme, one accent color.
+Priority: Speed (primary) → Gear (prominent, USP) → Watt/Cadence → Grade.
+Broadcast layer: mini-map (top-right) + elevation profile (bottom) — never dominate.
 
-## Second brain — Obsidian vault
-
-`vault/RideOS/` is the project's living knowledge base. **Before making any design, architecture, or implementation decision, read the relevant note(s) from this vault.** Treat them as the authoritative source of intent; they take precedence over assumptions.
+## Vault (authoritative intent — read only on command by user)
 
 | Note | When to read |
 |------|-------------|
-| `vault/RideOS/Focus Project.md` | Overall scope, MVP phases, module breakdown |
-| `vault/RideOS/webapp concept.md` | Architecture rationale; why a browser alone is insufficient (needs a local BLE bridge) |
-| `vault/RideOS/Click integration.md` | BLE reverse-engineering procedure for the Zwift Click |
-| `vault/RideOS/LLM option.md` | Where LLMs add value and the "never control the trainer" boundary |
-| `vault/RideOS/Design, UI, UX.md` | Cockpit UI layout and broadcast-overlay layering |
+| `vault/RideOS/Focus Project.md` | Scope, MVP phases, module breakdown |
+| `vault/RideOS/webapp concept.md` | Architecture rationale, BLE bridge need |
+| `vault/RideOS/Click integration.md` | BLE reverse-engineering procedure |
+| `vault/RideOS/LLM option.md` | LLM boundaries + "never control trainer" rule |
+| `vault/RideOS/Design, UI, UX.md` | Cockpit layout + broadcast overlay |
 
-When the user adds new notes to the vault, read them before responding. If context is unclear or conflicting, ask the user to update the relevant vault note — then re-read it.
-
-Notes are in German; follow the user's language lead in responses.
+Notes are in German; follow user's language lead in responses.
