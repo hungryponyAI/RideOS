@@ -1,8 +1,12 @@
 import asyncio
 import pytest
 
+from engine.adapters.eventbus.asyncio_bus import AsyncioEventBus
+from engine.control.athlete import AthleteProfile
 from engine.control.controller import FtmsController, FtmsControlError, run_control_loop
-from engine.control.state import RideState
+from engine.control.erg_debouncer import ErgDebouncer
+from engine.domain.events import PositionAdvanced, RidePauseToggled
+from engine.domain.projection import RideStateProjection
 from engine.ftms.control_point import FMCP_UUID, OpCode, ResultCode
 from engine.gears.engine import GearEngine
 
@@ -69,7 +73,7 @@ async def test_tick_coalescing(fake_bleak_client_factory):
     baseline_writes = len(client.writes)   # 2 from handshake
 
     gears = GearEngine(current_gear=5)
-    state = RideState(gear_engine=gears, real_grade_percent=6.0)
+    athlete = AthleteProfile()
     stop = asyncio.Event()
 
     times = iter([0.00, 0.25, 0.50, 0.75, 1.00, 1.25, 1.50, 1.75, 2.00, 2.25])
@@ -84,7 +88,16 @@ async def test_tick_coalescing(fake_bleak_client_factory):
     def fake_clock():
         return next(times)
 
-    await run_control_loop(ctrl, state, stop, sleep=fake_sleep, clock=fake_clock)
+    bus = AsyncioEventBus()
+    projection = RideStateProjection()
+    erg_debouncer = ErgDebouncer(bus)
+    # projection.view.paused=True by default → grade-sim path writes grade=0.0
+
+    await run_control_loop(
+        ctrl, athlete, stop,
+        projection=projection, erg_debouncer=erg_debouncer, gear_engine=gears,
+        sleep=fake_sleep, clock=fake_clock,
+    )
 
     sim_writes = [w for w in client.writes[baseline_writes:] if w[1][:1] == b"\x11"]
     # First tick always writes. With no grade change, keepalive forces a write
@@ -106,9 +119,15 @@ async def test_tick_writes_on_grade_change(fake_bleak_client_factory):
     baseline = len(client.writes)
 
     gears = GearEngine(current_gear=5)
-    state = RideState(gear_engine=gears, real_grade_percent=2.0)
-    state.paused = False  # must be unpaused so grade-sim path is active
+    athlete = AthleteProfile()
     stop = asyncio.Event()
+
+    bus = AsyncioEventBus()
+    projection = RideStateProjection()
+    erg_debouncer = ErgDebouncer(bus)
+    # Set projection to unpaused with grade 2.0 so the grade-sim path is active
+    projection.apply(RidePauseToggled(paused=False, t_mono=0.0))
+    projection.apply(PositionAdvanced(position_m=0.0, grade_idx=0, grade_pct=2.0, lap_index=0, t_mono=0.0))
 
     tick_count = {"n": 0}
 
@@ -120,7 +139,11 @@ async def test_tick_writes_on_grade_change(fake_bleak_client_factory):
         if tick_count["n"] >= 4:
             stop.set()
 
-    await run_control_loop(ctrl, state, stop, sleep=fake_sleep, clock=lambda: tick_count["n"] * 0.25)
+    await run_control_loop(
+        ctrl, athlete, stop,
+        projection=projection, erg_debouncer=erg_debouncer, gear_engine=gears,
+        sleep=fake_sleep, clock=lambda: tick_count["n"] * 0.25,
+    )
 
     sim_writes = [w for w in client.writes[baseline:] if w[1][:1] == b"\x11"]
     # First tick + post-shift tick must both write (epsilon exceeded).
@@ -216,12 +239,11 @@ async def test_shutdown_on_crash(fake_bleak_client_factory):
     await ctrl.start()
 
     gears = GearEngine(current_gear=5)
-    state = RideState(gear_engine=gears, real_grade_percent=5.0)
     stop = asyncio.Event()
 
     async def faulty_loop():
         # Perform one grade write then crash
-        await ctrl.set_simulation_grade(state.gear_engine.effective_grade(state.real_grade_percent))
+        await ctrl.set_simulation_grade(gears.effective_grade(5.0))
         raise RuntimeError("simulated mid-tick crash")
 
     try:

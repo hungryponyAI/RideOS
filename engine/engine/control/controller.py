@@ -7,12 +7,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Awaitable, Callable, Optional
+from typing import TYPE_CHECKING, Awaitable, Callable, Optional
 
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
 
-from engine.control.state import RideState
+from engine.control.athlete import AthleteProfile
+from engine.control.erg_debouncer import ErgDebouncer
+from engine.domain.projection import RideStateProjection
 from engine.ftms.control_point import (
     FMCP_UUID,
     OpCode,
@@ -25,6 +27,9 @@ from engine.ftms.control_point import (
     encode_stop_or_pause,
     parse_control_point_response,
 )
+
+if TYPE_CHECKING:
+    from engine.gears.engine import GearEngine
 
 _log = logging.getLogger(__name__)
 
@@ -125,13 +130,16 @@ def _estimate_cw(weight_kg: float, height_cm: float) -> float:
 
 async def run_control_loop(
     controller: FtmsController,
-    state: RideState,
+    athlete: AthleteProfile,
     stop_event: asyncio.Event,
     *,
+    projection: RideStateProjection,
+    erg_debouncer: ErgDebouncer,
+    gear_engine: "GearEngine",
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     clock: Callable[[], float] = time.monotonic,
 ) -> None:
-    """4 Hz tick: grade sim or erg/target-power, with epsilon + keepalive gating."""
+    """4 Hz tick: grade sim or erg/target-power, sourced from the projection view."""
     last_sent_grade: Optional[float] = None
     last_sent_power: Optional[float] = None
     last_write_t: float = 0.0
@@ -140,11 +148,11 @@ async def run_control_loop(
     while not stop_event.is_set():
         now = clock()
         stale = (now - last_write_t) >= FtmsController._KEEPALIVE_S
+        v = projection.view
 
-        # Determine what to send this tick
-        if not state.paused and state.target_power_w is not None:
-            # Phase-level override: warmup or cooldown fixed power
-            power = state.target_power_w
+        if not v.paused and v.target_power_w is not None:
+            # Phase-level override: warmup or cooldown fixed power.
+            power = v.target_power_w
             changed = last_sent_power is None or abs(power - last_sent_power) >= 1.0
             if changed or stale:
                 try:
@@ -155,53 +163,23 @@ async def run_control_loop(
                 except Exception:
                     pass  # trainer may not support Set Target Power; ignore
 
-        elif not state.paused and state.erg_mode and state.erg_power_table:
-            # Erg mode: debounced target power (min 30 s between changes)
-            idx = min(state.current_grade_idx, len(state.erg_power_table) - 1)
-            raw_power = state.erg_power_table[idx]
-            raw_cadence = state.erg_cadence_table[idx] if state.erg_cadence_table else None
-
-            if state.erg_committed_power_w is None:
-                # First tick: commit immediately
-                state.erg_committed_power_w = raw_power
-                state.erg_committed_cadence = raw_cadence
-                state.erg_pending_power_w = None
-                state.erg_pending_cadence = None
-                state.erg_commit_at_monotonic = 0.0
-            elif abs(raw_power - state.erg_committed_power_w) >= 1.0:
-                if state.erg_pending_power_w is None:
-                    # Schedule change 30 s from now
-                    state.erg_pending_power_w = raw_power
-                    state.erg_pending_cadence = raw_cadence
-                    state.erg_commit_at_monotonic = now + 30.0
-                elif now >= state.erg_commit_at_monotonic:
-                    state.erg_committed_power_w = state.erg_pending_power_w
-                    state.erg_committed_cadence = state.erg_pending_cadence
-                    state.erg_pending_power_w = None
-                    state.erg_pending_cadence = None
-                    state.erg_commit_at_monotonic = 0.0
-                # else: pending already scheduled, keep waiting
-            else:
-                # raw matches committed — cancel any pending change
-                state.erg_pending_power_w = None
-                state.erg_pending_cadence = None
-                state.erg_commit_at_monotonic = 0.0
-
-            power = state.erg_committed_power_w
-            changed = last_sent_power is None or abs(power - last_sent_power) >= 1.0
-            if changed or stale:
-                try:
-                    await controller.set_target_power(int(power))
-                    last_sent_power = power
-                    last_sent_grade = None
-                    last_write_t = now
-                except Exception:
-                    pass
+        elif not v.paused and v.erg_mode and erg_debouncer.has_table:
+            erg_power = erg_debouncer.tick(v.grade_idx, now)
+            if erg_power is not None:
+                changed = last_sent_power is None or abs(erg_power - last_sent_power) >= 1.0
+                if changed or stale:
+                    try:
+                        await controller.set_target_power(int(erg_power))
+                        last_sent_power = erg_power
+                        last_sent_grade = None
+                        last_write_t = now
+                    except Exception:
+                        pass
 
         else:
-            # Normal grade-simulation path (also used when paused → grade=0)
-            grade = 0.0 if state.paused else state.gear_engine.effective_grade(state.real_grade_percent)
-            cw = _estimate_cw(state.athlete_weight_kg, state.athlete_height_cm)
+            # Normal grade-simulation path (also used when paused → grade=0).
+            grade = 0.0 if v.paused else gear_engine.effective_grade(v.real_grade_pct)
+            cw = _estimate_cw(athlete.weight_kg, athlete.height_cm)
             changed = last_sent_grade is None or abs(grade - last_sent_grade) >= FtmsController._EPSILON_PCT
             if changed or stale:
                 await controller.set_simulation_grade(grade, crr=crr, cw=cw)

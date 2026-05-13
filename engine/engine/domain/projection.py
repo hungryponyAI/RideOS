@@ -46,6 +46,7 @@ class RideStateView:
     real_grade_pct: float = 0.0
     grade_idx: int = 0
     lap_index: int = 0
+    lap_count: int = 1
     total_dist_m: float | None = None
     route_id: str | None = None
 
@@ -113,6 +114,7 @@ class RideStateProjection:
                 ride_start_mono=event.t_mono,
                 position_m=0.0,
                 lap_index=0,
+                lap_count=event.laps,
             )
 
         elif isinstance(event, RideEnded):

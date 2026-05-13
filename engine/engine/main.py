@@ -6,13 +6,14 @@ Run with:
 
 Wires the reconnect_loop (owns the BleakClient lifecycle), the
 telemetry_consumer (parses IBD bytes and logs human-readable readings),
-GearEngine + RideState + KeyboardShifter (virtual gearing), and the
+GearEngine + AthleteProfile + KeyboardShifter (virtual gearing), and the
 FtmsController 4 Hz grade control loop as concurrent asyncio tasks.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
 import time
 from contextlib import asynccontextmanager
@@ -22,14 +23,19 @@ from typing import Optional
 from bleak import BleakClient
 from bleak.backends.device import BLEDevice
 
+from engine.adapters.ble.click_shifter import ClickShifterAdapter
 from engine.adapters.eventbus.asyncio_bus import AsyncioEventBus
 from engine.adapters.input.keyboard_shifter import KeyboardShifterAdapter
+from engine.adapters.persistence.event_logger import InMemoryEventLog
 from engine.application.ride_service import RideService
+from engine.application.route_service import RouteService
+from engine.application.strava_service import StravaService
 from engine.ble.client import telemetry_consumer
 from engine.ble.reconnect import ReconnectConfig, reconnect_loop
 from engine.ble.scanner import find_kickr
 from engine.config.logging import configure_logging
-from engine.control.state import RideState
+from engine.control.athlete import AthleteProfile
+from engine.control.erg_debouncer import ErgDebouncer
 from engine.domain.events import (
     ErgTargetCommitted,
     GearShifted,
@@ -44,17 +50,12 @@ from engine.domain.events import (
 from engine.domain.projection import RideStateProjection
 from engine.ftms.parsers import IndoorBikeData
 from engine.gears.engine import GearEngine
-from engine.input.click import run_click_shifter
 from engine.route.library import RouteLibrary
 from engine.strava.auth import StravaAuth
 from engine.strava.importer import StravaImporter
 from engine.ws.server import RouteContext, broadcast_loop
 
 _log = logging.getLogger("rideos.engine")
-
-# Phase 4: "Free ride" baseline — no GPX loaded means flat road (0%).
-# RouteTracker overwrites state.real_grade_percent on every tick once a route is active.
-DEFAULT_GRADE: float = 0.0  # % simulated gradient (no route = flat)
 
 
 @asynccontextmanager
@@ -77,16 +78,20 @@ def _log_reading(reading: IndoorBikeData) -> None:
     _log.info("TELEMETRY | speed=%s  power=%s  cadence=%s", speed, power, cadence)
 
 
-async def _gear_status_logger(state: RideState, stop_event: asyncio.Event) -> None:
+async def _gear_status_logger(
+    gear_engine: GearEngine,
+    projection: RideStateProjection,
+    stop_event: asyncio.Event,
+) -> None:
     """Log gear + effective grade every 5 seconds until stop_event fires."""
     while not stop_event.is_set():
-        gear = state.gear_engine.current_gear
-        factor = state.gear_engine.factor
-        real = state.real_grade_percent
-        eff = state.gear_engine.effective_grade(real)
+        gear = gear_engine.current_gear
+        factor = gear_engine.factor
+        real = projection.view.real_grade_pct
+        eff = gear_engine.effective_grade(real)
         _log.info(
             "RIDE | gear=%d/%d factor=%.3f real=%.1f%% eff=%.1f%%",
-            gear, len(state.gear_engine.factors), factor, real, eff,
+            gear, len(gear_engine.factors), factor, real, eff,
         )
         try:
             await asyncio.wait_for(asyncio.shield(stop_event.wait()), timeout=5.0)
@@ -95,7 +100,6 @@ async def _gear_status_logger(state: RideState, stop_event: asyncio.Event) -> No
 
 
 async def main() -> int:
-    import os
     configure_logging(level=os.getenv("LOG_LEVEL", "INFO"), json=os.getenv("LOG_JSON", "") == "1")
 
     queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
@@ -111,15 +115,11 @@ async def main() -> int:
             pass
 
     gear_engine = GearEngine()
-    state = RideState(gear_engine=gear_engine, real_grade_percent=DEFAULT_GRADE)
+    athlete = AthleteProfile()
 
-    # Phase 4 — event bus + read-model projection.
-    # RideState remains the source of truth for now; the projection runs in
-    # parallel so subscribers (broadcast loop, future event log) can migrate
-    # off RideState in subsequent slices.
     bus = AsyncioEventBus()
     projection = RideStateProjection()
-    for event_type in (
+    _all_event_types = (
         TelemetryReading,
         GearShifted,
         PositionAdvanced,
@@ -129,8 +129,15 @@ async def main() -> int:
         RideEnded,
         RouteLoaded,
         RidePauseToggled,
-    ):
+    )
+    for event_type in _all_event_types:
         bus.subscribe(event_type, projection.apply)
+
+    if os.getenv("RIDEOS_EVENT_LOG"):
+        event_log = InMemoryEventLog()
+        for event_type in _all_event_types:
+            bus.subscribe(event_type, event_log.record)
+        _log.info("Event log enabled (in-memory)")
 
     _ROUTES_DIR = Path(__file__).parent.parent / "routes"
     _CONFIG_DIR = Path(__file__).parent.parent / "config"
@@ -145,10 +152,12 @@ async def main() -> int:
         streams_dir=_ROUTES_DIR / "streams",
     )
 
-    ride_service = RideService(state, gear_engine, bus)
+    erg_debouncer = ErgDebouncer(bus)
+    ride_service = RideService(athlete, gear_engine, bus, erg_debouncer, projection)
+    route_service = RouteService(bus)
+    strava_service = StravaService(bus)
 
     route_ctx = RouteContext(
-        state=state,
         broadcast_queue=broadcast_queue,
         stop_event=stop_event,
         library=library,
@@ -156,6 +165,9 @@ async def main() -> int:
         strava_importer=strava_importer,
         streams_dir=_ROUTES_DIR / "streams",
         ride_service=ride_service,
+        route_service=route_service,
+        strava_service=strava_service,
+        projection=projection,
     )
 
     shifter_adapter = KeyboardShifterAdapter(gear_engine, bus)
@@ -190,10 +202,6 @@ async def main() -> int:
         _log.info("Zwift Click %s", "connected" if connected else "disconnected")
 
     def _on_reading(reading: IndoorBikeData) -> None:
-        """Update RideState sensor fields and publish TelemetryReading."""
-        state.last_speed_kmh = reading.speed_kmh
-        state.last_power_w = reading.power_watts
-        state.last_cadence_rpm = reading.cadence_rpm
         bus.publish(TelemetryReading(
             speed_kmh=reading.speed_kmh,
             power_w=reading.power_watts,
@@ -203,60 +211,65 @@ async def main() -> int:
         _log_reading(reading)
 
     async def _state_broadcast_loop() -> None:
-        """Broadcast telemetry at 4 Hz, independent of KICKR connection."""
+        """Broadcast telemetry at 4 Hz, sourced from the read-model projection."""
         while not stop_event.is_set():
             try:
+                v = projection.view
                 now_t = time.monotonic()
-                rider_pos = route_ctx.tracker.position_m if route_ctx.tracker is not None else 0.0
+
+                # Position: prefer the live tracker (sub-tick precision); fall back to projection.
+                rider_pos = (
+                    route_ctx.tracker.position_m if route_ctx.tracker is not None else v.position_m
+                )
 
                 ghost_snap = None
                 if route_ctx.ghost_tracker is not None:
-                    route_ctx.ghost_tracker.tick(state.paused)
-                    ghost_snap = route_ctx.ghost_tracker.snapshot(rider_pos, state.lap_index)
+                    route_ctx.ghost_tracker.tick(v.paused)
+                    ghost_snap = route_ctx.ghost_tracker.snapshot(rider_pos, v.lap_index)
 
-                phase_remaining_s = None
-                if state.phase_end_monotonic is not None:
-                    phase_remaining_s = max(0, int(state.phase_end_monotonic - now_t))
+                phase_remaining_s = (
+                    max(0, int(v.phase_end_mono - now_t)) if v.phase_end_mono is not None else None
+                )
 
-                elapsed_s = None
-                if state.ride_start_monotonic is not None:
-                    elapsed_s = int(now_t - state.ride_start_monotonic)
+                elapsed_s = (
+                    int(now_t - v.ride_start_mono) if v.ride_start_mono is not None else None
+                )
 
                 dist_remaining_m = None
-                if route_ctx.tracker is not None and route_ctx.current_route is not None:
-                    dist_remaining_m = max(0.0, route_ctx.current_route.total_dist_m - rider_pos)
+                if v.total_dist_m is not None and route_ctx.tracker is not None:
+                    dist_remaining_m = max(0.0, v.total_dist_m - rider_pos)
 
                 erg_change_countdown_s = None
-                if state.erg_mode and state.erg_pending_power_w is not None and state.erg_commit_at_monotonic > 0:
-                    erg_change_countdown_s = max(0.0, state.erg_commit_at_monotonic - now_t)
+                if v.erg_mode and erg_debouncer.pending_power_w is not None and erg_debouncer.commit_at > 0:
+                    erg_change_countdown_s = max(0.0, erg_debouncer.commit_at - now_t)
 
-                broadcast_target_w = state.target_power_w
+                broadcast_target_w = v.target_power_w
                 broadcast_target_cadence = None
-                if broadcast_target_w is None and state.erg_mode:
-                    broadcast_target_w = state.erg_committed_power_w
-                if state.erg_mode:
-                    broadcast_target_cadence = state.erg_committed_cadence
+                if broadcast_target_w is None and v.erg_mode:
+                    broadcast_target_w = v.erg_committed_power_w
+                if v.erg_mode:
+                    broadcast_target_cadence = v.erg_committed_cadence
 
                 snapshot = {
                     "type": "telemetry",
-                    "speed_kmh": state.last_speed_kmh,
-                    "power_w": state.last_power_w,
-                    "cadence_rpm": state.last_cadence_rpm,
-                    "gear": state.gear_engine.current_gear,
-                    "real_grade_pct": state.real_grade_percent,
-                    "effective_grade_pct": state.gear_engine.effective_grade(state.real_grade_percent),
+                    "speed_kmh": v.speed_kmh,
+                    "power_w": v.power_w,
+                    "cadence_rpm": v.cadence_rpm,
+                    "gear": v.gear,
+                    "real_grade_pct": v.real_grade_pct,
+                    "effective_grade_pct": gear_engine.effective_grade(v.real_grade_pct),
                     "position_m": rider_pos if route_ctx.tracker is not None else None,
                     "route_loaded": route_ctx.tracker is not None,
                     "ghost_lat": ghost_snap.lat if ghost_snap is not None else None,
                     "ghost_lng": ghost_snap.lng if ghost_snap is not None else None,
                     "ghost_bearing_deg": ghost_snap.bearing_deg if ghost_snap is not None else None,
                     "ghost_time_gap_s": ghost_snap.time_gap_s if ghost_snap is not None else None,
-                    "ride_phase": state.ride_phase,
-                    "lap_index": state.lap_index,
-                    "lap_count": state.lap_count,
+                    "ride_phase": v.ride_phase,
+                    "lap_index": v.lap_index,
+                    "lap_count": v.lap_count,
                     "target_power_w": broadcast_target_w,
                     "target_cadence_rpm": broadcast_target_cadence,
-                    "erg_mode": state.erg_mode,
+                    "erg_mode": v.erg_mode,
                     "phase_remaining_s": phase_remaining_s,
                     "elapsed_s": elapsed_s,
                     "dist_remaining_m": dist_remaining_m,
@@ -285,7 +298,10 @@ async def main() -> int:
             connect_client=_connect_client,
             config=ReconnectConfig(initial_backoff=1.0, max_backoff=60.0),
             stop_event=stop_event,
-            ride_state=state,
+            athlete=athlete,
+            projection=projection,
+            erg_debouncer=erg_debouncer,
+            gear_engine=gear_engine,
             on_kickr_state_change=_on_kickr_state_change,
         ),
         name="reconnect_loop",
@@ -302,7 +318,7 @@ async def main() -> int:
     )
 
     gear_logger_task = asyncio.create_task(
-        _gear_status_logger(state, stop_event),
+        _gear_status_logger(gear_engine, projection, stop_event),
         name="gear_status_logger",
     )
 
@@ -316,12 +332,11 @@ async def main() -> int:
         name="ws_broadcast",
     )
 
+    click_adapter = ClickShifterAdapter(
+        gear_engine, bus, on_state_change=_on_click_state_change,
+    )
     click_task = asyncio.create_task(
-        run_click_shifter(
-            gear_engine,
-            stop_event,
-            on_state_change=_on_click_state_change,
-        ),
+        click_adapter.run(stop_event),
         name="click_shifter",
     )
     _log.debug("click_task spawned — scanning for Zwift Click in background")

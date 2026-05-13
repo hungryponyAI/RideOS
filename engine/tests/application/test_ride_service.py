@@ -8,7 +8,8 @@ import pytest
 
 from engine.adapters.eventbus.asyncio_bus import AsyncioEventBus
 from engine.application.ride_service import RideService
-from engine.control.state import RideState
+from engine.control.athlete import AthleteProfile
+from engine.control.erg_debouncer import ErgDebouncer
 from engine.domain.events import (
     GearShifted,
     RideEnded,
@@ -16,6 +17,7 @@ from engine.domain.events import (
     RidePhaseChanged,
     RideStarted,
 )
+from engine.domain.projection import RideStateProjection
 from engine.gears.engine import GearEngine
 from engine.route.library import RouteLibrary
 from engine.ws.server import RouteContext
@@ -23,29 +25,36 @@ from engine.ws.server import RouteContext
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
 
-def _wire() -> tuple[RideService, AsyncioEventBus, RideState, dict[type, list]]:
-    """Build a service with a fresh state, bus, and per-type recording."""
+def _wire() -> tuple[RideService, AsyncioEventBus, GearEngine, RideStateProjection, dict[type, list]]:
+    """Build a service with a fresh athlete profile, bus, projection, and per-type recording."""
     bus = AsyncioEventBus()
     gear_engine = GearEngine()
-    state = RideState(gear_engine=gear_engine)
+    projection = RideStateProjection()
     captured: dict[type, list] = {}
     for et in (GearShifted, RidePauseToggled, RideStarted, RideEnded, RidePhaseChanged):
         captured[et] = []
         bus.subscribe(et, captured[et].append)
-    svc = RideService(state, gear_engine, bus, clock=lambda: 42.0)
-    return svc, bus, state, captured
+    bus.subscribe(RidePauseToggled, projection.apply)
+    svc = RideService(AthleteProfile(), gear_engine, bus, ErgDebouncer(bus), projection, clock=lambda: 42.0)
+    return svc, bus, gear_engine, projection, captured
+
+
+def _make_svc(bus: AsyncioEventBus, gear_engine: GearEngine | None = None) -> RideService:
+    ge = gear_engine or GearEngine()
+    proj = RideStateProjection()
+    return RideService(AthleteProfile(), ge, bus, ErgDebouncer(bus), proj)
 
 
 # ── shift ─────────────────────────────────────────────────────────────────────
 
 def test_shift_up_publishes_event_with_resulting_gear():
-    svc, _, state, captured = _wire()
-    initial = state.gear_engine.current_gear
+    svc, _, gear_engine, _, captured = _wire()
+    initial = gear_engine.current_gear
 
     new_gear = svc.shift("up")
 
     assert new_gear == initial + 1
-    assert state.gear_engine.current_gear == new_gear
+    assert gear_engine.current_gear == new_gear
     assert len(captured[GearShifted]) == 1
     ev = captured[GearShifted][0]
     assert ev.direction == "up"
@@ -54,7 +63,7 @@ def test_shift_up_publishes_event_with_resulting_gear():
 
 
 def test_shift_down_publishes_event_with_resulting_gear():
-    svc, _, _, captured = _wire()
+    svc, _, _, _, captured = _wire()
     svc.shift("up")  # nudge gear away from min so down works
     captured[GearShifted].clear()
 
@@ -67,19 +76,19 @@ def test_shift_down_publishes_event_with_resulting_gear():
 # ── set_paused ────────────────────────────────────────────────────────────────
 
 def test_set_paused_to_false_publishes_toggle():
-    svc, _, state, captured = _wire()
-    assert state.paused is True  # default
+    svc, _, _, projection, captured = _wire()
+    assert projection.view.paused is True  # default
 
     svc.set_paused(False)
 
-    assert state.paused is False
+    assert projection.view.paused is False
     assert len(captured[RidePauseToggled]) == 1
     assert captured[RidePauseToggled][0].paused is False
 
 
 def test_set_paused_idempotent_publishes_nothing():
-    svc, _, state, captured = _wire()
-    assert state.paused is True
+    svc, _, _, projection, captured = _wire()
+    assert projection.view.paused is True
 
     svc.set_paused(True)  # already paused
 
@@ -87,7 +96,7 @@ def test_set_paused_idempotent_publishes_nothing():
 
 
 def test_set_paused_then_resume_publishes_two_events():
-    svc, _, _, captured = _wire()
+    svc, _, _, _, captured = _wire()
     svc.set_paused(False)
     svc.set_paused(True)
 
@@ -109,10 +118,7 @@ def route_ctx_factory(tmp_path):
         route = load_gpx_content(gpx)
         entry = library.add_route("simple", gpx, route)
 
-        # state/bus come from _wire() in each test; ctx only needs library wiring
-        state = RideState(gear_engine=GearEngine())
         ctx = RouteContext(
-            state=state,
             broadcast_queue=asyncio.Queue(maxsize=10),
             stop_event=asyncio.Event(),
             library=library,
@@ -127,7 +133,8 @@ async def test_start_ride_publishes_ride_started(route_ctx_factory):
     bus = AsyncioEventBus()
     captured: list[RideStarted] = []
     bus.subscribe(RideStarted, captured.append)
-    svc = RideService(ctx.state, ctx.state.gear_engine, bus, clock=lambda: 7.0)
+    proj = RideStateProjection()
+    svc = RideService(AthleteProfile(), GearEngine(), bus, ErgDebouncer(bus), proj, clock=lambda: 7.0)
 
     await svc.start_ride(ctx, {
         "route_id": route_id, "laps": 2, "warmup_s": 0, "cooldown_s": 0, "erg_mode": False,
@@ -153,7 +160,7 @@ async def test_start_ride_unknown_route_id_does_not_publish(route_ctx_factory):
     bus = AsyncioEventBus()
     captured: list[RideStarted] = []
     bus.subscribe(RideStarted, captured.append)
-    svc = RideService(ctx.state, ctx.state.gear_engine, bus)
+    svc = _make_svc(bus)
 
     await svc.start_ride(ctx, {"route_id": "nope"})
 
@@ -168,7 +175,7 @@ async def test_start_ride_publishes_phase_change_to_route(route_ctx_factory):
     bus = AsyncioEventBus()
     phase_events: list[RidePhaseChanged] = []
     bus.subscribe(RidePhaseChanged, phase_events.append)
-    svc = RideService(ctx.state, ctx.state.gear_engine, bus)
+    svc = _make_svc(bus)
 
     await svc.start_ride(ctx, {
         "route_id": route_id, "laps": 1, "warmup_s": 0, "cooldown_s": 0,
@@ -190,7 +197,7 @@ async def test_end_ride_cancels_phase_task_and_publishes(route_ctx_factory):
     bus = AsyncioEventBus()
     ended: list[RideEnded] = []
     bus.subscribe(RideEnded, ended.append)
-    svc = RideService(ctx.state, ctx.state.gear_engine, bus)
+    svc = _make_svc(bus)
 
     await svc.start_ride(ctx, {"route_id": route_id, "laps": 1})
     await svc.end_ride(ctx)
@@ -201,20 +208,21 @@ async def test_end_ride_cancels_phase_task_and_publishes(route_ctx_factory):
     assert len(ended) >= 1
 
 
-async def test_cancel_active_ride_resets_state(route_ctx_factory):
+async def test_cancel_active_ride_cleans_up_context(route_ctx_factory):
     ctx, _, route_id = route_ctx_factory()
     bus = AsyncioEventBus()
-    svc = RideService(ctx.state, ctx.state.gear_engine, bus)
+    erg = ErgDebouncer(bus)
+    proj = RideStateProjection()
+    svc = RideService(AthleteProfile(), GearEngine(), bus, erg, proj)
 
     await svc.start_ride(ctx, {
         "route_id": route_id, "laps": 1, "erg_mode": True, "warmup_s": 0, "cooldown_s": 0,
     })
-    assert ctx.state.erg_mode is True
 
     await svc.cancel_active_ride(ctx)
 
     assert ctx.phase_task is None
     assert ctx.tracker is None
     assert ctx.current_route is None
-    assert ctx.state.erg_mode is False
-    assert ctx.state.lap_index == 0
+    # Erg debouncer is reset after cancel
+    assert erg.committed_power_w is None

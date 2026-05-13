@@ -25,8 +25,11 @@ from engine.ble.client import (
     start_indoor_bike_notify,
     stop_indoor_bike_notify,
 )
+from engine.control.athlete import AthleteProfile
 from engine.control.controller import FtmsController, run_control_loop
-from engine.control.state import RideState
+from engine.control.erg_debouncer import ErgDebouncer
+from engine.domain.projection import RideStateProjection
+from engine.gears.engine import GearEngine
 
 _log = logging.getLogger(__name__)
 
@@ -54,18 +57,19 @@ async def reconnect_loop(
     sleep: SleepFn = asyncio.sleep,
     stop_event: Optional[asyncio.Event] = None,
     *,
-    ride_state: Optional[RideState] = None,
+    athlete: Optional[AthleteProfile] = None,
+    projection: Optional[RideStateProjection] = None,
+    erg_debouncer: Optional[ErgDebouncer] = None,
+    gear_engine: Optional[GearEngine] = None,
     controller_factory: ControllerFactory = FtmsController,
     on_client_ready: Optional[OnClientReady] = None,
     on_kickr_state_change: Optional[Callable[[bool], None]] = None,
 ) -> None:
     """Run the scan/connect/subscribe cycle forever, until stop_event is set.
 
-    Phase 1 behavior preserved when ride_state=None.
-
-    Phase 2+: if ride_state is provided, wires FtmsController + run_control_loop
-    into the connect lifecycle.  INFRA-02 guarantee: controller.shutdown() is
-    called in a try/finally before stop_indoor_bike_notify (Pitfall 6).
+    If athlete is provided, wires FtmsController + run_control_loop into the
+    connect lifecycle. INFRA-02 guarantee: controller.shutdown() is called in a
+    try/finally before stop_indoor_bike_notify (Pitfall 6).
     """
     backoff = config.initial_backoff
 
@@ -108,18 +112,24 @@ async def reconnect_loop(
                 controller: Optional[FtmsController] = None
                 control_task: Optional[asyncio.Task] = None
 
-                if ride_state is not None:
+                if athlete is not None:
                     controller = controller_factory(client)
                     await controller.start()
 
                 if on_client_ready is not None:
-                    on_client_ready(client, controller)  # type: ignore[arg-type]  # controller may be None when ride_state absent
+                    on_client_ready(client, controller)  # type: ignore[arg-type]  # controller may be None when athlete absent
 
                 if controller is not None:
-                    assert ride_state is not None  # controller is only set when ride_state is not None
+                    assert athlete is not None
                     assert stop_event is not None   # always provided from main.py
+                    assert projection is not None and erg_debouncer is not None and gear_engine is not None
                     control_task = asyncio.create_task(
-                        run_control_loop(controller, ride_state, stop_event)
+                        run_control_loop(
+                            controller, athlete, stop_event,
+                            projection=projection,
+                            erg_debouncer=erg_debouncer,
+                            gear_engine=gear_engine,
+                        )
                     )
 
                 # Wait until either stop_event fires or device disconnects.

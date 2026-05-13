@@ -1,15 +1,10 @@
 """RideService — application-level orchestration for the ride lifecycle.
 
-Owns: phase-machine task, ride start/end, mid-ride pause toggle, gear shifts.
+Owns: phase-machine task, ride start/end, mid-ride pause toggle, gear shifts,
+and the athlete profile.
 
 Publishes domain events to the EventBus on every meaningful state change.
-RideState is still mutated for now (legacy readers); RideState removal
-happens in P4.8.
-
-Coupling to RouteContext is intentional and temporary: ghost_tracker,
-current_route, library updates, and the route_data broadcast all live on
-ctx today and will dissolve as RouteService (P4.3) and the projection-driven
-broadcast (P4.6) come online.
+All read-model consumers should read from RideStateProjection, not from here.
 """
 from __future__ import annotations
 
@@ -20,6 +15,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional
 
+from engine.control.athlete import AthleteProfile
 from engine.domain.events import (
     GearShifted,
     RideEnded,
@@ -31,7 +27,8 @@ from engine.gears.engine import GearEngine
 from engine.ports.eventbus import EventBusPort
 
 if TYPE_CHECKING:
-    from engine.control.state import RideState
+    from engine.control.erg_debouncer import ErgDebouncer
+    from engine.domain.projection import RideStateProjection
     from engine.ws.server import RouteContext
 
 _log = logging.getLogger("rideos.application.ride")
@@ -54,15 +51,19 @@ class RideService:
 
     def __init__(
         self,
-        state: "RideState",
+        athlete: AthleteProfile,
         gear_engine: GearEngine,
         bus: EventBusPort,
+        erg_debouncer: "ErgDebouncer",
+        projection: "RideStateProjection",
         *,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        self._state = state
+        self._athlete = athlete
         self._gears = gear_engine
         self._bus = bus
+        self._erg = erg_debouncer
+        self._projection = projection
         self._clock = clock
 
     # ── synchronous user actions ──────────────────────────────────────────
@@ -75,15 +76,33 @@ class RideService:
 
     def set_paused(self, paused: bool) -> None:
         """Toggle pause/resume mid-ride and publish RidePauseToggled."""
-        if self._state.paused == paused:
+        if self._projection.view.paused == paused:
             return
-        self._state.paused = paused
         self._bus.publish(RidePauseToggled(paused=paused, t_mono=self._clock()))
+
+    def update_athlete_settings(
+        self,
+        *,
+        weight_kg: Optional[float] = None,
+        height_cm: Optional[float] = None,
+        ftp_w: Optional[float] = None,
+    ) -> None:
+        """Update rider profile fields. Positive values only; None/<=0 is ignored."""
+        if weight_kg is not None and weight_kg > 0:
+            self._athlete.weight_kg = float(weight_kg)
+        if height_cm is not None and height_cm > 0:
+            self._athlete.height_cm = float(height_cm)
+        if ftp_w is not None and ftp_w > 0:
+            self._athlete.ftp_w = float(ftp_w)
+        _log.info(
+            "Athlete settings: %.1f kg  %.0f cm  FTP %.0f W",
+            self._athlete.weight_kg, self._athlete.height_cm, self._athlete.ftp_w,
+        )
 
     # ── async ride lifecycle ──────────────────────────────────────────────
 
     async def cancel_active_ride(self, ctx: "RouteContext") -> None:
-        """Cancel any running phase_task or legacy tracker_task and reset ride state."""
+        """Cancel any running phase_task or legacy tracker_task and reset erg state."""
         for task_attr in ("phase_task", "tracker_task"):
             task = getattr(ctx, task_attr)
             if task is not None and not task.done():
@@ -96,22 +115,7 @@ class RideService:
         ctx.tracker = None
         ctx.ghost_tracker = None
         ctx.current_route = None
-        # Reset erg state
-        s = self._state
-        s.erg_mode = False
-        s.erg_power_table = None
-        s.erg_cadence_table = None
-        s.target_power_w = None
-        s.erg_committed_power_w = None
-        s.erg_committed_cadence = None
-        s.erg_pending_power_w = None
-        s.erg_pending_cadence = None
-        s.erg_commit_at_monotonic = 0.0
-        s.ride_phase = "route"
-        s.lap_index = 0
-        s.lap_count = 1
-        s.phase_end_monotonic = None
-        s.ride_start_monotonic = None
+        self._erg.reset()
 
     async def start_ride(self, ctx: "RouteContext", msg: dict) -> None:
         """Handle a start_ride request: load, transform, configure, spawn phase machine."""
@@ -135,7 +139,6 @@ class RideService:
             route = await asyncio.to_thread(load_gpx, str(gpx_path))
         except Exception as exc:
             _put(ctx.broadcast_queue, {"type": "route_error", "message": f"{type(exc).__name__}: {exc}"})
-            self._state.real_grade_percent = 0.0
             return
 
         if msg.get("reverse", False):
@@ -168,15 +171,15 @@ class RideService:
         })
 
         erg_mode = bool(msg.get("erg_mode", False))
-        self._state.erg_mode = erg_mode
         if erg_mode:
-            self._state.erg_power_table = compute_target_power_table(
-                route.grades_pct, self._state.athlete_ftp_w
+            self._erg.configure(
+                power_table=compute_target_power_table(
+                    route.grades_pct, self._athlete.ftp_w,
+                ),
+                cadence_table=compute_cadence_table(route.grades_pct),
             )
-            self._state.erg_cadence_table = compute_cadence_table(route.grades_pct)
         else:
-            self._state.erg_power_table = None
-            self._state.erg_cadence_table = None
+            self._erg.reset()
 
         # Ghost (disabled in erg mode)
         use_ghost = bool(msg.get("ghost", False)) and not erg_mode
@@ -204,14 +207,17 @@ class RideService:
                 t_mono=self._clock(),
             ))
 
+        speed_fn = lambda: self._projection.view.speed_kmh  # noqa: E731
+
         ctx.phase_task = asyncio.create_task(
             run_phases(
-                self._state,
                 route,
                 ctx.stop_event,
+                speed_fn,
                 warmup_s=warmup_s,
                 cooldown_s=cooldown_s,
                 laps=laps,
+                bus=self._bus,
                 on_tracker_ready=lambda t: setattr(ctx, "tracker", t),
                 on_tracker_done=lambda: setattr(ctx, "tracker", None),
                 on_complete=_on_complete,
@@ -235,8 +241,9 @@ class RideService:
     async def end_ride(self, ctx: "RouteContext") -> None:
         """Cancel an in-progress ride and publish RideEnded."""
         elapsed_s = 0
-        if self._state.ride_start_monotonic is not None:
-            elapsed_s = int(self._clock() - self._state.ride_start_monotonic)
+        ride_start = self._projection.view.ride_start_mono
+        if ride_start is not None:
+            elapsed_s = int(self._clock() - ride_start)
         await self.cancel_active_ride(ctx)
         self._bus.publish(RideEnded(elapsed_s=elapsed_s, t_mono=self._clock()))
 

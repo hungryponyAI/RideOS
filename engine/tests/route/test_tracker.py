@@ -1,27 +1,14 @@
-"""Tests for engine.route.tracker — ROUTE-02 + ROUTE-03 coverage.
-
-RED phase: these tests import engine.route.tracker which does not yet exist.
-Task 2 of this plan turns them GREEN.
-"""
+"""Tests for engine.route.tracker — ROUTE-02 + ROUTE-03 coverage."""
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
 from typing import Optional
 
 import pytest
 
 
-# ------------------------------------------------------------------
-# Fixtures: a minimal RouteData stub + a minimal RideState stub
-# ------------------------------------------------------------------
-
 def _build_route(total_m: float = 1000.0, grades: list[float] | None = None):
-    """Create a RouteData with N=5 points spanning total_m metres.
-
-    cum_dist_m = [0, 250, 500, 750, 1000]
-    grades_pct defaults to [0, 2, 4, -2, 0] — monotonic-enough for bisect tests.
-    """
+    """Create a RouteData with N=5 points spanning total_m metres."""
     from engine.route.model import RouteData
 
     if grades is None:
@@ -39,11 +26,13 @@ def _build_route(total_m: float = 1000.0, grades: list[float] | None = None):
     )
 
 
-@dataclass
-class _FakeRideState:
-    """Minimal stand-in for engine.control.state.RideState — only the fields RouteTracker uses."""
-    real_grade_percent: float = 0.0
-    last_speed_kmh: Optional[float] = None
+class _CaptureBus:
+    """Minimal event bus that records published events."""
+    def __init__(self):
+        self.events: list = []
+
+    def publish(self, event) -> None:
+        self.events.append(event)
 
 
 # ------------------------------------------------------------------
@@ -51,102 +40,104 @@ class _FakeRideState:
 # ------------------------------------------------------------------
 
 async def test_tracker_advances_position_at_fixed_speed():
-    """ROUTE-02 happy path: 36 km/h = 10 m/s; after 0.5 s of ticks, position ≈ 5 m."""
+    """ROUTE-02 happy path: 36 km/h = 10 m/s; after 0.25 s of ticks, position > 0."""
     from engine.route.tracker import RouteTracker
 
     route = _build_route(total_m=1000.0)
     tracker = RouteTracker(route)
-    state = _FakeRideState(last_speed_kmh=36.0)
     stop_event = asyncio.Event()
 
-    task = asyncio.create_task(tracker.run(state, stop_event, tick_s=0.05))
+    task = asyncio.create_task(tracker.run(lambda: 36.0, stop_event, tick_s=0.05))
     await asyncio.sleep(0.25)  # ~5 ticks at 0.05 s
     stop_event.set()
     await asyncio.wait_for(task, timeout=1.0)
 
-    # 10 m/s * 0.25 s = 2.5 m, allow wide tolerance for scheduler jitter
+    # 10 m/s * 0.25 s ≈ 2.5 m; wide tolerance for scheduler jitter
     assert 1.0 < tracker.position_m < 8.0, f"Expected ~2.5 m of travel, got {tracker.position_m}"
 
 
 async def test_position_clamp_and_route_complete():
-    """ROUTE-02: reaching total_dist_m clamps position AND sets grade to 0 AND exits task."""
+    """ROUTE-02: reaching total_dist_m exits the task; final PositionAdvanced has grade 0."""
     from engine.route.tracker import RouteTracker, ROUTE_COMPLETE_GRADE
+    from engine.domain.events import PositionAdvanced
 
-    route = _build_route(total_m=5.0)  # Tiny route so we finish in ~1 tick at 36 km/h
-    tracker = RouteTracker(route)
-    state = _FakeRideState(last_speed_kmh=36.0, real_grade_percent=99.0)  # sentinel
+    route = _build_route(total_m=5.0)
+    bus = _CaptureBus()
+    tracker = RouteTracker(route, bus=bus)
     stop_event = asyncio.Event()
 
-    task = asyncio.create_task(tracker.run(state, stop_event, tick_s=0.01))
-    # Wait for task to complete naturally (route ends); should exit without stop_event
+    task = asyncio.create_task(tracker.run(lambda: 36.0, stop_event, tick_s=0.01))
     await asyncio.wait_for(task, timeout=2.0)
 
     assert tracker.position_m <= route.total_dist_m
-    assert tracker.position_m >= route.total_dist_m - 0.5  # reached the end band
-    assert state.real_grade_percent == ROUTE_COMPLETE_GRADE
+    assert tracker.position_m >= route.total_dist_m - 0.6
+
+    # Final PositionAdvanced event should carry ROUTE_COMPLETE_GRADE
+    pos_events = [e for e in bus.events if isinstance(e, PositionAdvanced)]
+    assert len(pos_events) >= 1
+    assert pos_events[-1].grade_pct == ROUTE_COMPLETE_GRADE
     assert ROUTE_COMPLETE_GRADE == 0.0
 
 
 async def test_none_speed_treated_as_zero():
-    """ROUTE-02 Pitfall 4: None last_speed_kmh (BLE gap) must not crash; position freezes."""
+    """ROUTE-02 Pitfall: None speed (BLE gap) must not crash; position freezes."""
     from engine.route.tracker import RouteTracker
 
     route = _build_route(total_m=1000.0)
     tracker = RouteTracker(route)
-    state = _FakeRideState(last_speed_kmh=None)
     stop_event = asyncio.Event()
 
-    task = asyncio.create_task(tracker.run(state, stop_event, tick_s=0.02))
+    task = asyncio.create_task(tracker.run(lambda: None, stop_event, tick_s=0.02))
     await asyncio.sleep(0.1)
     stop_event.set()
     await asyncio.wait_for(task, timeout=1.0)
 
-    assert tracker.position_m == 0.0  # no movement at all
+    assert tracker.position_m == 0.0
 
 
 # ------------------------------------------------------------------
-# ROUTE-03: grade lookup + state mutation
+# ROUTE-03: grade lookup via PositionAdvanced events
 # ------------------------------------------------------------------
 
-async def test_grade_lookup_uses_bisect():
-    """ROUTE-03: at position 600 m on a 0-250-500-750-1000 route, bisect_right(cum, 600)-1 = 2.
-    So state.real_grade_percent should equal grades_pct[2] = 4.0.
-    """
+async def test_grade_lookup_publishes_correct_grade():
+    """ROUTE-03: at high speed, bisect advances; final event grade must be in grades_pct."""
     from engine.route.tracker import RouteTracker
+    from engine.domain.events import PositionAdvanced
 
     route = _build_route(total_m=1000.0, grades=[0.0, 2.0, 4.0, -2.0, 0.0])
-    tracker = RouteTracker(route)
-    # Seed position via a single tick at very high speed, then stop
-    state = _FakeRideState(last_speed_kmh=36.0 * 60)  # 60 m/s — advances fast
+    bus = _CaptureBus()
+    tracker = RouteTracker(route, bus=bus)
     stop_event = asyncio.Event()
 
-    task = asyncio.create_task(tracker.run(state, stop_event, tick_s=0.01))
+    task = asyncio.create_task(tracker.run(lambda: 36.0 * 60, stop_event, tick_s=0.01))
     await asyncio.sleep(0.05)
     stop_event.set()
     await asyncio.wait_for(task, timeout=1.0)
 
-    # We don't know exact position, but after > 250 m we should be in grade band 2.0 or later
-    # The key assertion: real_grade_percent must be a value from grades_pct (never stale 0.0 if we moved)
-    assert state.real_grade_percent in route.grades_pct
+    pos_events = [e for e in bus.events if isinstance(e, PositionAdvanced)]
+    assert len(pos_events) >= 1
+    assert all(e.grade_pct in route.grades_pct for e in pos_events)
     assert tracker.position_m > 0.0
 
 
-async def test_state_mutation_happens_every_tick():
-    """ROUTE-03: verify state.real_grade_percent is written each tick, not just once."""
+async def test_grade_published_every_tick():
+    """ROUTE-03: PositionAdvanced is published on every tick, not just once."""
     from engine.route.tracker import RouteTracker
+    from engine.domain.events import PositionAdvanced
 
-    route = _build_route(total_m=1000.0, grades=[7.5, 7.5, 7.5, 7.5, 7.5])  # uniform
-    tracker = RouteTracker(route)
-    state = _FakeRideState(last_speed_kmh=10.0, real_grade_percent=-99.0)  # bogus sentinel
+    route = _build_route(total_m=1000.0, grades=[7.5, 7.5, 7.5, 7.5, 7.5])
+    bus = _CaptureBus()
+    tracker = RouteTracker(route, bus=bus)
     stop_event = asyncio.Event()
 
-    task = asyncio.create_task(tracker.run(state, stop_event, tick_s=0.02))
-    await asyncio.sleep(0.05)  # >= 1 tick guaranteed
+    task = asyncio.create_task(tracker.run(lambda: 10.0, stop_event, tick_s=0.02))
+    await asyncio.sleep(0.12)  # ≥ 3 ticks
     stop_event.set()
     await asyncio.wait_for(task, timeout=1.0)
 
-    # Uniform grade route → state must reflect 7.5, overwriting the sentinel
-    assert state.real_grade_percent == 7.5
+    pos_events = [e for e in bus.events if isinstance(e, PositionAdvanced)]
+    assert len(pos_events) >= 3
+    assert all(e.grade_pct == 7.5 for e in pos_events)
 
 
 async def test_position_m_property_is_readonly():

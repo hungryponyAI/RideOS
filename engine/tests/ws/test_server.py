@@ -168,16 +168,31 @@ async def test_snapshot_schema():
 
 @pytest.mark.asyncio
 async def test_inbound_gear_shift():
-    """WS client sends gear_shift messages; GearEngine.shift_up/down is called."""
+    """WS client sends gear_shift messages; RideService.shift is invoked."""
+    from engine.adapters.eventbus.asyncio_bus import AsyncioEventBus
+    from engine.application.ride_service import RideService
+    from engine.control.athlete import AthleteProfile
+    from engine.control.erg_debouncer import ErgDebouncer
+    from engine.domain.projection import RideStateProjection
     from engine.gears.engine import GearEngine
+    from engine.ws.server import RouteContext
 
     port = await _get_free_port()
     stop_event = asyncio.Event()
     queue: asyncio.Queue[dict] = asyncio.Queue()
-    gear_engine = GearEngine()  # starts at gear 5
+    gear_engine = GearEngine()
+    bus = AsyncioEventBus()
+    projection = RideStateProjection()
+    ride_service = RideService(AthleteProfile(), gear_engine, bus, ErgDebouncer(bus), projection)
+    ctx = RouteContext(
+        broadcast_queue=queue,
+        stop_event=stop_event,
+        ride_service=ride_service,
+    )
 
     server_task = asyncio.create_task(
-        broadcast_loop(queue, stop_event, gear_engine=gear_engine, host="localhost", port=port)
+        broadcast_loop(queue, stop_event, gear_engine=gear_engine,
+                       host="localhost", port=port, route_context=ctx),
     )
 
     await asyncio.sleep(0.05)
@@ -199,21 +214,21 @@ async def test_inbound_gear_shift():
 
 
 @pytest.mark.asyncio
-async def test_inbound_no_gear_engine():
-    """Inbound messages are silently ignored when gear_engine is None (default)."""
+async def test_inbound_no_ride_service():
+    """gear_shift is silently ignored when no ride_service is wired."""
     port = await _get_free_port()
     stop_event = asyncio.Event()
     queue: asyncio.Queue[dict] = asyncio.Queue()
 
     server_task = asyncio.create_task(
-        broadcast_loop(queue, stop_event, host="localhost", port=port)
+        broadcast_loop(queue, stop_event, host="localhost", port=port),
     )
 
     await asyncio.sleep(0.05)
 
     try:
         async with connect(f"ws://localhost:{port}") as ws:
-            # Should not raise; gear_engine is None so message is ignored
+            # Should not raise; no ride_service so message is ignored
             await ws.send(json.dumps({"type": "gear_shift", "direction": "up"}))
             await asyncio.sleep(0.1)
             # No assertion needed — test passes if no exception is raised
@@ -234,18 +249,23 @@ _FIXTURES = Path(__file__).parent.parent / "fixtures"
 @pytest.mark.asyncio
 async def test_load_route_success_broadcasts_route_data():
     """Sending a load_route message with a valid GPX path results in a route_data broadcast."""
-    from engine.control.state import RideState
+    from engine.adapters.eventbus.asyncio_bus import AsyncioEventBus
+    from engine.application.route_service import RouteService
     from engine.gears.engine import GearEngine
     from engine.ws.server import broadcast_loop, RouteContext
 
     port = await _get_free_port()
     stop_event = asyncio.Event()
     queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=10)
-    state = RideState(gear_engine=GearEngine())
-    ctx = RouteContext(state=state, broadcast_queue=queue, stop_event=stop_event)
+    gear_engine = GearEngine()
+    ctx = RouteContext(
+        broadcast_queue=queue,
+        stop_event=stop_event,
+        route_service=RouteService(AsyncioEventBus()),
+    )
 
     server_task = asyncio.create_task(
-        broadcast_loop(queue, stop_event, gear_engine=state.gear_engine,
+        broadcast_loop(queue, stop_event, gear_engine=gear_engine,
                        host="localhost", port=port, route_context=ctx),
     )
     await asyncio.sleep(0.05)
@@ -285,18 +305,23 @@ async def test_load_route_success_broadcasts_route_data():
 @pytest.mark.asyncio
 async def test_load_route_failure_broadcasts_route_error():
     """Bogus path yields route_error, not a crash."""
-    from engine.control.state import RideState
+    from engine.adapters.eventbus.asyncio_bus import AsyncioEventBus
+    from engine.application.route_service import RouteService
     from engine.gears.engine import GearEngine
     from engine.ws.server import broadcast_loop, RouteContext
 
     port = await _get_free_port()
     stop_event = asyncio.Event()
     queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=10)
-    state = RideState(gear_engine=GearEngine())
-    ctx = RouteContext(state=state, broadcast_queue=queue, stop_event=stop_event)
+    gear_engine = GearEngine()
+    ctx = RouteContext(
+        broadcast_queue=queue,
+        stop_event=stop_event,
+        route_service=RouteService(AsyncioEventBus()),
+    )
 
     server_task = asyncio.create_task(
-        broadcast_loop(queue, stop_event, gear_engine=state.gear_engine,
+        broadcast_loop(queue, stop_event, gear_engine=gear_engine,
                        host="localhost", port=port, route_context=ctx),
     )
     await asyncio.sleep(0.05)
@@ -316,8 +341,6 @@ async def test_load_route_failure_broadcasts_route_error():
         # No tracker should be spawned on failure
         assert ctx.tracker is None
         assert ctx.tracker_task is None
-        # Grade reset to 0 on failure per CONTEXT.md "free ride = 0%"
-        assert state.real_grade_percent == 0.0
     finally:
         stop_event.set()
         await asyncio.wait_for(server_task, timeout=3.0)

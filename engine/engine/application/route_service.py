@@ -134,7 +134,6 @@ class RouteService:
                 "type": "route_error",
                 "message": f"{type(exc).__name__}: {exc}",
             })
-            ctx.state.real_grade_percent = 0.0
             return
 
         _put(ctx.broadcast_queue, _route_data_msg(route))
@@ -161,10 +160,12 @@ class RouteService:
                 ctx.library.update_best_time(rid_snapshot, elapsed_s)
                 _put(ctx.broadcast_queue, ctx.library.to_ws_message())
 
-        tracker = RouteTracker(route, on_complete=_on_complete)
+        tracker = RouteTracker(route, on_complete=_on_complete, bus=self._bus)
         ctx.tracker = tracker
+        proj = ctx.projection
+        speed_fn = (lambda: proj.view.speed_kmh) if proj is not None else (lambda: None)
         ctx.tracker_task = asyncio.create_task(
-            tracker.run(ctx.state, ctx.stop_event),
+            tracker.run(speed_fn, ctx.stop_event),
             name="route_tracker",
         )
         _log.info("Route loaded from %s: %d points, %.0f m total",

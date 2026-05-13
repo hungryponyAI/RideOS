@@ -199,7 +199,7 @@ async def test_control_loop_wired_and_shutdown_before_notify_stop():
     stop_indoor_bike_notify (RESEARCH.md Pitfall 6 / INFRA-02 guarantee).
     """
     from engine.control.controller import FtmsController
-    from engine.control.state import RideState
+    from engine.control.athlete import AthleteProfile
     from engine.gears.engine import GearEngine
     from engine.ftms.control_point import OpCode
 
@@ -262,8 +262,15 @@ async def test_control_loop_wired_and_shutdown_before_notify_stop():
     async def find():
         return device
 
+    from engine.adapters.eventbus.asyncio_bus import AsyncioEventBus
+    from engine.control.athlete import AthleteProfile
+    from engine.control.erg_debouncer import ErgDebouncer
+    from engine.domain.projection import RideStateProjection
+
     gear_engine = GearEngine()
-    state = RideState(gear_engine=gear_engine, real_grade_percent=2.0)
+    bus = AsyncioEventBus()
+    projection = RideStateProjection()
+    erg_debouncer = ErgDebouncer(bus)
 
     with mock.patch.object(FtmsController, "shutdown", _tracked_shutdown):
         await reconnect_loop(
@@ -273,7 +280,10 @@ async def test_control_loop_wired_and_shutdown_before_notify_stop():
             config=ReconnectConfig(initial_backoff=1.0, max_backoff=60.0),
             sleep=asyncio.sleep,
             stop_event=stop,
-            ride_state=state,
+            athlete=AthleteProfile(),
+            projection=projection,
+            erg_debouncer=erg_debouncer,
+            gear_engine=gear_engine,
         )
 
     # INFRA-02: shutdown must precede stop_indoor_bike_notify

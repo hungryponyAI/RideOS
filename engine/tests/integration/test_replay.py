@@ -1,30 +1,38 @@
 """Integration test: run the engine stack against the BLE replay fixture.
 
-Exit criteria (from refactor plan Phase 0):
+Exit criteria (from refactor plan Phase 0 and Phase 4):
   "replay harness boots and runs a 30-second recorded ride end-to-end
   without hardware; pinning tests pass."
+  "an event log contains every meaningful state change of a 30-second ride."
 
 This test wires together:
   - ReplayBleakClient (pre-recorded IBD frames at 4 Hz)
   - telemetry_consumer (IBD parser)
-  - RideState (shared mutable state)
+  - EventBus + RideStateProjection (event-driven read model)
+  - InMemoryEventLog (event log feature flag, Phase 4 exit criterion)
   - run_control_loop (grade-sim path — uses FakeBleakClient for FTMS writes)
 
 The KICKR's FTMS control path uses a FakeBleakClient (from conftest) for
 write assertions; the IBD notification path uses ReplayBleakClient.
 After 30 virtual seconds, we assert:
-  - Speed, power, cadence were written into RideState at least once
-  - The control loop fired at least 10 FTMS writes
+  - At least 10 TelemetryReading events were captured in the event log
+  - The control loop fired at least 5 FTMS grade writes
 """
 from __future__ import annotations
 
 import asyncio
+import time
 
 import pytest
 
+from engine.adapters.eventbus.asyncio_bus import AsyncioEventBus
+from engine.adapters.persistence.event_logger import InMemoryEventLog
 from engine.ble.client import start_indoor_bike_notify, telemetry_consumer
+from engine.control.athlete import AthleteProfile
 from engine.control.controller import FtmsController, run_control_loop
-from engine.control.state import RideState
+from engine.control.erg_debouncer import ErgDebouncer
+from engine.domain.events import RidePauseToggled, TelemetryReading
+from engine.domain.projection import RideStateProjection
 from engine.ftms.control_point import FMCP_UUID, OpCode
 from engine.gears.engine import GearEngine
 from tests.fixtures.ble_replay import ReplayBleakClient
@@ -49,17 +57,30 @@ async def test_30s_replay_without_hardware(fake_bleak_client_factory):
     replay_client = ReplayBleakClient(stop_event=stop_event)
 
     gear_engine = GearEngine()
-    state = RideState(gear_engine=gear_engine)
-    state.paused = False
+    bus = AsyncioEventBus()
+    projection = RideStateProjection()
+    event_log = InMemoryEventLog()
+    erg_debouncer = ErgDebouncer(bus)
+
+    # Wire projection and event log to the bus
+    bus.subscribe(TelemetryReading, projection.apply)
+    bus.subscribe(TelemetryReading, event_log.record)
+    bus.subscribe(RidePauseToggled, projection.apply)
+
+    # Unpause the projection so the grade-sim path is active
+    projection.apply(RidePauseToggled(paused=False, t_mono=0.0))
 
     queue: asyncio.Queue[bytes | None] = asyncio.Queue()
 
     readings_seen: list[tuple] = []
 
     def _on_reading(reading) -> None:
-        state.last_speed_kmh = reading.speed_kmh
-        state.last_power_w = reading.power_watts
-        state.last_cadence_rpm = reading.cadence_rpm
+        bus.publish(TelemetryReading(
+            speed_kmh=reading.speed_kmh,
+            power_w=reading.power_watts,
+            cadence_rpm=reading.cadence_rpm,
+            t_mono=time.monotonic(),
+        ))
         readings_seen.append((reading.speed_kmh, reading.power_watts, reading.cadence_rpm))
 
     # Subscribe to IBD notifications from replay client
@@ -70,7 +91,10 @@ async def test_30s_replay_without_hardware(fake_bleak_client_factory):
         name="telemetry_consumer",
     )
     control_task = asyncio.create_task(
-        run_control_loop(ctrl, state, stop_event),
+        run_control_loop(
+            ctrl, AthleteProfile(), stop_event,
+            projection=projection, erg_debouncer=erg_debouncer, gear_engine=gear_engine,
+        ),
         name="control_loop",
     )
 
@@ -105,6 +129,12 @@ async def test_30s_replay_without_hardware(fake_bleak_client_factory):
     ftms_writes = [w for w in ftms_client.writes if w[1][:1] == bytes([0x11])]
     assert len(ftms_writes) >= 5, (
         f"Expected >= 5 FTMS grade writes, got {len(ftms_writes)}"
+    )
+
+    # Phase 4 exit criterion: event log captures telemetry from the ride
+    telemetry_events = [e for e in event_log.events if isinstance(e, TelemetryReading)]
+    assert len(telemetry_events) >= 10, (
+        f"Expected >= 10 TelemetryReading events in log, got {len(telemetry_events)}"
     )
 
 

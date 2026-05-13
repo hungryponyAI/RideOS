@@ -4,7 +4,7 @@ These tests pin the observable behavior of the phase machine so that Phase 4
 (event-driven rewrite) can refactor the implementation without breaking semantics.
 
 Behavior being pinned:
-- warmup sets ride_phase="warmup", target_power_w=90, phase_end_monotonic
+- warmup sets ride_phase="warmup", target_power_w=90, phase_end_monotonic via on_phase_change
 - warmup → route when timer expires (stop_event not set)
 - route sets ride_phase="route", target_power_w=None
 - cooldown sets ride_phase="cooldown", target_power_w=90
@@ -13,7 +13,7 @@ Behavior being pinned:
 - stop_event during route → done via cancel propagation
 - on_tracker_ready called with the RouteTracker
 - on_complete called with elapsed seconds
-- ride_start_monotonic set at the beginning
+- laps= forwarded to RouteTracker
 """
 from __future__ import annotations
 
@@ -21,15 +21,13 @@ import asyncio
 from dataclasses import dataclass
 from typing import Optional
 
-import pytest
-
 from engine.control.phases import run_phases
 from engine.gears.engine import GearEngine
 from engine.route.model import RouteData
 
 
 # ---------------------------------------------------------------------------
-# Minimal fake state (only the fields run_phases touches)
+# Minimal fake state
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -40,7 +38,6 @@ class _FakeState:
     ride_phase: str = "route"
     target_power_w: Optional[float] = None
     phase_end_monotonic: Optional[float] = None
-    ride_start_monotonic: Optional[float] = None
     lap_index: int = 0
     lap_count: int = 1
     current_grade_idx: int = 0
@@ -61,12 +58,21 @@ def _small_route(total_m: float = 5.0) -> RouteData:
     )
 
 
+def _make_phase_change_cb(state: _FakeState):
+    """Wire on_phase_change to update _FakeState fields."""
+    def _cb(phase: str, target_w: Optional[float], end_mono: Optional[float]) -> None:
+        state.ride_phase = phase
+        state.target_power_w = target_w
+        state.phase_end_monotonic = end_mono
+    return _cb
+
+
 # ---------------------------------------------------------------------------
 # Warmup phase tests
 # ---------------------------------------------------------------------------
 
 async def test_warmup_sets_phase_and_power():
-    """During warmup, ride_phase='warmup' and target_power_w=90.0."""
+    """During warmup, on_phase_change fires with ride_phase='warmup' and target_power_w=90.0."""
     state = _FakeState(gear_engine=GearEngine())
     route = _small_route()
     stop = asyncio.Event()
@@ -82,7 +88,11 @@ async def test_warmup_sets_phase_and_power():
         stop.set()
 
     monitor_task = asyncio.create_task(_monitor())
-    await run_phases(state, route, stop, warmup_s=1, cooldown_s=0, laps=1)
+    await run_phases(
+        route, stop, lambda: state.last_speed_kmh,
+        warmup_s=1, cooldown_s=0, laps=1,
+        on_phase_change=_make_phase_change_cb(state),
+    )
     await monitor_task
 
     assert "warmup" in observed_phases
@@ -103,14 +113,18 @@ async def test_warmup_sets_phase_end_monotonic():
         stop.set()
 
     check_task = asyncio.create_task(_check())
-    await run_phases(state, route, stop, warmup_s=5, cooldown_s=0)
+    await run_phases(
+        route, stop, lambda: state.last_speed_kmh,
+        warmup_s=5, cooldown_s=0,
+        on_phase_change=_make_phase_change_cb(state),
+    )
     await check_task
 
     assert phase_end_seen[0] is not None, "phase_end_monotonic must be set during warmup"
 
 
 async def test_stop_during_warmup_exits_immediately():
-    """Setting stop_event during warmup → ride_phase='done', target_power_w=None."""
+    """Setting stop_event during warmup → on_phase_change fires with 'done', target_power_w=None."""
     state = _FakeState(gear_engine=GearEngine())
     route = _small_route()
     stop = asyncio.Event()
@@ -120,7 +134,11 @@ async def test_stop_during_warmup_exits_immediately():
         stop.set()
 
     stopper = asyncio.create_task(_stopper())
-    await run_phases(state, route, stop, warmup_s=10)
+    await run_phases(
+        route, stop, lambda: state.last_speed_kmh,
+        warmup_s=10,
+        on_phase_change=_make_phase_change_cb(state),
+    )
     await stopper
 
     assert state.ride_phase == "done"
@@ -132,22 +150,22 @@ async def test_stop_during_warmup_exits_immediately():
 # ---------------------------------------------------------------------------
 
 async def test_route_phase_sets_correct_state():
-    """When route starts, ride_phase='route' and target_power_w=None."""
+    """When route starts, on_phase_change fires with 'route'; finishes with 'done'."""
     state = _FakeState(gear_engine=GearEngine())
     route = _small_route()
     stop = asyncio.Event()
 
-    route_phase_observed = False
     tracker_ref: list = []
 
     def _on_ready(t):
         tracker_ref.append(t)
-        # Speed the route up so the test finishes quickly
         state.last_speed_kmh = 360.0  # 100 m/s → tiny route done in <0.1 s
 
     await run_phases(
-        state, route, stop, warmup_s=0, cooldown_s=0, laps=1,
+        route, stop, lambda: state.last_speed_kmh,
+        warmup_s=0, cooldown_s=0, laps=1,
         on_tracker_ready=_on_ready,
+        on_phase_change=_make_phase_change_cb(state),
     )
 
     assert state.ride_phase == "done"
@@ -162,12 +180,14 @@ async def test_on_complete_receives_elapsed():
     elapsed: list[int] = []
 
     def _on_ready(t):
-        state.last_speed_kmh = 360.0  # fast finish
+        state.last_speed_kmh = 360.0
 
     await run_phases(
-        state, route, stop, warmup_s=0, cooldown_s=0, laps=1,
+        route, stop, lambda: state.last_speed_kmh,
+        warmup_s=0, cooldown_s=0, laps=1,
         on_tracker_ready=_on_ready,
         on_complete=lambda s: elapsed.append(s),
+        on_phase_change=_make_phase_change_cb(state),
     )
 
     assert len(elapsed) == 1
@@ -175,20 +195,25 @@ async def test_on_complete_receives_elapsed():
 
 
 async def test_lap_count_written_to_state():
-    """lap_count in state reflects the laps= parameter."""
+    """laps= is forwarded to RouteTracker; tracker._laps reflects the configured count."""
     state = _FakeState(gear_engine=GearEngine())
     route = _small_route()
     stop = asyncio.Event()
+    captured_tracker: list = []
 
     def _on_ready(t):
-        state.last_speed_kmh = 720.0  # very fast
+        captured_tracker.append(t)
+        state.last_speed_kmh = 720.0
 
     await run_phases(
-        state, route, stop, warmup_s=0, cooldown_s=0, laps=3,
+        route, stop, lambda: state.last_speed_kmh,
+        warmup_s=0, cooldown_s=0, laps=3,
         on_tracker_ready=_on_ready,
+        on_phase_change=_make_phase_change_cb(state),
     )
 
-    assert state.lap_count == 3
+    assert len(captured_tracker) == 1
+    assert captured_tracker[0]._laps == 3
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +221,7 @@ async def test_lap_count_written_to_state():
 # ---------------------------------------------------------------------------
 
 async def test_cooldown_sets_phase_and_power():
-    """After route completes, cooldown sets ride_phase='cooldown' and target_power_w=90."""
+    """After route completes, on_phase_change fires with 'cooldown' and target_power_w=90."""
     state = _FakeState(gear_engine=GearEngine())
     route = _small_route()
     stop = asyncio.Event()
@@ -205,7 +230,7 @@ async def test_cooldown_sets_phase_and_power():
     cooldown_power_seen = False
 
     def _on_ready(t):
-        state.last_speed_kmh = 360.0  # fast finish
+        state.last_speed_kmh = 360.0
 
     async def _monitor():
         nonlocal cooldown_phase_seen, cooldown_power_seen
@@ -221,8 +246,10 @@ async def test_cooldown_sets_phase_and_power():
 
     monitor_task = asyncio.create_task(_monitor())
     await run_phases(
-        state, route, stop, warmup_s=0, cooldown_s=5,
+        route, stop, lambda: state.last_speed_kmh,
+        warmup_s=0, cooldown_s=5,
         on_tracker_ready=_on_ready,
+        on_phase_change=_make_phase_change_cb(state),
     )
     await monitor_task
 
@@ -231,23 +258,27 @@ async def test_cooldown_sets_phase_and_power():
 
 
 # ---------------------------------------------------------------------------
-# Ride start monotonic
+# Phase machine starts correctly
 # ---------------------------------------------------------------------------
 
 async def test_ride_start_monotonic_set():
-    """ride_start_monotonic is written at the very beginning of run_phases."""
+    """on_phase_change is called with 'route' on startup (phase machine is running)."""
     state = _FakeState(gear_engine=GearEngine())
     route = _small_route()
     stop = asyncio.Event()
+    phases_seen: list[str] = []
 
     def _on_ready(t):
         state.last_speed_kmh = 360.0
 
-    await run_phases(state, route, stop, warmup_s=0, cooldown_s=0, on_tracker_ready=_on_ready)
+    await run_phases(
+        route, stop, lambda: state.last_speed_kmh,
+        warmup_s=0, cooldown_s=0,
+        on_tracker_ready=_on_ready,
+        on_phase_change=lambda phase, *_: phases_seen.append(phase),
+    )
 
-    assert state.ride_start_monotonic is not None
-    import time
-    assert state.ride_start_monotonic <= time.monotonic()
+    assert "route" in phases_seen, "on_phase_change must be called with 'route' on startup"
 
 
 # ---------------------------------------------------------------------------
@@ -278,8 +309,10 @@ async def test_full_sequence_transitions():
 
     recorder_task = asyncio.create_task(_recorder())
     await run_phases(
-        state, route, stop, warmup_s=1, cooldown_s=1,
+        route, stop, lambda: state.last_speed_kmh,
+        warmup_s=1, cooldown_s=1,
         on_tracker_ready=_on_ready,
+        on_phase_change=_make_phase_change_cb(state),
     )
     await recorder_task
 
@@ -287,7 +320,6 @@ async def test_full_sequence_transitions():
     assert "route" in phases
     assert "cooldown" in phases
     assert "done" in phases
-    # Ordering: warmup before route before cooldown before done
     assert phases.index("warmup") < phases.index("route")
     assert phases.index("route") < phases.index("cooldown")
     assert phases.index("cooldown") < phases.index("done")

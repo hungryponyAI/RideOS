@@ -31,7 +31,8 @@ from engine.route.library import RouteLibrary
 if TYPE_CHECKING:
     from engine.application.ride_service import RideService
     from engine.application.route_service import RouteService
-    from engine.control.state import RideState
+    from engine.application.strava_service import StravaService
+    from engine.domain.projection import RideStateProjection
     from engine.gears.engine import GearEngine
     from engine.route.ghost import GhostTracker
     from engine.route.model import RouteData
@@ -45,7 +46,6 @@ _log = logging.getLogger("rideos.ws")
 @dataclass
 class RouteContext:
     """Mutable container shared between main.py and _handler for route lifecycle."""
-    state: "RideState"
     broadcast_queue: "asyncio.Queue[dict]"
     stop_event: asyncio.Event
     tracker: "RouteTracker | None" = None
@@ -62,6 +62,8 @@ class RouteContext:
     streams_dir: "Path | None" = None
     ride_service: "RideService | None" = None
     route_service: "RouteService | None" = None
+    strava_service: "StravaService | None" = None
+    projection: "RideStateProjection | None" = None
 
 # Module-level client registry — mutated by _handler coroutines.
 CLIENTS: set[ServerConnection] = set()
@@ -77,74 +79,6 @@ def _put(queue: asyncio.Queue, msg: dict) -> None:
         except asyncio.QueueEmpty:
             pass
         queue.put_nowait(msg)
-
-
-def _broadcast_strava_status(ctx: RouteContext, syncing: bool = False) -> None:
-    _put(ctx.broadcast_queue, {
-        "type": "strava_status",
-        "connected": ctx.strava_auth.is_connected if ctx.strava_auth else False,
-        "athlete_name": ctx.strava_auth.athlete_name if ctx.strava_auth else None,
-        "syncing": syncing,
-    })
-
-
-async def _strava_exchange_and_sync(
-    ctx: RouteContext, code: str, ws: ServerConnection
-) -> None:
-    assert ctx.strava_auth is not None
-    try:
-        await asyncio.to_thread(ctx.strava_auth.exchange_code, code)
-    except Exception as exc:
-        _log.warning("Strava code exchange failed: %s", exc)
-        try:
-            await ws.send(json.dumps({"type": "strava_error", "message": str(exc)}))
-        except Exception:
-            pass
-        return
-    _broadcast_strava_status(ctx)
-    await _strava_sync(ctx)
-
-
-async def _strava_sync(ctx: RouteContext) -> None:
-    assert ctx.strava_auth is not None
-    assert ctx.strava_importer is not None
-    if ctx.strava_syncing:
-        _log.info("Strava sync already in progress, ignoring duplicate request")
-        return
-    ctx.strava_syncing = True
-    _broadcast_strava_status(ctx, syncing=True)
-
-    imported = 0
-    try:
-        from engine.strava.client import StravaClient
-        client = StravaClient(ctx.strava_auth)
-        activities = await asyncio.to_thread(client.fetch_activities, 50)
-
-        for act in activities:
-            strava_id = str(act["id"])
-            if ctx.strava_importer.already_imported(strava_id):
-                continue
-            streams = await asyncio.to_thread(client.fetch_streams, act["id"])
-            entry = await asyncio.to_thread(
-                ctx.strava_importer.import_activity, act, streams
-            )
-            if entry is not None:
-                imported += 1
-                if ctx.library:
-                    _put(ctx.broadcast_queue, ctx.library.to_ws_message())
-    except Exception as exc:
-        _log.error("Strava sync error: %s", exc)
-        _put(ctx.broadcast_queue, {
-            "type": "strava_error",
-            "message": f"Sync fehlgeschlagen: {exc}",
-        })
-    finally:
-        ctx.strava_syncing = False
-
-    _broadcast_strava_status(ctx, syncing=False)
-    if ctx.library:
-        _put(ctx.broadcast_queue, ctx.library.to_ws_message())
-    _log.info("Strava sync complete: %d new activities imported", imported)
 
 
 async def _load_route(ctx: RouteContext, path: str) -> None:
@@ -181,34 +115,29 @@ async def _handler(
     _log.debug("WS client connected; total=%d", len(CLIENTS))
 
     # Send Strava connection status immediately on connect.
-    if route_context is not None and route_context.strava_auth is not None:
+    if route_context is not None and route_context.strava_service is not None:
         try:
-            await ws.send(json.dumps({
-                "type": "strava_status",
-                "connected": route_context.strava_auth.is_connected,
-                "athlete_name": route_context.strava_auth.athlete_name,
-                "syncing": route_context.strava_syncing,
-            }))
+            await ws.send(json.dumps(route_context.strava_service.status_message(route_context)))
         except Exception:
             pass
 
     try:
         async for raw in ws:
-            if gear_engine is None:
-                continue
             try:
                 msg = json.loads(raw)
             except (json.JSONDecodeError, TypeError):
                 continue
-            if msg.get("type") == "gear_shift":
+            mtype = msg.get("type")
+
+            if mtype == "gear_shift":
+                if route_context is None or route_context.ride_service is None:
+                    continue
                 direction = msg.get("direction")
-                if direction == "up":
-                    new = gear_engine.shift_up()
-                    _log.info("WS gear shift UP -> gear %d", new)
-                elif direction == "down":
-                    new = gear_engine.shift_down()
-                    _log.info("WS gear shift DOWN -> gear %d", new)
-            elif msg.get("type") == "load_route":
+                if direction in ("up", "down"):
+                    new = route_context.ride_service.shift(direction)
+                    _log.info("WS gear shift %s -> gear %d", direction.upper(), new)
+
+            elif mtype == "load_route":
                 if route_context is None:
                     _log.warning("load_route ignored: no route_context wired")
                     continue
@@ -217,7 +146,8 @@ async def _handler(
                     _log.warning("load_route ignored: invalid/missing path")
                     continue
                 asyncio.create_task(_load_route(route_context, path), name="load_route")
-            elif msg.get("type") == "load_route_content":
+
+            elif mtype == "load_route_content":
                 if route_context is None:
                     _log.warning("load_route_content ignored: no route_context wired")
                     continue
@@ -227,100 +157,93 @@ async def _handler(
                     continue
                 _log.info("load_route_content received (%d bytes), spawning task", len(content))
                 asyncio.create_task(
-                    _load_route_content(route_context, content), name="load_route_content"
+                    _load_route_content(route_context, content), name="load_route_content",
                 )
-            elif msg.get("type") == "athlete_settings":
-                if route_context is not None:
-                    s = route_context.state
-                    w = msg.get("weight_kg")
-                    h = msg.get("height_cm")
-                    f = msg.get("ftp_w")
-                    if isinstance(w, (int, float)) and w > 0:
-                        s.athlete_weight_kg = float(w)
-                    if isinstance(h, (int, float)) and h > 0:
-                        s.athlete_height_cm = float(h)
-                    if isinstance(f, (int, float)) and f > 0:
-                        s.athlete_ftp_w = float(f)
-                    _log.info(
-                        "Athlete settings: %.1f kg  %.0f cm  FTP %.0f W",
-                        s.athlete_weight_kg, s.athlete_height_cm, s.athlete_ftp_w,
-                    )
-            elif msg.get("type") == "list_routes":
-                if route_context is not None and route_context.library is not None:
-                    lib_msg = route_context.library.to_ws_message()
-                    await ws.send(json.dumps(lib_msg))
-                if route_context is not None and route_context.strava_auth is not None:
-                    await ws.send(json.dumps({
-                        "type": "strava_status",
-                        "connected": route_context.strava_auth.is_connected,
-                        "athlete_name": route_context.strava_auth.athlete_name,
-                        "syncing": route_context.strava_syncing,
-                    }))
 
-            elif msg.get("type") == "start_ride":
+            elif mtype == "athlete_settings":
+                if route_context is None or route_context.ride_service is None:
+                    continue
+                route_context.ride_service.update_athlete_settings(
+                    weight_kg=msg.get("weight_kg"),
+                    height_cm=msg.get("height_cm"),
+                    ftp_w=msg.get("ftp_w"),
+                )
+
+            elif mtype == "list_routes":
+                if route_context is None:
+                    continue
+                if route_context.route_service is not None:
+                    snap = route_context.route_service.library_snapshot(route_context)
+                    if snap is not None:
+                        await ws.send(json.dumps(snap))
+                if route_context.strava_service is not None:
+                    await ws.send(json.dumps(route_context.strava_service.status_message(route_context)))
+
+            elif mtype == "start_ride":
                 if route_context is None:
                     continue
                 asyncio.create_task(_start_ride(route_context, msg), name="start_ride")
 
-            elif msg.get("type") == "delete_route":
-                if route_context is None or route_context.library is None:
+            elif mtype == "delete_route":
+                if route_context is None or route_context.route_service is None:
                     continue
                 rid = msg.get("route_id")
                 if isinstance(rid, str) and rid:
-                    route_context.library.delete_route(rid)
-                    lib_msg = route_context.library.to_ws_message()
-                    await ws.send(json.dumps(lib_msg))
+                    route_context.route_service.delete_route(route_context, rid)
+                    snap = route_context.route_service.library_snapshot(route_context)
+                    if snap is not None:
+                        await ws.send(json.dumps(snap))
 
-            elif msg.get("type") == "rename_route":
-                if route_context is None or route_context.library is None:
+            elif mtype == "rename_route":
+                if route_context is None or route_context.route_service is None:
                     continue
                 rid = msg.get("route_id")
                 name = msg.get("name")
                 if isinstance(rid, str) and rid and isinstance(name, str) and name.strip():
-                    route_context.library.rename_route(rid, name.strip())
-                    lib_msg = route_context.library.to_ws_message()
-                    await ws.send(json.dumps(lib_msg))
+                    route_context.route_service.rename_route(route_context, rid, name.strip())
+                    snap = route_context.route_service.library_snapshot(route_context)
+                    if snap is not None:
+                        await ws.send(json.dumps(snap))
 
             # ------------------------------------------------------------------
             # Strava handlers
 
-            elif msg.get("type") == "strava_get_auth_url":
-                if route_context is None or route_context.strava_auth is None:
+            elif mtype == "strava_get_auth_url":
+                if route_context is None or route_context.strava_service is None:
                     continue
-                url = route_context.strava_auth.get_auth_url()
+                url = route_context.strava_service.get_auth_url(route_context)
                 await ws.send(json.dumps({"type": "strava_auth_url", "url": url}))
 
-            elif msg.get("type") == "strava_submit_code":
-                if route_context is None or route_context.strava_auth is None:
+            elif mtype == "strava_submit_code":
+                if route_context is None or route_context.strava_service is None:
                     continue
                 code = msg.get("code", "")
                 if not isinstance(code, str) or not code.strip():
                     await ws.send(json.dumps({
-                        "type": "strava_error", "message": "Kein Code angegeben"
+                        "type": "strava_error", "message": "Kein Code angegeben",
                     }))
                     continue
                 asyncio.create_task(
-                    _strava_exchange_and_sync(route_context, code, ws),
+                    route_context.strava_service.exchange_code_and_sync(route_context, code),
                     name="strava_auth",
                 )
 
-            elif msg.get("type") == "strava_sync":
-                if (
-                    route_context is None
-                    or route_context.strava_auth is None
-                    or not route_context.strava_auth.is_connected
-                ):
+            elif mtype == "strava_sync":
+                if route_context is None or route_context.strava_service is None:
                     continue
-                asyncio.create_task(_strava_sync(route_context), name="strava_sync")
+                asyncio.create_task(
+                    route_context.strava_service.sync(route_context),
+                    name="strava_sync",
+                )
 
-            elif msg.get("type") == "set_paused":
-                if route_context is not None:
-                    route_context.state.paused = bool(msg.get("paused", False))
+            elif mtype == "set_paused":
+                if route_context is None or route_context.ride_service is None:
+                    continue
+                route_context.ride_service.set_paused(bool(msg.get("paused", False)))
 
-            elif msg.get("type") == "strava_disconnect":
-                if route_context is not None and route_context.strava_auth is not None:
-                    route_context.strava_auth.disconnect()
-                    _broadcast_strava_status(route_context)
+            elif mtype == "strava_disconnect":
+                if route_context is not None and route_context.strava_service is not None:
+                    route_context.strava_service.disconnect(route_context)
 
     except Exception:
         pass
