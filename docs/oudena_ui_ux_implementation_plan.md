@@ -528,6 +528,21 @@ must continue to be sent exactly as today.
 - Advanced users can still configure existing ride options.
 - `protocol.test.ts` continues to pass.
 
+### Phase 7 Implementation Notes
+
+Status: complete.
+
+- `ui/src/features/pre-ride/RideOptions.tsx`:
+  - All `#FFF200` removed; checked states use `border-[var(--accent)] bg-[var(--accent)]` (glacier).
+  - All `font-condensed font-bold tracking-widest uppercase` removed; labels use `text-xs font-medium` (Inter).
+  - `Toggle` component: `min-h-[44px]` enforced, `role="switch" aria-checked` added, `rounded-lg` border.
+  - `LapStepper`: label renamed "LAPS" → "Runden" (German); stepper buttons enlarged to `w-7 h-7` with glacier hover; `aria-label` added to +/- buttons.
+  - Progressive disclosure: basic options always visible (Ghost Rider, Warm-Up, Cool-Down, Runden); advanced options (Rückwärts, ERG Mode, Physics) collapse behind a "Erweiterte Optionen" disclosure button.
+  - Disclosure animation: `transition-[max-height,opacity] duration-panel ease-oudena` — 300ms OUDENA ease, no layout thrash.
+  - Section heading "OPTIONEN" removed; layout is self-explanatory.
+  - All WebSocket payload fields (`ghost`, `reverse`, `laps`, `warmup_s`, `cooldown_s`, `erg_mode`) unchanged.
+- Build: clean (772ms, 45 modules). Tests: 23/23 passing.
+
 ## Phase 8: Live Ride Screen
 
 ### Goal
