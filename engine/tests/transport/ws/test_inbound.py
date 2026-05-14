@@ -1,0 +1,291 @@
+"""Tests for transport/ws/inbound.py — pydantic validation and dispatch table."""
+from __future__ import annotations
+
+import asyncio
+import json
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from engine.transport.ws.inbound import WSInbound, _DISPATCH
+from engine.transport.ws.server import RouteContext
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _ctx(**kwargs) -> RouteContext:
+    q: asyncio.Queue[dict] = asyncio.Queue()
+    ev = asyncio.Event()
+    return RouteContext(broadcast_queue=q, stop_event=ev, **kwargs)
+
+
+def _fake_ws() -> MagicMock:
+    ws = MagicMock()
+    ws.send = AsyncMock()
+    return ws
+
+
+# ---------------------------------------------------------------------------
+# Dispatch table coverage
+# ---------------------------------------------------------------------------
+
+def test_dispatch_table_keys():
+    """All expected message types are registered in _DISPATCH."""
+    expected = {
+        "gear_shift", "load_route", "load_route_content", "athlete_settings",
+        "list_routes", "start_ride", "delete_route", "rename_route",
+        "strava_get_auth_url", "strava_submit_code", "strava_sync",
+        "set_paused", "strava_disconnect",
+    }
+    assert set(_DISPATCH.keys()) == expected
+
+
+# ---------------------------------------------------------------------------
+# Validation: bad JSON / non-dict are silently dropped
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_handle_ignores_bad_json():
+    inbound = WSInbound(_ctx())
+    ws = _fake_ws()
+    await inbound.handle(ws, "not json")
+    ws.send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_handle_ignores_json_list():
+    inbound = WSInbound(_ctx())
+    ws = _fake_ws()
+    await inbound.handle(ws, json.dumps([1, 2, 3]))
+    ws.send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_handle_ignores_unknown_type():
+    inbound = WSInbound(_ctx())
+    ws = _fake_ws()
+    await inbound.handle(ws, json.dumps({"type": "does_not_exist"}))
+    ws.send.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# gear_shift
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_gear_shift_up_calls_ride_service():
+    ride_service = MagicMock()
+    ride_service.shift = MagicMock(return_value=7)
+    ctx = _ctx(ride_service=ride_service)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "gear_shift", "direction": "up"}))
+
+    ride_service.shift.assert_called_once_with("up")
+
+
+@pytest.mark.asyncio
+async def test_gear_shift_down_calls_ride_service():
+    ride_service = MagicMock()
+    ride_service.shift = MagicMock(return_value=5)
+    ctx = _ctx(ride_service=ride_service)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "gear_shift", "direction": "down"}))
+
+    ride_service.shift.assert_called_once_with("down")
+
+
+@pytest.mark.asyncio
+async def test_gear_shift_invalid_direction_rejected():
+    """direction='sideways' fails pydantic validation and is silently dropped."""
+    ride_service = MagicMock()
+    ctx = _ctx(ride_service=ride_service)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "gear_shift", "direction": "sideways"}))
+
+    ride_service.shift.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_gear_shift_no_ride_service_is_noop():
+    inbound = WSInbound(_ctx())
+    ws = _fake_ws()
+    # Should not raise
+    await inbound.handle(ws, json.dumps({"type": "gear_shift", "direction": "up"}))
+
+
+# ---------------------------------------------------------------------------
+# athlete_settings
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_athlete_settings_calls_update():
+    ride_service = MagicMock()
+    ctx = _ctx(ride_service=ride_service)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({
+        "type": "athlete_settings",
+        "weight_kg": 72.5,
+        "ftp_w": 250.0,
+    }))
+
+    ride_service.update_athlete_settings.assert_called_once_with(
+        weight_kg=72.5, height_cm=None, ftp_w=250.0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# set_paused
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_set_paused_delegates_to_ride_service():
+    ride_service = MagicMock()
+    ctx = _ctx(ride_service=ride_service)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "set_paused", "paused": True}))
+
+    ride_service.set_paused.assert_called_once_with(True)
+
+
+@pytest.mark.asyncio
+async def test_set_paused_missing_field_rejected():
+    ride_service = MagicMock()
+    ctx = _ctx(ride_service=ride_service)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "set_paused"}))  # no paused field
+
+    ride_service.set_paused.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# list_routes
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_list_routes_sends_snapshot_and_strava_status():
+    route_service = MagicMock()
+    route_service.library_snapshot = MagicMock(return_value={"type": "route_list", "routes": []})
+    strava_service = MagicMock()
+    strava_service.status_message = MagicMock(return_value={"type": "strava_status", "connected": False})
+    ctx = _ctx(route_service=route_service, strava_service=strava_service)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "list_routes"}))
+
+    assert ws.send.call_count == 2
+    payloads = [json.loads(c.args[0]) for c in ws.send.call_args_list]
+    types = {p["type"] for p in payloads}
+    assert types == {"route_list", "strava_status"}
+
+
+# ---------------------------------------------------------------------------
+# strava_get_auth_url
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_strava_get_auth_url_sends_response():
+    strava_service = MagicMock()
+    strava_service.get_auth_url = MagicMock(return_value="https://strava.com/oauth?...")
+    ctx = _ctx(strava_service=strava_service)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "strava_get_auth_url"}))
+
+    ws.send.assert_called_once()
+    data = json.loads(ws.send.call_args.args[0])
+    assert data["type"] == "strava_auth_url"
+    assert "strava.com" in data["url"]
+
+
+# ---------------------------------------------------------------------------
+# strava_submit_code — validation
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_strava_submit_code_empty_sends_error():
+    strava_service = MagicMock()
+    ctx = _ctx(strava_service=strava_service)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "strava_submit_code", "code": ""}))
+
+    ws.send.assert_called_once()
+    data = json.loads(ws.send.call_args.args[0])
+    assert data["type"] == "strava_error"
+
+
+# ---------------------------------------------------------------------------
+# start_ride — pydantic defaults propagated to service
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_start_ride_defaults_passed_to_service():
+    """Pydantic defaults (laps=1, warmup_s=0, …) are forwarded via model_dump()."""
+    ride_service = MagicMock()
+    ride_service.start_ride = AsyncMock()
+    ctx = _ctx(ride_service=ride_service)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "start_ride", "route_id": "abc123"}))
+
+    await asyncio.sleep(0.05)  # let task run
+
+    ride_service.start_ride.assert_called_once()
+    _ctx_arg, msg_arg = ride_service.start_ride.call_args.args
+    assert msg_arg["route_id"] == "abc123"
+    assert msg_arg["laps"] == 1
+    assert msg_arg["erg_mode"] is False
+    assert msg_arg["reverse"] is False
+
+
+@pytest.mark.asyncio
+async def test_start_ride_missing_route_id_rejected():
+    ride_service = MagicMock()
+    ctx = _ctx(ride_service=ride_service)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "start_ride"}))  # route_id missing
+
+    await asyncio.sleep(0.05)
+    ride_service.start_ride.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# rename_route — name is stripped
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_rename_route_strips_whitespace():
+    route_service = MagicMock()
+    route_service.rename_route = MagicMock()
+    route_service.library_snapshot = MagicMock(return_value=None)
+    ctx = _ctx(route_service=route_service)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({
+        "type": "rename_route",
+        "route_id": "r1",
+        "name": "  My Route  ",
+    }))
+
+    route_service.rename_route.assert_called_once_with(ctx, "r1", "My Route")
