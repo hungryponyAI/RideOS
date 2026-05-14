@@ -13,9 +13,7 @@ export const ConnectionBanner = memo(function ConnectionBanner({ status }: Props
         role="status"
         aria-label="Verbindungsstatus: Live"
       >
-        <span
-          className="w-2 h-2 rounded-full bg-[#22C55E] shrink-0 animate-pulse"
-        />
+        <span className="w-2 h-2 rounded-full bg-[#22C55E] shrink-0 animate-pulse" />
         <span className="text-[10px] font-condensed font-bold uppercase tracking-widest text-[#22C55E]">
           LIVE
         </span>

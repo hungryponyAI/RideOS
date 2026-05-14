@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import type { ElevationChartDatum } from "../types/route";
+import type { ElevationChartDatum } from "../../../shared/types/route";
 
 interface Props {
   data: ElevationChartDatum[] | null;
@@ -7,7 +7,7 @@ interface Props {
 }
 
 const WINDOW_M = 10_000;
-const LABEL_STEP_M = 2_000; // label every 2 km
+const LABEL_STEP_M = 2_000;
 
 export const ElevationProfile = memo(function ElevationProfile({ data, positionM }: Props) {
   const chart = useMemo(() => {
@@ -59,13 +59,8 @@ export const ElevationProfile = memo(function ElevationProfile({ data, positionM
 
   return (
     <div className="w-full h-full flex flex-col bg-[var(--bg)]">
-      {/* Elevation SVG area */}
       <div className="flex-1 relative overflow-hidden">
-        <svg
-          viewBox="0 0 1000 100"
-          preserveAspectRatio="none"
-          className="w-full h-full block"
-        >
+        <svg viewBox="0 0 1000 100" preserveAspectRatio="none" className="w-full h-full block">
           <path
             d={chart.pathD}
             fill={chart.hasRoute ? "#FFF200" : "var(--chart-empty)"}
@@ -99,7 +94,6 @@ export const ElevationProfile = memo(function ElevationProfile({ data, positionM
           </span>
         )}
       </div>
-      {/* Black baseline bar with distance labels */}
       <div className="h-7 bg-black border-t border-[#111] relative shrink-0 flex items-center">
         {chart.baseLabels.map(({ xPct, label }) => (
           <span
