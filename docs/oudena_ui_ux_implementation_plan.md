@@ -354,6 +354,16 @@ Create small reusable primitives that make the redesign coherent without introdu
 - Common OUDENA surface, button, logo, and metric treatments are reusable.
 - Components remain local to the current React app.
 
+### Phase 4 Implementation Notes
+
+Status: complete.
+
+- `ui/src/shared/ui/HudPanel.tsx`: translucent frosted surface (`bg-[var(--surface-soft)] backdrop-blur-md`), subtle border, `rounded-xl`, accepts `elevated` prop to switch between `shadow-soft` and `shadow-elevated`.
+- `ui/src/shared/ui/MetricTile.tsx`: replaces racing Barlow Condensed unit labels with Inter medium; supports `primary` (display-size, clamp 64–120px) and `secondary` (28px body) emphasis; optional `label` and `note` slots using `var(--text-subtle)` / `var(--accent)`.
+- `ui/src/shared/ui/IconButton.tsx`: enforces 44px min touch target; requires `aria-label`; sets `aria-pressed` only when `active` prop is explicitly passed; `ghost` and `surface` variants; hover and active states use glacier accent token.
+- `OudenaLogo` already delivered in Phase 2.
+- Build: clean. Tests: 23/23 passing.
+
 ## Phase 5: Pre-Ride Experience
 
 ### Goal
@@ -400,6 +410,23 @@ The selected route detail should include:
 - OUDENA is the visible brand.
 - Advanced controls do not dominate first impression.
 - Existing route selection and start behavior still works.
+
+### Phase 5 Implementation Notes
+
+Status: complete.
+
+- `ui/src/features/pre-ride/PreRideScreen.tsx`:
+  - Yellow divider `bg-[#FFF200]` removed; header now uses `border-b border-[var(--border)]`.
+  - All `font-condensed font-bold tracking-widest uppercase` removed from labels, copy, and buttons; replaced with Inter `text-xs font-medium`.
+  - `#FFF200` and `#E10600` hotspots removed; GPX drag/loading uses `var(--accent)` (glacier); errors use `var(--critical)`.
+  - Strava section consolidated into the header for both route-selected and no-route states (previously split across header and sidebar).
+  - "OHNE STRECKE STARTEN" yellow primary CTA → "Ohne Strecke fahren" quiet text link (`text-xs text-[var(--text-subtle)]`), visually secondary.
+  - GPX dropzone: `border-2` sharp corners → `border border-dashed rounded-xl`; hover/active state uses glacier instead of yellow.
+  - Empty state: `NOCH KEINE STRECKEN / GPX-DATEI HINZUFÜGEN` → "Noch keine Routen" + "Importiere eine GPX-Datei oder verbinde Strava."
+  - "ANDERE STRECKEN" / "MEINE STRECKEN" labels → "Weitere Strecken" / "Meine Strecken" in Inter normal.
+  - Left sidebar narrowed from 300px to 260px; `justify-center` removed so import zone sits naturally at top.
+  - All behavior (WebSocket messages, route selection, file loading, Strava flow) unchanged.
+- Build: clean (776ms, 45 modules). Tests: 23/23 passing.
 
 ## Phase 6: Route Cards And Route Detail
 

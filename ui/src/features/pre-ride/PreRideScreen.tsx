@@ -122,38 +122,35 @@ export function PreRideScreen({ onStarted }: Props) {
 
   return (
     <div className="w-screen h-screen bg-[var(--bg)] flex flex-col overflow-hidden">
-      <div className="shrink-0 flex items-center pt-6 pb-4 px-8 gap-6">
+      <header className="shrink-0 flex items-center px-8 py-5 border-b border-[var(--border)]">
         <div className="flex flex-col items-start">
-          <OudenaLogo height={44} />
-          <p className="text-[10px] font-condensed font-bold tracking-widest text-[var(--text-muted)] mt-2 uppercase">Deine nächste Fahrt</p>
+          <OudenaLogo height={40} />
+          <p className="text-xs text-[var(--text-subtle)] mt-1">Deine nächste Fahrt</p>
         </div>
-        {selectedRoute && (
-          <div className="ml-auto flex items-center gap-2">
-            {!isStravaConnected ? (
-              <button type="button" onClick={handleOpenStravaModal} className="flex items-center gap-1.5 border border-[var(--border)] text-[var(--text-muted)] font-condensed font-bold text-[10px] tracking-widest uppercase px-3 py-2 cursor-pointer hover:border-[#FC4C02] hover:text-[#FC4C02] transition-colors">
-                <StravaIcon size={10} /> MIT STRAVA VERBINDEN
-              </button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <StravaIcon size={10} />
-                <span className="text-[10px] font-condensed font-bold tracking-widest uppercase text-[#FC4C02]">{stravaStatus?.athleteName ?? "Strava"}</span>
-                {isStravaSyncing && <span className="text-[9px] font-condensed text-[var(--text-muted)]">Syncing…</span>}
-                <button type="button" onClick={handleStravaSync} disabled={isStravaSyncing} className="border border-[#FC4C02] text-[#FC4C02] font-condensed font-bold text-[9px] tracking-widest uppercase px-2 py-1 cursor-pointer disabled:opacity-40 hover:bg-[#FC4C02] hover:text-white transition-colors">SYNC</button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+        <div className="ml-auto flex items-center gap-3">
+          {!isStravaConnected ? (
+            <button type="button" onClick={handleOpenStravaModal} className="flex items-center gap-1.5 text-xs text-[var(--text-subtle)] border border-[var(--border)] rounded-lg px-3 py-2 hover:border-[#FC4C02] hover:text-[#FC4C02] transition-colors duration-150">
+              <StravaIcon size={12} /> Mit Strava verbinden
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <StravaIcon size={12} />
+              <span className="text-xs text-[#FC4C02]">{stravaStatus?.athleteName ?? "Strava"}</span>
+              {isStravaSyncing && <span className="text-xs text-[var(--text-subtle)]">Synchronisiert…</span>}
+              <button type="button" onClick={handleStravaSync} disabled={isStravaSyncing} className="text-xs border border-[#FC4C02] text-[#FC4C02] rounded px-2.5 py-1 hover:bg-[#FC4C02] hover:text-white transition-colors duration-150 disabled:opacity-40">Sync</button>
+              <button type="button" onClick={handleStravaDisconnect} className="text-xs text-[var(--text-subtle)] hover:text-[var(--text)] transition-colors duration-150 px-1 py-1">Trennen</button>
+            </div>
+          )}
+        </div>
+      </header>
 
-      <div className="h-[2px] w-full bg-[#FFF200] shrink-0" />
-
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden px-8 pb-8 pt-5 gap-5">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden px-8 pb-8 pt-6 gap-5">
         {selectedRoute ? (
           <>
             <RouteCardExpanded route={selectedRoute} athleteSettings={athleteSettings} onStart={handleStartWithConfig} onClose={() => setSelectedRoute(null)} onRename={handleRename} />
             {otherRoutes.length > 0 && (
               <div className="flex-1 min-h-0 overflow-y-auto">
-                <div className="text-[9px] font-condensed font-bold tracking-[0.2em] uppercase text-[var(--text-muted)] mb-2">ANDERE STRECKEN</div>
+                <p className="text-xs font-medium text-[var(--text-muted)] mb-3">Weitere Strecken</p>
                 <div className="grid grid-cols-3 xl:grid-cols-4 gap-2">
                   {otherRoutes.map(route => (
                     <RouteCard key={route.id} route={route} onLoad={handleSelectRoute} onDelete={handleDelete} onRename={handleRename} athleteSettings={athleteSettings} isSelected={false} compact />
@@ -164,57 +161,44 @@ export function PreRideScreen({ onStarted }: Props) {
           </>
         ) : (
           <div className="flex-1 flex min-h-0 gap-0">
-            <div className="w-[300px] shrink-0 flex flex-col justify-center gap-4 pr-8">
+            <div className="w-[260px] shrink-0 flex flex-col gap-4 pr-8">
               <div
-                className={`flex flex-col items-center justify-center gap-3 border-2 p-8 cursor-pointer transition-colors ${dragging ? "border-[#FFF200] bg-[var(--surface)]" : "border-[var(--border)] bg-[var(--surface)]"}`}
+                className={`flex flex-col items-center justify-center gap-3 border border-dashed rounded-xl p-8 cursor-pointer transition-colors duration-150 ${
+                  dragging ? "border-[var(--accent)] bg-[var(--surface)]" : "border-[var(--border)] bg-transparent hover:border-[var(--accent)] hover:bg-[var(--surface)]"
+                }`}
                 onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files?.[0]; if (f) loadFile(f); }}
                 onDragOver={e => { e.preventDefault(); setDragging(true); }}
                 onDragLeave={() => setDragging(false)}
                 onClick={() => fileInputRef.current?.click()}
               >
                 <input ref={fileInputRef} type="file" accept=".gpx" onChange={e => { const f = e.target.files?.[0]; if (f) loadFile(f); }} className="hidden" />
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className={loading ? "text-[#FFF200]" : "text-[var(--text-muted)]"} aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className={loading ? "text-[var(--accent)]" : "text-[var(--text-subtle)]"} aria-hidden="true">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
                 </svg>
-                <span className={`text-[11px] font-condensed font-bold tracking-widest uppercase text-center ${loading ? "text-[#FFF200]" : "text-[var(--text-muted)]"}`}>
-                  {loading ? "WIRD GELADEN…" : dragging ? "HIER ABLEGEN" : "GPX AUSWÄHLEN ODER ZIEHEN"}
+                <span className={`text-xs font-medium text-center ${loading ? "text-[var(--accent)]" : "text-[var(--text-subtle)]"}`}>
+                  {loading ? "Wird geladen…" : dragging ? "Hier ablegen" : "GPX-Datei importieren"}
                 </span>
-                {fileError && <span className="text-[10px] font-condensed font-bold text-[#E10600] text-center">{fileError}</span>}
+                {fileError && <span className="text-xs text-[var(--critical)] text-center">{fileError}</span>}
               </div>
 
-              <button type="button" disabled={loading} onClick={() => onStarted()} className="bg-[#FFF200] text-black font-condensed font-bold text-[13px] tracking-widest uppercase px-8 py-3 border-0 disabled:opacity-40 cursor-pointer hover:bg-white transition-colors duration-150">OHNE STRECKE STARTEN</button>
-
-              <div className="flex flex-col gap-2 pt-2 border-t border-[var(--border)]">
-                {!isStravaConnected ? (
-                  <button type="button" onClick={handleOpenStravaModal} className="flex items-center justify-center gap-2 border border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)] font-condensed font-bold text-[11px] tracking-widest uppercase px-4 py-3 cursor-pointer hover:border-[#FC4C02] hover:text-[#FC4C02] transition-colors duration-150">
-                    <StravaIcon size={12} /> MIT STRAVA VERBINDEN
-                  </button>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2 px-1">
-                      <StravaIcon size={12} />
-                      <span className="text-[10px] font-condensed font-bold tracking-widest uppercase text-[#FC4C02]">{stravaStatus?.athleteName ?? "Strava verbunden"}</span>
-                      {isStravaSyncing && <span className="text-[9px] font-condensed text-[var(--text-muted)] tracking-wide ml-auto">Syncing…</span>}
-                    </div>
-                    <div className="flex gap-2">
-                      <button type="button" onClick={handleStravaSync} disabled={isStravaSyncing} className="flex-1 border border-[#FC4C02] text-[#FC4C02] font-condensed font-bold text-[10px] tracking-widest uppercase px-3 py-2 cursor-pointer disabled:opacity-40 hover:bg-[#FC4C02] hover:text-white transition-colors duration-150">{isStravaSyncing ? "LÄUFT…" : "SYNC"}</button>
-                      <button type="button" onClick={handleStravaDisconnect} className="border border-[var(--border)] text-[var(--text-muted)] font-condensed font-bold text-[10px] tracking-widest uppercase px-3 py-2 cursor-pointer hover:border-[#E10600] hover:text-[#E10600] transition-colors duration-150">TRENNEN</button>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <button type="button" disabled={loading} onClick={() => onStarted()} className="text-xs text-[var(--text-subtle)] hover:text-[var(--text)] disabled:opacity-40 transition-colors duration-150 py-2 text-center">
+                Ohne Strecke fahren
+              </button>
             </div>
 
             <div className="w-px bg-[var(--border)] shrink-0" />
 
             <div className="flex-1 min-w-0 flex flex-col pl-8">
               <div className="flex items-center gap-3 mb-4 shrink-0">
-                <span className="text-[11px] font-condensed font-bold tracking-[0.2em] uppercase text-[var(--label-accent)]">MEINE STRECKEN</span>
-                {routeLibrary.length > 0 && <span className="text-[9px] font-condensed font-bold tracking-widest text-[var(--text-muted)] bg-[var(--surface)] border border-[var(--border)] px-1.5 py-0.5">{routeLibrary.length}</span>}
+                <span className="text-xs font-medium text-[var(--text-muted)]">Meine Strecken</span>
+                {routeLibrary.length > 0 && (
+                  <span className="text-xs text-[var(--text-subtle)] bg-[var(--surface)] border border-[var(--border)] rounded px-1.5 py-0.5">{routeLibrary.length}</span>
+                )}
               </div>
               {routeLibrary.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <span className="text-[11px] font-condensed font-bold tracking-widest uppercase text-[var(--text-muted)] text-center">NOCH KEINE STRECKEN<br />GPX-DATEI HINZUFÜGEN</span>
+                <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center">
+                  <span className="text-sm font-medium text-[var(--text)]">Noch keine Routen</span>
+                  <span className="text-xs text-[var(--text-subtle)]">Importiere eine GPX-Datei oder verbinde Strava.</span>
                 </div>
               ) : (
                 <div className="flex-1 overflow-y-auto min-h-0 pr-1">
