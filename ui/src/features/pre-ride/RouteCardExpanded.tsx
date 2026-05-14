@@ -66,47 +66,47 @@ export const RouteCardExpanded = memo(function RouteCardExpanded({ route, athlet
   const hasStravaOrBestTime = !!(route.strava_id || route.best_time_s);
 
   return (
-    <div className="flex flex-col bg-[var(--surface)] border border-[#FFF200] overflow-hidden">
+    <div className="flex flex-col bg-[var(--surface)] border border-[var(--accent)] rounded-xl overflow-hidden shadow-elevated">
       <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)]">
         <div className="flex-1 min-w-0">
           {editing ? (
             <input ref={inputRef} value={nameVal} onChange={e => setNameVal(e.target.value)} onBlur={commitRename}
               onKeyDown={e => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") { setEditing(false); setNameVal(route.name); }}}
-              className="w-full bg-[var(--bg)] border border-[#FFF200] text-[var(--text)] font-condensed font-bold text-[14px] tracking-wide px-1 py-0 focus:outline-none" />
+              className="w-full bg-[var(--bg)] border border-[var(--accent)] text-[var(--text)] text-sm font-medium px-1 py-0 rounded focus:outline-none" />
           ) : (
             <div className="flex items-center gap-1.5 min-w-0">
               {route.strava_id && <svg width="10" height="10" viewBox="0 0 24 24" fill="#FC4C02" aria-hidden="true"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" /></svg>}
-              <span className="text-[14px] font-condensed font-bold text-[var(--text)] truncate cursor-pointer" onDoubleClick={() => setEditing(true)}>{route.name}</span>
+              <span className="text-sm font-medium text-[var(--text)] truncate cursor-pointer" onDoubleClick={() => setEditing(true)}>{route.name}</span>
             </div>
           )}
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[9px] font-condensed font-bold tracking-widest text-[var(--text-muted)] tabular-nums">{route.distance_km.toFixed(1)} KM</span>
-            <span className="text-[9px] font-condensed text-[var(--text-muted)]">·</span>
-            <span className="text-[9px] font-condensed font-bold tracking-widest text-[var(--text-muted)] tabular-nums">↑{route.elevation_gain_m} M</span>
-            <span className="text-[9px] font-condensed text-[var(--text-muted)]">·</span>
-            <span className="text-[9px] font-condensed font-bold tracking-widest text-[var(--text-muted)] tabular-nums">↓{route.elevation_loss_m} M</span>
-            <span className="text-[9px] font-condensed text-[var(--text-muted)]">·</span>
+          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+            <span className="text-[10px] text-[var(--text-muted)] tabular-nums">{route.distance_km.toFixed(1)} km</span>
+            <span className="text-[10px] text-[var(--text-subtle)]">·</span>
+            <span className="text-[10px] text-[var(--text-muted)] tabular-nums">↑{route.elevation_gain_m} m</span>
+            <span className="text-[10px] text-[var(--text-subtle)]">·</span>
+            <span className="text-[10px] text-[var(--text-muted)] tabular-nums">↓{route.elevation_loss_m} m</span>
+            <span className="text-[10px] text-[var(--text-subtle)]">·</span>
             {route.best_time_s !== null ? (
-              <><span className="text-[9px] font-condensed font-bold uppercase text-[#22C55E]">BEST</span><span className="text-[10px] font-data font-bold tabular-nums text-[#22C55E]">{formatTime(route.best_time_s)}</span></>
+              <><span className="text-[10px] text-[var(--success)]">Bestzeit</span><span className="text-[10px] font-data tabular-nums text-[var(--success)] ml-1">{formatTime(route.best_time_s)}</span></>
             ) : (
-              <><span className="text-[9px] font-condensed font-bold uppercase text-[var(--text-muted)]">EST</span><span className="text-[10px] font-data font-bold tabular-nums text-[var(--text-muted)]">{formatTime(estTime)}</span></>
+              <><span className="text-[10px] text-[var(--text-subtle)]">ca.</span><span className="text-[10px] font-data tabular-nums text-[var(--text-muted)] ml-1">{formatTime(estTime)}</span></>
             )}
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <button type="button" onClick={() => setEditing(true)} aria-label="Umbenennen" className="w-6 h-6 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer">
+          <button type="button" onClick={() => setEditing(true)} aria-label="Umbenennen" className="w-6 h-6 flex items-center justify-center text-[var(--text-subtle)] hover:text-[var(--text)] cursor-pointer transition-colors">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
-          <button type="button" onClick={onClose} aria-label="Auswahl aufheben" className="w-6 h-6 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer font-bold text-base leading-none">×</button>
+          <button type="button" onClick={onClose} aria-label="Auswahl aufheben" className="w-6 h-6 flex items-center justify-center text-[var(--text-subtle)] hover:text-[var(--text)] cursor-pointer text-base leading-none transition-colors">×</button>
         </div>
       </div>
 
       <div className="px-4 pt-3 pb-2 border-b border-[var(--border)]">
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[9px] font-condensed font-bold tracking-[0.2em] uppercase text-[var(--label-accent)]">STRECKENPROFIL</span>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] font-medium text-[var(--text-muted)]">Streckenprofil</span>
           <button type="button" onClick={handleToggleTrim}
-            className={`text-[9px] font-condensed font-bold tracking-widest uppercase px-2 py-0.5 border transition-colors cursor-pointer ${trimEnabled ? "border-[#FFF200] text-[#FFF200]" : "border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--text-muted)]"}`}>
-            {trimEnabled ? "AUSSCHNITT AN" : "AUSSCHNITT"}
+            className={`text-[10px] font-medium px-2 py-0.5 border rounded transition-colors cursor-pointer ${trimEnabled ? "border-[var(--accent)] text-[var(--accent)]" : "border-[var(--border)] text-[var(--text-subtle)] hover:border-[var(--text-muted)] hover:text-[var(--text-muted)]"}`}>
+            {trimEnabled ? "Ausschnitt an" : "Ausschnitt"}
           </button>
         </div>
         {route.elevation_thumbnail.length >= 2 ? (
@@ -119,14 +119,21 @@ export const RouteCardExpanded = memo(function RouteCardExpanded({ route, athlet
                   const thumb = route.elevation_thumbnail, n = thumb.length;
                   const minE = Math.min(...thumb), maxE = Math.max(...thumb), range = Math.max(maxE - minE, 1);
                   const pts = thumb.map((e, i) => `${((i / (n - 1)) * 1000).toFixed(1)},${(80 - ((e - minE) / range) * 72).toFixed(1)}`);
-                  return <path d={`M0,80 L${pts.join(" ")} L1000,80 Z`} fill="#FFF200" stroke="#000" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />;
+                  const areaPath = `M0,80 L${pts.join(" L")} L1000,80 Z`;
+                  const linePath = `M${pts.join(" L")}`;
+                  return (
+                    <>
+                      <path d={areaPath} fill="#74AFCB" fillOpacity="0.15" />
+                      <path d={linePath} fill="none" stroke="#74AFCB" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                    </>
+                  );
                 })()}
               </svg>
             </div>
           )
         ) : (
           <div className="h-[72px] flex items-center justify-center">
-            <span className="text-[9px] font-condensed text-[var(--text-muted)] tracking-widest uppercase">KEIN PROFIL</span>
+            <span className="text-[10px] text-[var(--text-subtle)]">Kein Profil verfügbar</span>
           </div>
         )}
       </div>
@@ -136,7 +143,7 @@ export const RouteCardExpanded = memo(function RouteCardExpanded({ route, athlet
       </div>
 
       <div className="px-4 py-3 flex justify-end">
-        <button type="button" onClick={handleStart} className="bg-[#FFF200] text-black font-condensed font-bold text-[13px] tracking-widest uppercase px-10 py-3 cursor-pointer hover:bg-white transition-colors duration-150">STARTEN →</button>
+        <button type="button" onClick={handleStart} className="bg-[var(--accent)] text-white font-medium text-sm px-10 py-2.5 rounded-lg cursor-pointer hover:opacity-90 transition-opacity duration-150">Fahrt starten →</button>
       </div>
     </div>
   );

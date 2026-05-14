@@ -461,6 +461,31 @@ Make route cards feel like recognizable ride memories instead of compact technic
 - Selected route detail clearly converts intent into starting a ride.
 - Delete/rename actions remain keyboard and screen-reader accessible.
 
+### Phase 6 Implementation Notes
+
+Status: complete.
+
+- `ui/src/features/pre-ride/RouteCard.tsx`:
+  - `MiniProfile`: yellow fill `#FFF200` + black stroke replaced with glacier area fill (`#74AFCB` at 15% opacity) + `#74AFCB` stroke line as two separate SVG paths.
+  - Card container: `border-[#FFF200]` selected/hover → `border-[var(--accent)] shadow-soft`; added `rounded-xl`.
+  - Route name: `font-condensed font-bold text-[12px]` → `text-xs font-medium`.
+  - Metadata spans: `font-condensed font-bold tracking-widest` + uppercase KM/M removed → `text-[10px] text-[var(--text-muted)]` in lowercase.
+  - Best time: `#22C55E "BEST"` → `var(--success) "Bestzeit"`. Estimated: `"EST"` → `"ca."`.
+  - Edit input: `border-[#FFF200] font-condensed font-bold` → `border-[var(--accent)] text-xs font-medium`.
+  - Delete button hover: `#E10600` → `var(--critical)`.
+  - Action buttons enlarged from `w-5 h-5` to `w-6 h-6`.
+- `ui/src/features/pre-ride/RouteCardExpanded.tsx`:
+  - Container: `border-[#FFF200]` → `border-[var(--accent)] rounded-xl shadow-elevated`.
+  - Route name: `font-condensed font-bold text-[14px]` → `text-sm font-medium`.
+  - Metadata: same cleanup as RouteCard.
+  - Section label "STRECKENPROFIL": uppercase condensed bold → `text-[10px] font-medium text-[var(--text-muted)] "Streckenprofil"`.
+  - Elevation SVG: `fill="#FFF200" stroke="#000"` → glacier gradient area + stroke (same pattern as MiniProfile).
+  - "KEIN PROFIL" label: uppercase condensed → `text-[10px] text-[var(--text-subtle)] "Kein Profil verfügbar"`.
+  - Trim toggle active state: `border-[#FFF200] text-[#FFF200]` → `border-[var(--accent)] text-[var(--accent)]`; button text un-uppercased.
+  - Start button: `bg-[#FFF200] text-black font-condensed font-bold tracking-widest uppercase "STARTEN →"` → `bg-[var(--accent)] text-white font-medium text-sm rounded-lg "Fahrt starten →"`.
+  - All behavior (trim, ride config, start message) unchanged.
+- Build: clean (771ms, 45 modules). Tests: 23/23 passing.
+
 ## Phase 7: Ride Options And Progressive Disclosure
 
 ### Goal
