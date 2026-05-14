@@ -611,6 +611,16 @@ Avoid protocol-heavy user-facing text.
 - Controls remain accessible and do not obscure the route.
 - Existing pause, gear shifting, view mode, ERG, ghost, and phase behavior remains functional.
 
+### Phase 8 Implementation Notes
+
+Status: complete.
+
+- `ui/src/features/ride/RideScreen.tsx`: Removed 256px left sidebar grid. Map now fills full viewport (`absolute inset-0 z-0`). Metrics moved into `HudPanel` (elevated, frosted glass) at `top-[40px] left-4`. Secondary chips (ghost delta, elapsed time, distance remaining) at `top-[40px] right-4` using `bg-[var(--surface-soft)] backdrop-blur-md` cards. Phase (warmup/cooldown) and ERG countdown banners centered at top using `HudPanel`. Elevation profile docked at `absolute bottom-0 h-[140px]`. `MetricTile` used for all metrics (replacing raw `MetricDisplay`); speed primary at clamp(64–120px), power + cadence secondary at 28px. Warm-up/cool-down now shows "Aufwärmen"/"Abkühlen" with OUDENA accent instead of yellow bordered box. ERG countdown uses glacier accent instead of yellow background. `PlayPauseOverlay` frosted glass styling with OUDENA border/accent on hover. All keyboard behavior and WebSocket messages unchanged.
+- `ui/src/shared/ui/ConnectionBanner.tsx`: Removed `#FFF200` connecting banner and `#E10600` disconnected banner. All three states use OUDENA token colors (`var(--success)`, `var(--warning)`, `var(--critical)`). Typography changed from condensed bold uppercase to `text-[10px] font-medium`. Copy updated: "Trainer verbunden" / "Verbindung wird aufgebaut" / "Verbindung wird wiederhergestellt" / "Trainerverbindung unterbrochen". Disconnected state uses semi-transparent `var(--critical)/10` bg for non-alarming visual.
+- `ui/src/app/App.tsx`: `hover:border-[#FFF200]` → `hover:border-[var(--accent)]` on SettingsButton and ThemeToggle.
+- `ui/src/__tests__/ConnectionBanner.test.tsx`: Updated to match new OUDENA copy.
+- Build: clean (763ms, 46 modules). Tests: 23/23 passing.
+
 ## Phase 9: Ride States
 
 ### Goal
