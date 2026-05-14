@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWS } from "../../shared/ws/useWS";
 import { useRideTelemetry } from "./hooks/useRideTelemetry";
+import { useClimbFocus } from "./hooks/useClimbFocus";
 import { useRouteData } from "./hooks/useRouteData";
 import { loadAthleteSettings } from "../settings/hooks/useAthleteSettings";
 import { ConnectionBanner } from "../../shared/ui/ConnectionBanner";
@@ -22,7 +23,7 @@ function PlayPauseOverlay({ isPaused, visible, onToggle }: { isPaused: boolean; 
   return (
     <div className={`fixed inset-0 z-[1500] flex items-center justify-center transition-opacity duration-300 ${visible ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
       <button type="button" onClick={onToggle} aria-label={isPaused ? "Fahrt fortsetzen" : "Fahrt pausieren"} className="flex flex-col items-center gap-2 cursor-pointer group">
-        <div className="w-20 h-20 rounded-full bg-[var(--surface-soft)] backdrop-blur-md border border-[var(--border)] flex items-center justify-center text-[var(--text)] group-hover:bg-[var(--surface)] group-hover:border-[var(--accent)] transition-all duration-150">
+        <div className={`w-20 h-20 rounded-full backdrop-blur-md border flex items-center justify-center text-[var(--text)] transition-all duration-150 ${isPaused ? "bg-[var(--surface)] border-[var(--accent)] shadow-elevated" : "bg-[var(--surface-soft)] border-[var(--border)] group-hover:bg-[var(--surface)] group-hover:border-[var(--accent)]"}`}>
           {isPaused ? (
             <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3" /></svg>
           ) : (
@@ -43,12 +44,15 @@ export function RideScreen({ isDark }: Props) {
   const { status, sendMessage } = useWS();
   const t = useRideTelemetry();
   const { routeRef, routeLoaded, routeError, clearRouteError } = useRouteData();
+  const isClimbFocus = useClimbFocus(t?.effective_grade_pct);
 
   const [isPaused, setIsPaused] = useState(true);
   const [showControls, setShowControls] = useState(true);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [viewMode, setViewMode] = useState<MapViewMode>("chase");
   const prevStatusRef = useRef(status);
+
+  const isCompleted = t?.ride_phase === "done";
 
   const togglePause = useCallback(() => {
     setIsPaused(p => {
@@ -117,6 +121,12 @@ export function RideScreen({ isDark }: Props) {
         />
       </div>
 
+      {/* Paused: subtle dim over map */}
+      <div
+        className={`absolute inset-0 z-[5] pointer-events-none transition-opacity duration-300 motion-reduce:transition-none ${isPaused ? "opacity-100" : "opacity-0"}`}
+        style={{ backgroundColor: "rgba(0,0,0,0.22)" }}
+      />
+
       {/* Connection status — docked at top */}
       <div className="absolute top-0 left-0 right-0 z-30">
         <ConnectionBanner status={status} />
@@ -131,7 +141,7 @@ export function RideScreen({ isDark }: Props) {
       )}
 
       {/* Top-left: primary metrics HUD */}
-      <div className="absolute top-[40px] left-4 z-10">
+      <div className={`absolute top-[40px] left-4 z-10 transition-opacity duration-500 motion-reduce:transition-none ${isCompleted ? "opacity-40" : "opacity-100"}`}>
         <HudPanel elevated className="p-4 flex flex-col gap-3 min-w-[220px]">
           <MetricTile
             value={t?.speed_kmh?.toFixed(1) ?? "–"}
@@ -139,7 +149,7 @@ export function RideScreen({ isDark }: Props) {
             emphasis="primary"
           />
 
-          <div className="flex gap-5">
+          <div className={`flex gap-5 transition-opacity duration-500 motion-reduce:transition-none ${isClimbFocus ? "opacity-60" : "opacity-100"}`}>
             <div className="flex flex-col gap-0.5">
               <MetricTile value={t?.power_w ?? "–"} unit="Watt" emphasis="secondary" />
               {t?.erg_mode && t?.target_power_w != null && (
@@ -157,7 +167,7 @@ export function RideScreen({ isDark }: Props) {
           {!t?.erg_mode && (
             <div className="flex gap-5 border-t border-[var(--border)] pt-2.5">
               <GearStrip gear={t?.gear ?? null} />
-              <GradeBar effective={t?.effective_grade_pct ?? 0} />
+              <GradeBar effective={t?.effective_grade_pct ?? 0} highlight={isClimbFocus} />
             </div>
           )}
 
@@ -172,10 +182,10 @@ export function RideScreen({ isDark }: Props) {
       </div>
 
       {/* Top-right: ghost delta + ride time + distance */}
-      <div className="absolute top-[40px] right-4 z-10 flex flex-col gap-1.5 items-end">
+      <div className={`absolute top-[40px] right-4 z-10 flex flex-col gap-1.5 items-end transition-opacity duration-500 motion-reduce:transition-none ${isCompleted ? "opacity-40" : "opacity-100"}`}>
         {t?.ghost_time_gap_s != null && (
           <div className="bg-[var(--surface-soft)] backdrop-blur-md border border-[var(--border)] rounded-lg px-2.5 py-1.5 shadow-soft">
-            <span className="text-[12px] font-data font-bold tabular-nums text-[var(--text)]">
+            <span className={`text-[12px] font-data font-bold tabular-nums transition-colors duration-300 ${isClimbFocus ? "text-[var(--accent)]" : "text-[var(--text)]"}`}>
               {t.ghost_time_gap_s > 0 ? `+${Math.round(t.ghost_time_gap_s)}s` : `${Math.round(t.ghost_time_gap_s)}s`}
             </span>
           </div>
@@ -192,7 +202,7 @@ export function RideScreen({ isDark }: Props) {
         )}
       </div>
 
-      {/* Centre banners: ride phase + ERG countdown */}
+      {/* Centre banners: ride phase + ERG countdown + completed */}
       <div className="absolute top-[40px] left-1/2 -translate-x-1/2 z-20 flex flex-col gap-2 items-center">
         {(t?.ride_phase === "warmup" || t?.ride_phase === "cooldown") && (
           <HudPanel className="flex items-center gap-3 px-4 py-2">
@@ -213,14 +223,22 @@ export function RideScreen({ isDark }: Props) {
             <span className="text-[13px] font-data font-bold tabular-nums text-[var(--accent)]">{Math.ceil(t.erg_change_countdown_s)}s</span>
           </HudPanel>
         )}
+        {isCompleted && (
+          <HudPanel elevated className="flex flex-col items-center gap-1 px-6 py-4">
+            <span className="text-[13px] font-medium text-[var(--text)]">Fahrt beendet</span>
+            {t?.elapsed_s != null && (
+              <span className="text-[11px] text-[var(--text-muted)]">{formatTime(t.elapsed_s)}</span>
+            )}
+          </HudPanel>
+        )}
       </div>
 
-      {/* Bottom: elevation timeline */}
-      <div className="absolute bottom-0 left-0 right-0 z-10 h-[140px]">
+      {/* Bottom: elevation timeline — expands during climb focus */}
+      <div className={`absolute bottom-0 left-0 right-0 z-10 transition-[height] duration-500 ease-oudena motion-reduce:transition-none ${isClimbFocus ? "h-[200px]" : "h-[140px]"}`}>
         <ElevationProfile data={stored?.elevationChart ?? null} positionM={positionM} />
       </div>
 
-      <PlayPauseOverlay isPaused={isPaused} visible={showControls} onToggle={togglePause} />
+      <PlayPauseOverlay isPaused={isPaused} visible={isPaused || showControls} onToggle={togglePause} />
     </div>
   );
 }

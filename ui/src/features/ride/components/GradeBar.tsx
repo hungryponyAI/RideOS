@@ -2,9 +2,10 @@ import { memo } from "react";
 
 interface Props {
   effective: number;
+  highlight?: boolean;
 }
 
-export const GradeBar = memo(function GradeBar({ effective }: Props) {
+export const GradeBar = memo(function GradeBar({ effective, highlight = false }: Props) {
   const sign = (v: number) => (v > 0 ? "+" : v < 0 ? "−" : "");
   const fmt = (v: number) => `${sign(v)}${Math.abs(v).toFixed(1).replace(".", ",")}%`;
 
@@ -20,7 +21,7 @@ export const GradeBar = memo(function GradeBar({ effective }: Props) {
         <polyline points="15,5 22,5 22,12"/>
         <line x1="2" y1="19" x2="22" y2="19" strokeOpacity="0.35"/>
       </svg>
-      <span className="text-[32px] font-data font-bold text-[var(--text)] tabular-nums leading-none">
+      <span className={`text-[32px] font-data font-bold tabular-nums leading-none transition-colors duration-300 ${highlight ? "text-[var(--accent)]" : "text-[var(--text)]"}`}>
         {fmt(effective)}
       </span>
     </div>

@@ -671,6 +671,20 @@ Climb Focus:
 - Climb focus does not flicker on short grade spikes.
 - Reduced-motion users do not get cinematic camera drift or large transitions.
 
+### Phase 9 Implementation Notes
+
+Status: complete.
+
+- `ui/src/features/ride/hooks/useClimbFocus.ts`: new hook; watches `effective_grade_pct >= 4`; 10s timer to activate, 5s hysteresis on deactivate; returns `boolean`; re-entrancy safe (clears pending timer on each threshold crossing).
+- `ui/src/features/ride/components/GradeBar.tsx`: added `highlight?: boolean` prop; when true, grade value renders in `var(--accent)` with `transition-colors duration-300`.
+- `ui/src/features/ride/RideScreen.tsx`:
+  - **Paused**: `rgba(0,0,0,0.22)` dim overlay (`z-5`, `pointer-events-none`, `transition-opacity`). `PlayPauseOverlay` visibility changed from `showControls` to `isPaused || showControls` — always visible when paused. Button ring switches to `border-[var(--accent)] shadow-elevated` when in paused state.
+  - **Reconnecting**: ConnectionBanner (Phase 8) already handles copy and color; no additional overlay added.
+  - **Completed** (`ride_phase === "done"`): metrics HUD and top-right chips fade to `opacity-40`. Centered "Fahrt beendet" HudPanel with elapsed time appears in the banner stack.
+  - **Climb Focus** (`isClimbFocus`): elevation container transitions `h-[140px] → h-[200px]` with `transition-[height] duration-500 ease-oudena`. Power/cadence row dims to `opacity-60`. Ghost delta chip text switches to `var(--accent)`. GradeBar value rendered with accent color.
+  - All `transition-*` classes include `motion-reduce:transition-none`.
+- Build: clean (768ms, 47 modules). Tests: 23/23 passing.
+
 ## Phase 10: Map, Terrain, Ghost, And Elevation Timeline
 
 ### Goal
