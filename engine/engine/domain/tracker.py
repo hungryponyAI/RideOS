@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import bisect
 
+from engine.domain.physics import PhysicsConfig, PhysicsState, advance_physics
+
 
 def advance_position(
     position_m: float,
@@ -16,6 +18,27 @@ def advance_position(
 ) -> float:
     """Return new position along the route, clamped to total_dist_m."""
     return min(position_m + speed_ms * dt, total_dist_m)
+
+
+def advance_position_with_physics(
+    position_m: float,
+    physics_state: PhysicsState,
+    power_w: float | None,
+    grade_pct: float,
+    dt: float,
+    total_dist_m: float,
+    config: PhysicsConfig,
+) -> tuple[float, PhysicsState]:
+    """Return route position and physics state after one power-based tick."""
+    next_state = advance_physics(
+        physics_state,
+        power_w=power_w,
+        grade_pct=grade_pct,
+        dt=dt,
+        config=config,
+    )
+    next_position = advance_position(position_m, next_state.speed_ms, dt, total_dist_m)
+    return next_position, next_state
 
 
 def grade_at(

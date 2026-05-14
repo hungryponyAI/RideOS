@@ -13,6 +13,10 @@ let mockWs: {
   close: () => void;
 };
 
+type MockWebSocketConstructor = ReturnType<typeof vi.fn> & {
+  OPEN: number;
+};
+
 beforeEach(() => {
   mockWs = {
     readyState: 1, // OPEN
@@ -29,7 +33,7 @@ beforeEach(() => {
     Object.assign(this, mockWs);
     // Keep shared reference so tests can control it
     mockWs = this as typeof mockWs;
-  });
+  }) as MockWebSocketConstructor;
   MockWS.OPEN = 1;
   vi.stubGlobal("WebSocket", MockWS);
 });

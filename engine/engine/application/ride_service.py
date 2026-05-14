@@ -12,7 +12,6 @@ import asyncio
 import json
 import logging
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional
 
 from engine.control.athlete import AthleteProfile
@@ -23,6 +22,7 @@ from engine.domain.events import (
     RidePhaseChanged,
     RideStarted,
 )
+from engine.domain.physics import PhysicsConfig, estimate_cda
 from engine.gears.engine import GearEngine
 from engine.ports.eventbus import EventBusPort
 
@@ -121,7 +121,6 @@ class RideService:
         """Handle a start_ride request: load, transform, configure, spawn phase machine."""
         from engine.control.phases import run_phases
         from engine.route.erg import compute_cadence_table, compute_target_power_table
-        from engine.route.ghost import GhostTracker
         from engine.route.loader import load_gpx, reverse_route, slice_route
 
         route_id = msg.get("route_id")
@@ -189,6 +188,7 @@ class RideService:
         laps = max(1, int(msg.get("laps", 1)))
         warmup_s = max(0, int(msg.get("warmup_s", 0)))
         cooldown_s = max(0, int(msg.get("cooldown_s", 0)))
+        use_physics = bool(msg.get("physics_mode", False))
         rid_snapshot = route_id
 
         def _on_complete(elapsed_s: int) -> None:
@@ -208,6 +208,14 @@ class RideService:
             ))
 
         speed_fn = lambda: self._projection.view.speed_kmh  # noqa: E731
+        physics_config = None
+        power_fn = None
+        if use_physics:
+            physics_config = PhysicsConfig(
+                rider_mass_kg=self._athlete.weight_kg,
+                cda_m2=estimate_cda(self._athlete.weight_kg, self._athlete.height_cm),
+            )
+            power_fn = lambda: self._projection.view.power_w  # noqa: E731
 
         ctx.phase_task = asyncio.create_task(
             run_phases(
@@ -222,6 +230,8 @@ class RideService:
                 on_tracker_done=lambda: setattr(ctx, "tracker", None),
                 on_complete=_on_complete,
                 on_phase_change=_on_phase_change,
+                physics_config=physics_config,
+                power_fn=power_fn,
             ),
             name="ride_phases",
         )
@@ -234,8 +244,9 @@ class RideService:
             t_mono=self._clock(),
         ))
         _log.info(
-            "start_ride: route=%s reverse=%s laps=%d warmup=%ds cooldown=%ds erg=%s ghost=%s",
+            "start_ride: route=%s reverse=%s laps=%d warmup=%ds cooldown=%ds erg=%s ghost=%s physics=%s",
             route_id, msg.get("reverse", False), laps, warmup_s, cooldown_s, erg_mode, use_ghost,
+            use_physics,
         )
 
     async def end_ride(self, ctx: "RouteContext") -> None:

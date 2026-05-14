@@ -12,6 +12,7 @@ import time
 from typing import TYPE_CHECKING, Callable, Optional
 
 if TYPE_CHECKING:
+    from engine.domain.physics import PhysicsConfig
     from engine.ports.eventbus import EventBusPort
     from engine.route.model import RouteData
     from engine.route.tracker import RouteTracker
@@ -35,6 +36,8 @@ async def run_phases(
     on_tracker_done: Optional[Callable[[], None]] = None,
     on_complete: Optional[Callable[[int], None]] = None,
     on_phase_change: Optional[Callable[[str, Optional[float], Optional[float]], None]] = None,
+    physics_config: "PhysicsConfig | None" = None,
+    power_fn: Optional[Callable[[], Optional[float]]] = None,
 ) -> None:
     """Run the full ride phase sequence, blocking until done or stop_event fires.
 
@@ -74,12 +77,18 @@ async def run_phases(
         elapsed_holder[0] = elapsed_s
         route_done_evt.set()
 
-    tracker = RouteTracker(route, on_complete=_on_route_complete, laps=laps, bus=bus)
+    tracker = RouteTracker(
+        route,
+        on_complete=_on_route_complete,
+        laps=laps,
+        bus=bus,
+        physics_config=physics_config,
+    )
     if on_tracker_ready is not None:
         on_tracker_ready(tracker)
 
     tracker_task = asyncio.create_task(
-        tracker.run(speed_fn, stop_event), name="route_tracker"
+        tracker.run(speed_fn, stop_event, power_fn=power_fn), name="route_tracker"
     )
 
     try:

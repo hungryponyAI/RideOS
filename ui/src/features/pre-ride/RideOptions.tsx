@@ -7,6 +7,7 @@ export interface RideConfig {
   warmup: boolean;
   cooldown: boolean;
   ergMode: boolean;
+  physicsMode: boolean;
 }
 
 interface Props {
@@ -67,6 +68,7 @@ export function RideOptions({ config, hasStravaOrBestTime, onChange }: Props) {
         <Toggle label="Ghost Rider" sublabel={hasStravaOrBestTime ? "Strava / Schätzung" : "Schätzung"} checked={config.ghost} disabled={ghostDisabled} onChange={v => set({ ghost: ghostDisabled ? false : v })} />
         <Toggle label="Rückwärts" checked={config.reverse} onChange={v => set({ reverse: v, ghost: v ? false : config.ghost })} />
         <Toggle label="Erg Mode" sublabel="Fixe Watt nach Profil + FTP" checked={config.ergMode} disabled={false} onChange={v => set({ ergMode: v, ghost: v ? false : config.ghost })} />
+        <Toggle label="Physics" sublabel="Power-basierter Fortschritt" checked={config.physicsMode} onChange={v => set({ physicsMode: v })} />
       </div>
       <div className="flex flex-wrap gap-2 items-start">
         <Toggle label="Warm-Up" sublabel="2 min @ 90 W" checked={config.warmup} onChange={v => set({ warmup: v })} />

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
 
 import pytest
 
@@ -58,8 +57,8 @@ async def test_tracker_advances_position_at_fixed_speed():
 
 async def test_position_clamp_and_route_complete():
     """ROUTE-02: reaching total_dist_m exits the task; final PositionAdvanced has grade 0."""
-    from engine.route.tracker import RouteTracker, ROUTE_COMPLETE_GRADE
     from engine.domain.events import PositionAdvanced
+    from engine.route.tracker import ROUTE_COMPLETE_GRADE, RouteTracker
 
     route = _build_route(total_m=5.0)
     bus = _CaptureBus()
@@ -95,14 +94,58 @@ async def test_none_speed_treated_as_zero():
     assert tracker.position_m == 0.0
 
 
+async def test_physics_mode_advances_from_power_when_speed_is_missing():
+    """Phase 2: physics-enabled tracking uses power instead of trainer speed."""
+    from engine.domain.physics import PhysicsConfig
+    from engine.route.tracker import RouteTracker
+
+    route = _build_route(total_m=1000.0, grades=[0.0, 0.0, 0.0, 0.0, 0.0])
+    tracker = RouteTracker(
+        route,
+        physics_config=PhysicsConfig(rider_mass_kg=75.0, cda_m2=0.42),
+        initial_speed_ms=4.0,
+    )
+    stop_event = asyncio.Event()
+
+    task = asyncio.create_task(
+        tracker.run(lambda: None, stop_event, tick_s=0.02, power_fn=lambda: 250.0)
+    )
+    await asyncio.sleep(0.1)
+    stop_event.set()
+    await asyncio.wait_for(task, timeout=1.0)
+
+    assert tracker.position_m > 0.0
+
+
+async def test_physics_config_without_power_fn_keeps_speed_based_tracking():
+    """Physics config alone is not enough to switch modes."""
+    from engine.domain.physics import PhysicsConfig
+    from engine.route.tracker import RouteTracker
+
+    route = _build_route(total_m=1000.0)
+    tracker = RouteTracker(
+        route,
+        physics_config=PhysicsConfig(rider_mass_kg=75.0, cda_m2=0.42),
+        initial_speed_ms=8.0,
+    )
+    stop_event = asyncio.Event()
+
+    task = asyncio.create_task(tracker.run(lambda: None, stop_event, tick_s=0.02))
+    await asyncio.sleep(0.1)
+    stop_event.set()
+    await asyncio.wait_for(task, timeout=1.0)
+
+    assert tracker.position_m == 0.0
+
+
 # ------------------------------------------------------------------
 # ROUTE-03: grade lookup via PositionAdvanced events
 # ------------------------------------------------------------------
 
 async def test_grade_lookup_publishes_correct_grade():
     """ROUTE-03: at high speed, bisect advances; final event grade must be in grades_pct."""
-    from engine.route.tracker import RouteTracker
     from engine.domain.events import PositionAdvanced
+    from engine.route.tracker import RouteTracker
 
     route = _build_route(total_m=1000.0, grades=[0.0, 2.0, 4.0, -2.0, 0.0])
     bus = _CaptureBus()
@@ -122,8 +165,8 @@ async def test_grade_lookup_publishes_correct_grade():
 
 async def test_grade_published_every_tick():
     """ROUTE-03: PositionAdvanced is published on every tick, not just once."""
-    from engine.route.tracker import RouteTracker
     from engine.domain.events import PositionAdvanced
+    from engine.route.tracker import RouteTracker
 
     route = _build_route(total_m=1000.0, grades=[7.5, 7.5, 7.5, 7.5, 7.5])
     bus = _CaptureBus()

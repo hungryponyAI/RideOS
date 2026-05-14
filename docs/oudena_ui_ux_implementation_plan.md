@@ -209,6 +209,17 @@ Avoid:
 - Favicon and header visually match the route/ascent/circular-continuity logo system.
 - No backend or package names are changed solely for branding.
 
+### Phase 2 Implementation Notes
+
+Status: complete.
+
+- `ui/index.html`: title → "OUDENA", lang → "de", meta description added.
+- `ui/public/favicon.svg`: replaced with 32×32 dark-badge OUDENA route mark (glacier #74AFCB arc + ascending line on #111417 rounded rect).
+- `ui/src/shared/ui/OudenaLogo.tsx`: new component; accepts `variant` ("mark" | "wordmark") and `height`; mark is a 96×96 viewBox SVG, wordmark is 720×180; text uses `currentColor` for dark-mode compatibility.
+- `ui/src/features/pre-ride/PreRideScreen.tsx`: RIDEOS yellow-badge header replaced with `<OudenaLogo height={44} />`; tagline changed from "INDOOR CYCLING ENGINE" to "Deine nächste Fahrt".
+- Internal engine naming, backend packages, and WebSocket messages unchanged.
+- TypeScript: clean. Tests: 23/23 passing.
+
 ## Phase 3: Design Tokens And Global Styling
 
 ### Goal
@@ -300,6 +311,14 @@ Update `ui/tailwind.config.js` so Tailwind color names map to the CSS variables:
 - Existing dark mode still works.
 - Focus states are visible and calm.
 - The visual system can be applied consistently without repeated hard-coded colors.
+
+### Phase 3 Implementation Notes
+
+Status: complete.
+
+- `ui/src/index.css`: All OUDENA light-mode and dark-mode tokens added. `--label-accent`, `--chart-empty`, `--map-bg` kept as legacy vars for components not yet restyled (phases 5–10). Focus ring changed from `#FFF200` to `var(--accent)` (glacier `#74AFCB`). Google Fonts import updated to include Inter italic weights.
+- `ui/tailwind.config.js`: `theme.*` extended with `bgSecondary`, `surfaceSoft`, `subtle`, `accent`, `accentMuted`, `success`, `warning`, `critical`. `brand.*` extended with `glacier`, `titanium`, `success`, `warning`, `critical`, `strava`. Legacy `brand.yellow`, `brand.red`, etc. retained for existing components. Added `boxShadow.soft/elevated`, `transitionTimingFunction.oudena`, `transitionDuration.tap/panel`.
+- Build: clean. Tests: 23/23 passing.
 
 ## Phase 4: Shared UI Primitives
 

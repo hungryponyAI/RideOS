@@ -16,7 +16,8 @@ import time
 from typing import TYPE_CHECKING, Callable, Optional
 
 from engine.domain.events import PositionAdvanced
-from engine.domain.tracker import advance_position, grade_at
+from engine.domain.physics import PhysicsConfig, PhysicsState
+from engine.domain.tracker import advance_position, advance_position_with_physics, grade_at
 from engine.route.model import RouteData
 
 if TYPE_CHECKING:
@@ -37,6 +38,8 @@ class RouteTracker:
         on_complete: Optional[Callable[[int], None]] = None,
         laps: int = 1,
         bus: Optional["EventBusPort"] = None,
+        physics_config: PhysicsConfig | None = None,
+        initial_speed_ms: float = 0.0,
     ) -> None:
         self._route = route
         self._position_m: float = 0.0
@@ -44,6 +47,8 @@ class RouteTracker:
         self._laps = max(1, laps)
         self._lap_index: int = 0
         self._bus = bus
+        self._physics_config = physics_config
+        self._physics_state = PhysicsState(speed_ms=initial_speed_ms)
 
     @property
     def position_m(self) -> float:
@@ -55,6 +60,7 @@ class RouteTracker:
         stop_event: asyncio.Event,
         *,
         tick_s: float = 0.25,
+        power_fn: Callable[[], Optional[float]] | None = None,
     ) -> None:
         """Main tracker loop. Exits when stop_event fires OR all laps complete.
 
@@ -69,10 +75,26 @@ class RouteTracker:
             dt = now - last_t
             last_t = now
 
-            speed_ms = (speed_fn() or 0.0) / 3.6
-            self._position_m = advance_position(
-                self._position_m, speed_ms, dt, self._route.total_dist_m
-            )
+            if self._physics_config is not None and power_fn is not None:
+                _, current_grade = grade_at(
+                    self._position_m,
+                    self._route.cum_dist_m,
+                    self._route.grades_pct,
+                )
+                self._position_m, self._physics_state = advance_position_with_physics(
+                    self._position_m,
+                    self._physics_state,
+                    power_fn(),
+                    current_grade,
+                    dt,
+                    self._route.total_dist_m,
+                    self._physics_config,
+                )
+            else:
+                speed_ms = (speed_fn() or 0.0) / 3.6
+                self._position_m = advance_position(
+                    self._position_m, speed_ms, dt, self._route.total_dist_m
+                )
 
             if self._position_m >= self._route.total_dist_m - _ROUTE_END_EPSILON_M:
                 self._lap_index += 1

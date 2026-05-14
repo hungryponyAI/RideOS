@@ -7,9 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from engine.transport.ws.inbound import WSInbound, _DISPATCH
+from engine.transport.ws.inbound import _DISPATCH, WSInbound
 from engine.transport.ws.server import RouteContext
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -253,7 +252,27 @@ async def test_start_ride_defaults_passed_to_service():
     assert msg_arg["route_id"] == "abc123"
     assert msg_arg["laps"] == 1
     assert msg_arg["erg_mode"] is False
+    assert msg_arg["physics_mode"] is False
     assert msg_arg["reverse"] is False
+
+
+@pytest.mark.asyncio
+async def test_start_ride_physics_mode_passed_to_service():
+    ride_service = MagicMock()
+    ride_service.start_ride = AsyncMock()
+    ctx = _ctx(ride_service=ride_service)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(
+        ws,
+        json.dumps({"type": "start_ride", "route_id": "abc123", "physics_mode": True}),
+    )
+
+    await asyncio.sleep(0.05)
+
+    _ctx_arg, msg_arg = ride_service.start_ride.call_args.args
+    assert msg_arg["physics_mode"] is True
 
 
 @pytest.mark.asyncio

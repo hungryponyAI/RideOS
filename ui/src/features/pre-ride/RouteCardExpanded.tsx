@@ -34,7 +34,7 @@ function estimateTimeS(distanceKm: number, elevationGainM: number, ftpW: number,
 
 export const RouteCardExpanded = memo(function RouteCardExpanded({ route, athleteSettings, onStart, onClose, onRename }: Props) {
   const totalDistM = route.distance_km * 1000;
-  const [config, setConfig] = useState<RideConfig>(() => ({ ghost: false, reverse: false, cutoutStartM: null, cutoutEndM: null, laps: 1, warmup: false, cooldown: false, ergMode: false }));
+  const [config, setConfig] = useState<RideConfig>(() => ({ ghost: false, reverse: false, cutoutStartM: null, cutoutEndM: null, laps: 1, warmup: false, cooldown: false, ergMode: false, physicsMode: false }));
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(totalDistM);
   const [trimEnabled, setTrimEnabled] = useState(false);

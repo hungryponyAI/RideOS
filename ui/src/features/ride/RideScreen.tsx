@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useWS } from "../../shared/ws/useWS";
 import { useRideTelemetry } from "./hooks/useRideTelemetry";
 import { useRouteData } from "./hooks/useRouteData";
-import { useAthleteSettings, loadAthleteSettings } from "../settings/hooks/useAthleteSettings";
+import { loadAthleteSettings } from "../settings/hooks/useAthleteSettings";
 import { ConnectionBanner } from "../../shared/ui/ConnectionBanner";
 import { MetricDisplay } from "../../shared/ui/MetricDisplay";
 import { GearStrip } from "./components/GearStrip";
@@ -42,7 +42,6 @@ export function RideScreen({ isDark }: Props) {
   const { status, sendMessage } = useWS();
   const t = useRideTelemetry();
   const { routeRef, routeLoaded, routeError, clearRouteError } = useRouteData();
-  const { settings: athleteSettings } = useAthleteSettings();
 
   const [isPaused, setIsPaused] = useState(true);
   const [showControls, setShowControls] = useState(true);

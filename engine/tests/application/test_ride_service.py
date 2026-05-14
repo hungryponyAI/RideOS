@@ -155,6 +155,43 @@ async def test_start_ride_publishes_ride_started(route_ctx_factory):
         await asyncio.wait_for(ctx.phase_task, timeout=2.0)
 
 
+async def test_start_ride_without_physics_mode_keeps_default_tracker(route_ctx_factory):
+    ctx, _, route_id = route_ctx_factory()
+    bus = AsyncioEventBus()
+    proj = RideStateProjection()
+    svc = RideService(AthleteProfile(), GearEngine(), bus, ErgDebouncer(bus), proj)
+
+    await svc.start_ride(ctx, {"route_id": route_id, "laps": 1})
+    await asyncio.sleep(0.05)
+
+    assert ctx.tracker is not None
+    assert ctx.tracker._physics_config is None
+
+    ctx.stop_event.set()
+    if ctx.phase_task is not None:
+        await asyncio.wait_for(ctx.phase_task, timeout=2.0)
+
+
+async def test_start_ride_with_physics_mode_configures_tracker(route_ctx_factory):
+    ctx, _, route_id = route_ctx_factory()
+    bus = AsyncioEventBus()
+    proj = RideStateProjection()
+    athlete = AthleteProfile(weight_kg=82.0, height_cm=186.0, ftp_w=240.0)
+    svc = RideService(athlete, GearEngine(), bus, ErgDebouncer(bus), proj)
+
+    await svc.start_ride(ctx, {"route_id": route_id, "laps": 1, "physics_mode": True})
+    await asyncio.sleep(0.05)
+
+    assert ctx.tracker is not None
+    assert ctx.tracker._physics_config is not None
+    assert ctx.tracker._physics_config.rider_mass_kg == 82.0
+    assert ctx.tracker._physics_config.cda_m2 is not None
+
+    ctx.stop_event.set()
+    if ctx.phase_task is not None:
+        await asyncio.wait_for(ctx.phase_task, timeout=2.0)
+
+
 async def test_start_ride_unknown_route_id_does_not_publish(route_ctx_factory):
     ctx, _, _ = route_ctx_factory()
     bus = AsyncioEventBus()

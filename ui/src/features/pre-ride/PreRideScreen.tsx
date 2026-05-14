@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { OudenaLogo } from "../../shared/ui/OudenaLogo";
 import { useWS } from "../../shared/ws/useWS";
 import { useRouteLibrary } from "../routes/hooks/useRouteLibrary";
 import { useAthleteSettings } from "../settings/hooks/useAthleteSettings";
@@ -100,6 +101,7 @@ export function PreRideScreen({ onStarted }: Props) {
       warmup_s: config.warmup ? 120 : 0,
       cooldown_s: config.cooldown ? 120 : 0,
       erg_mode: config.ergMode,
+      physics_mode: config.physicsMode,
     });
     onStarted();
   }, [selectedRoute, sendMessage, onStarted]);
@@ -122,8 +124,8 @@ export function PreRideScreen({ onStarted }: Props) {
     <div className="w-screen h-screen bg-[var(--bg)] flex flex-col overflow-hidden">
       <div className="shrink-0 flex items-center pt-6 pb-4 px-8 gap-6">
         <div className="flex flex-col items-start">
-          <span className="font-condensed font-bold text-[48px] text-black bg-[#FFF200] px-5 py-0.5 inline-block leading-none">RIDEOS</span>
-          <p className="text-[10px] font-condensed font-bold tracking-widest text-[var(--text-muted)] mt-2 uppercase">INDOOR CYCLING ENGINE</p>
+          <OudenaLogo height={44} />
+          <p className="text-[10px] font-condensed font-bold tracking-widest text-[var(--text-muted)] mt-2 uppercase">Deine nächste Fahrt</p>
         </div>
         {selectedRoute && (
           <div className="ml-auto flex items-center gap-2">

@@ -133,6 +133,7 @@ export interface StartRideMessage {
   warmup_s: number;
   cooldown_s: number;
   erg_mode: boolean;
+  physics_mode: boolean;
 }
 
 export type OutgoingMessage =

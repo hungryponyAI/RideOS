@@ -22,9 +22,9 @@ from dataclasses import dataclass
 from typing import Optional
 
 from engine.control.phases import run_phases
+from engine.domain.physics import PhysicsConfig
 from engine.gears.engine import GearEngine
 from engine.route.model import RouteData
-
 
 # ---------------------------------------------------------------------------
 # Minimal fake state
@@ -214,6 +214,46 @@ async def test_lap_count_written_to_state():
 
     assert len(captured_tracker) == 1
     assert captured_tracker[0]._laps == 3
+
+
+async def test_physics_config_and_power_fn_are_forwarded_to_tracker():
+    """physics_config enables the tracker's power-based mode during the route phase."""
+    state = _FakeState(gear_engine=GearEngine())
+    route = _small_route()
+    stop = asyncio.Event()
+    captured_tracker: list = []
+    config = PhysicsConfig(rider_mass_kg=75.0, cda_m2=0.42)
+
+    def _on_ready(t):
+        captured_tracker.append(t)
+
+    async def _stop_after_tracker_starts():
+        for _ in range(20):
+            if captured_tracker:
+                await asyncio.sleep(0.03)
+                stop.set()
+                return
+            await asyncio.sleep(0.01)
+        stop.set()
+
+    stopper = asyncio.create_task(_stop_after_tracker_starts())
+    await run_phases(
+        route,
+        stop,
+        lambda: None,
+        warmup_s=0,
+        cooldown_s=0,
+        laps=1,
+        on_tracker_ready=_on_ready,
+        on_phase_change=_make_phase_change_cb(state),
+        physics_config=config,
+        power_fn=lambda: 250.0,
+    )
+    await stopper
+
+    assert len(captured_tracker) == 1
+    assert captured_tracker[0]._physics_config == config
+    assert captured_tracker[0].position_m > 0.0
 
 
 # ---------------------------------------------------------------------------
