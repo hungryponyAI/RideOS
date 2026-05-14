@@ -213,7 +213,7 @@ Reduce first-run anxiety and make trainer readiness visible before the ride.
 - Completing/skipping onboarding stores state.
 - Device readiness component renders connected/searching/disconnected copy.
 
-## Phase 4: Home Recommendation Hub
+## Phase 4: Home Recommendation Hub ✅
 
 ### Goal
 

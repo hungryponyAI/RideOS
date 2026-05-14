@@ -9,6 +9,7 @@ export function WSProvider({ children }: { children: ReactNode }) {
   const retryCountRef = useRef(0);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listenersRef = useRef<Map<string, Set<(payload: unknown) => void>>>(new Map());
+  const lastMsgRef = useRef<Map<string, unknown>>(new Map());
 
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
 
@@ -17,6 +18,9 @@ export function WSProvider({ children }: { children: ReactNode }) {
       listenersRef.current.set(type, new Set());
     }
     listenersRef.current.get(type)!.add(cb);
+    // Replay last known message so late-mounting components get current state
+    const last = lastMsgRef.current.get(type);
+    if (last !== undefined) cb(last);
     return () => {
       listenersRef.current.get(type)?.delete(cb);
     };
@@ -51,6 +55,7 @@ export function WSProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (!msg || typeof msg.type !== "string") return;
+      lastMsgRef.current.set(msg.type, msg);
       const listeners = listenersRef.current.get(msg.type);
       if (listeners) {
         listeners.forEach((cb) => cb(msg));

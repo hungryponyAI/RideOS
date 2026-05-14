@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, act } from "@testing-library/react";
+import { render, act, renderHook } from "@testing-library/react";
+import { useEffect, useCallback } from "react";
 import { WSProvider } from "../shared/ws/WSProvider";
 import { useWS } from "../shared/ws/useWS";
 
@@ -60,7 +61,8 @@ describe("WSProvider", () => {
     const received: unknown[] = [];
     function Consumer() {
       const { subscribe } = useWS();
-      subscribe("telemetry", (msg) => received.push(msg));
+      const cb = useCallback((msg: unknown) => received.push(msg), []);
+      useEffect(() => subscribe("telemetry", cb), [subscribe, cb]);
       return null;
     }
     render(<WSProvider><Consumer /></WSProvider>);
@@ -72,11 +74,32 @@ describe("WSProvider", () => {
     expect((received[0] as Record<string, unknown>).speed_kmh).toBe(30);
   });
 
+  it("replays last known message to new subscribers", () => {
+    const received: unknown[] = [];
+    function Consumer() {
+      const { subscribe } = useWS();
+      const cb = useCallback((msg: unknown) => received.push(msg), []);
+      useEffect(() => subscribe("strava_status", cb), [subscribe, cb]);
+      return null;
+    }
+    // Receive a message before the subscriber is mounted
+    const { rerender } = render(<WSProvider><div /></WSProvider>);
+    act(() => {
+      mockWs.onopen?.();
+      mockWs.onmessage?.({ data: JSON.stringify({ type: "strava_status", connected: true, athlete_name: "Alice", syncing: false }) });
+    });
+    // Now mount a subscriber — it should immediately receive the last known state
+    rerender(<WSProvider><Consumer /></WSProvider>);
+    expect(received).toHaveLength(1);
+    expect((received[0] as Record<string, unknown>).connected).toBe(true);
+  });
+
   it("ignores malformed JSON messages", () => {
     const received: unknown[] = [];
     function Consumer() {
       const { subscribe } = useWS();
-      subscribe("telemetry", (msg) => received.push(msg));
+      const cb = useCallback((msg: unknown) => received.push(msg), []);
+      useEffect(() => subscribe("telemetry", cb), [subscribe, cb]);
       return null;
     }
     render(<WSProvider><Consumer /></WSProvider>);
@@ -91,7 +114,8 @@ describe("WSProvider", () => {
     const received: unknown[] = [];
     function Consumer() {
       const { subscribe } = useWS();
-      subscribe("route_data", (msg) => received.push(msg));
+      const cb = useCallback((msg: unknown) => received.push(msg), []);
+      useEffect(() => subscribe("route_data", cb), [subscribe, cb]);
       return null;
     }
     render(<WSProvider><Consumer /></WSProvider>);

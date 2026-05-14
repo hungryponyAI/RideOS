@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { WSProvider } from "../shared/ws/WSProvider";
 import { ThemeProvider, useTheme } from "./providers/ThemeProvider";
+import { HomeScreen } from "../features/home/HomeScreen";
 import { PreRideScreen } from "../features/pre-ride/PreRideScreen";
 import { RideScreen, type RideSummaryData } from "../features/ride/RideScreen";
 import { HistoryScreen } from "../features/history/HistoryScreen";
@@ -38,6 +39,7 @@ function ThemeToggle() {
 function AppShell() {
   const { isDark } = useTheme();
   const [view, setView] = useState<AppView>('home');
+  const [routePreSelect, setRoutePreSelect] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [rideSummary, setRideSummary] = useState<RideSummaryData | null>(null);
   const { done: onboardingDone, step, stepIndex, totalSteps, advance, complete, reopen } = useOnboarding();
@@ -48,6 +50,16 @@ function AppShell() {
     setRideSummary(data);
     setView('summary');
   };
+
+  const handleOpenRoutes = useCallback((preSelectId?: string) => {
+    setRoutePreSelect(preSelectId ?? null);
+    setView('routes');
+  }, []);
+
+  const handleNavigate = useCallback((v: AppView) => {
+    if (v !== 'routes') setRoutePreSelect(null);
+    setView(v);
+  }, []);
 
   if (isRiding) {
     return (
@@ -62,8 +74,14 @@ function AppShell() {
   return (
     <div data-testid="app-shell" className="flex flex-col h-screen overflow-hidden">
       <div className="flex-1 min-h-0">
-        {(view === 'home' || view === 'routes') && (
-          <PreRideScreen onStarted={() => setView('ride')} />
+        {view === 'home' && (
+          <HomeScreen
+            onOpenRoutes={handleOpenRoutes}
+            onOpenDevices={() => handleNavigate('devices')}
+          />
+        )}
+        {view === 'routes' && (
+          <PreRideScreen onStarted={() => setView('ride')} initialRouteId={routePreSelect} />
         )}
         {view === 'summary' && (
           <RideSummaryScreen
@@ -78,7 +96,7 @@ function AppShell() {
 
       <AppNav
         current={view}
-        onNavigate={setView}
+        onNavigate={handleNavigate}
         onSettingsOpen={() => setIsSettingsOpen(o => !o)}
       />
 

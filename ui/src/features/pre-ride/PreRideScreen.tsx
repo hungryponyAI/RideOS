@@ -6,6 +6,7 @@ import { useAthleteSettings } from "../settings/hooks/useAthleteSettings";
 import { useStravaStatus } from "../strava/hooks/useStravaStatus";
 import { useDeviceStatus } from "../settings/hooks/useDeviceStatus";
 import { StravaConnectModal, type StravaModalStep } from "../strava/StravaConnectModal";
+import { setLastRouteId } from "../home/hooks/useHomeRecommendation";
 import type { RouteLibraryEntry } from "../../shared/types/route";
 import { RouteCard } from "./RouteCard";
 import { RouteCardExpanded } from "./RouteCardExpanded";
@@ -13,6 +14,7 @@ import type { RideConfig } from "./RideOptions";
 
 interface Props {
   onStarted: () => void;
+  initialRouteId?: string | null;
 }
 
 function StravaIcon({ size = 14 }: { size?: number }) {
@@ -23,7 +25,7 @@ function StravaIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-export function PreRideScreen({ onStarted }: Props) {
+export function PreRideScreen({ onStarted, initialRouteId }: Props) {
   const { sendMessage, status: wsStatus } = useWS();
   const routeLibrary = useRouteLibrary();
   const { settings: athleteSettings } = useAthleteSettings();
@@ -35,6 +37,14 @@ export function PreRideScreen({ onStarted }: Props) {
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<RouteLibraryEntry | null>(null);
+  const hasAppliedInitial = useRef(false);
+
+  useEffect(() => {
+    if (!hasAppliedInitial.current && initialRouteId && routeLibrary.length > 0) {
+      const route = routeLibrary.find(r => r.id === initialRouteId);
+      if (route) { setSelectedRoute(route); hasAppliedInitial.current = true; }
+    }
+  }, [initialRouteId, routeLibrary]);
 
   const [showStravaModal, setShowStravaModal] = useState(false);
   const [modalStep, setModalStep] = useState<StravaModalStep>("idle");
@@ -87,7 +97,9 @@ export function PreRideScreen({ onStarted }: Props) {
   }, [sendMessage, onStarted]);
 
   const handleSelectRoute = useCallback((routeId: string) => {
-    setSelectedRoute(routeLibrary.find(r => r.id === routeId) ?? null);
+    const route = routeLibrary.find(r => r.id === routeId) ?? null;
+    if (route) setLastRouteId(routeId);
+    setSelectedRoute(route);
   }, [routeLibrary]);
 
   const handleStartWithConfig = useCallback((config: RideConfig) => {

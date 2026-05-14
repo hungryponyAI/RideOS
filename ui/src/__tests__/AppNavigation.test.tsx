@@ -24,6 +24,7 @@ describe("AppNav", () => {
       <AppNav current="home" onNavigate={vi.fn()} onSettingsOpen={vi.fn()} />
     );
     expect(getByLabelText("Startseite")).toBeTruthy();
+    expect(getByLabelText("Strecken")).toBeTruthy();
     expect(getByLabelText("Verlauf")).toBeTruthy();
     expect(getByLabelText("Analyse")).toBeTruthy();
     expect(getByLabelText("Gerät")).toBeTruthy();
@@ -38,11 +39,12 @@ describe("AppNav", () => {
     expect(getByLabelText("Verlauf").getAttribute("aria-current")).toBeNull();
   });
 
-  it("marks Home as current when view is routes", () => {
+  it("marks Strecken as current when view is routes", () => {
     const { getByLabelText } = render(
       <AppNav current="routes" onNavigate={vi.fn()} onSettingsOpen={vi.fn()} />
     );
-    expect(getByLabelText("Startseite").getAttribute("aria-current")).toBe("page");
+    expect(getByLabelText("Strecken").getAttribute("aria-current")).toBe("page");
+    expect(getByLabelText("Startseite").getAttribute("aria-current")).toBeNull();
   });
 
   it("marks History as current when view is history", () => {
@@ -50,6 +52,15 @@ describe("AppNav", () => {
       <AppNav current="history" onNavigate={vi.fn()} onSettingsOpen={vi.fn()} />
     );
     expect(getByLabelText("Verlauf").getAttribute("aria-current")).toBe("page");
+  });
+
+  it("calls onNavigate with routes when clicking Strecken", () => {
+    const onNavigate = vi.fn();
+    const { getByLabelText } = render(
+      <AppNav current="home" onNavigate={onNavigate} onSettingsOpen={vi.fn()} />
+    );
+    fireEvent.click(getByLabelText("Strecken"));
+    expect(onNavigate).toHaveBeenCalledWith("routes");
   });
 
   it("calls onNavigate with history when clicking Verlauf", () => {
