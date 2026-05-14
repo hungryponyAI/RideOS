@@ -121,7 +121,7 @@ export function PreRideScreen({ onStarted }: Props) {
   const otherRoutes = routeLibrary.filter(r => r.id !== selectedRouteId);
 
   return (
-    <div className="w-screen h-screen bg-[var(--bg)] flex flex-col overflow-hidden">
+    <div className="w-full h-full bg-[var(--bg)] flex flex-col overflow-hidden">
       <header className="shrink-0 flex items-center px-4 sm:px-8 py-5 border-b border-[var(--border)]">
         <div className="flex flex-col items-start">
           <OudenaLogo height={40} />

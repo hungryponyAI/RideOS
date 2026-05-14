@@ -3,19 +3,13 @@ import { WSProvider } from "../shared/ws/WSProvider";
 import { ThemeProvider, useTheme } from "./providers/ThemeProvider";
 import { PreRideScreen } from "../features/pre-ride/PreRideScreen";
 import { RideScreen } from "../features/ride/RideScreen";
+import { HistoryScreen } from "../features/history/HistoryScreen";
+import { AnalyticsScreen } from "../features/analytics/AnalyticsScreen";
+import { DevicesScreen } from "../features/devices/DevicesScreen";
+import { RideSummaryScreen } from "../features/summary/RideSummaryScreen";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
-
-function SettingsButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} aria-label="Einstellungen öffnen"
-      className="fixed top-0 right-[44px] z-[2000] min-w-[44px] min-h-[44px] flex items-center justify-center bg-[var(--surface)] border-b border-l border-[var(--border)] text-[var(--text-muted)] cursor-pointer transition-colors duration-150 hover:border-[var(--accent)] hover:text-[var(--text)]">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="3"/>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-      </svg>
-    </button>
-  );
-}
+import { AppNav } from "./AppNav";
+import type { AppView } from "./types";
 
 function ThemeToggle() {
   const { isDark, toggleTheme } = useTheme();
@@ -41,20 +35,44 @@ function ThemeToggle() {
 
 function AppShell() {
   const { isDark } = useTheme();
-  const [started, setStarted] = useState(false);
+  const [view, setView] = useState<AppView>('home');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  return (
-    <>
-      {!started ? (
-        <PreRideScreen onStarted={() => setStarted(true)} />
-      ) : (
+  const isRiding = view === 'ride';
+
+  if (isRiding) {
+    return (
+      <>
         <RideScreen isDark={isDark} />
-      )}
-      <SettingsButton onClick={() => setIsSettingsOpen(o => !o)} />
+        <ThemeToggle />
+        <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      </>
+    );
+  }
+
+  return (
+    <div data-testid="app-shell" className="flex flex-col h-screen overflow-hidden">
+      <div className="flex-1 min-h-0">
+        {(view === 'home' || view === 'routes') && (
+          <PreRideScreen onStarted={() => setView('ride')} />
+        )}
+        {view === 'summary' && (
+          <RideSummaryScreen onReturnHome={() => setView('home')} />
+        )}
+        {view === 'history' && <HistoryScreen />}
+        {view === 'analytics' && <AnalyticsScreen />}
+        {view === 'devices' && <DevicesScreen />}
+      </div>
+
+      <AppNav
+        current={view}
+        onNavigate={setView}
+        onSettingsOpen={() => setIsSettingsOpen(o => !o)}
+      />
+
       <ThemeToggle />
       <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
-    </>
+    </div>
   );
 }
 

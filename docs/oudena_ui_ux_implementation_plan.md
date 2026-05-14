@@ -846,6 +846,20 @@ Verify:
 - Lint succeeds or only reports pre-existing issues that are documented.
 - No layout overlap or unusable controls in tested viewports.
 
+### Phase 12 Implementation Notes
+
+Status: complete.
+
+New test files added (3 files, 18 new tests):
+
+- `ui/src/__tests__/OudenaLogo.test.tsx` (4 tests): wordmark and mark variants render with `role="img" aria-label="OUDENA"`; height and width props respected on both variants.
+- `ui/src/__tests__/RideOptions.test.tsx` (6 tests): advanced options collapsed by default ("Erweiterte Optionen" visible, "Weniger Optionen" absent); expand on click reveals "Rückwärts" and "ERG Mode"; basic options always present; ghost switch has `aria-checked`; lap stepper buttons have `aria-label`; Toggle calls `onChange` correctly.
+- `ui/src/__tests__/RouteCard.test.tsx` (8 tests): route name and metadata render; rename/delete buttons have German `aria-label`s; delete calls `onDelete` with correct id; card click calls `onLoad`; best time vs. estimated time display.
+
+Existing tests all continue to pass: protocol payload shape unchanged, ConnectionBanner copy matches Phase 8 copy.
+
+Summary: 9 test files, 41 tests, 0 failures. Build: clean (714ms, 47 modules).
+
 ## Phase 13: Later Product Architecture Alignment
 
 ### Goal
