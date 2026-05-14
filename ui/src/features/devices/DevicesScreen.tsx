@@ -1,13 +1,94 @@
-export function DevicesScreen() {
+import { useDeviceStatus } from "../settings/hooks/useDeviceStatus";
+import { useWS } from "../../shared/ws/useWS";
+
+type StatusVariant = "connected" | "searching" | "disconnected";
+
+function DeviceCard({
+  name,
+  description,
+  status,
+}: {
+  name: string;
+  description: string;
+  status: StatusVariant;
+}) {
+  const label =
+    status === "connected"
+      ? "Verbunden"
+      : status === "searching"
+      ? "Trainer wird gesucht"
+      : "Getrennt";
+
+  const dotClass =
+    status === "connected"
+      ? "bg-[var(--success)] animate-pulse"
+      : status === "searching"
+      ? "bg-[var(--warning)] animate-pulse"
+      : "bg-[var(--critical)]";
+
+  const textClass =
+    status === "connected"
+      ? "text-[var(--success)]"
+      : status === "searching"
+      ? "text-[var(--warning)]"
+      : "text-[var(--text-subtle)]";
+
   return (
-    <div data-testid="devices-screen" className="w-full h-full flex flex-col items-center justify-center gap-3 bg-[var(--bg)]">
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-[var(--text-subtle)]" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <polyline points="6.5 6.5 17.5 17.5"/>
-        <path d="M12 2L8.5 5.5 12 9l7-7-3 0 0-3"/>
-        <path d="M12 22l-3.5-3.5L12 15l7 7-3 0 0-3"/>
-      </svg>
-      <span className="text-xs font-medium text-[var(--text-muted)] tracking-wider uppercase">Gerät</span>
-      <p className="text-xs text-[var(--text-subtle)] text-center max-w-[240px]">Trainer-Verbindung und Geräteverwaltung kommen hier.</p>
+    <div className="flex items-center justify-between p-4 bg-[var(--surface)] rounded-lg border border-[var(--border)]">
+      <div className="flex flex-col gap-0.5 min-w-0 mr-4">
+        <span className="text-sm font-medium text-[var(--text)] truncate">{name}</span>
+        <span className="text-xs text-[var(--text-muted)]">{description}</span>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass}`} />
+        <span className={`text-xs font-medium ${textClass}`}>{label}</span>
+      </div>
+    </div>
+  );
+}
+
+export function DevicesScreen() {
+  const { kickrConnected, clickConnected } = useDeviceStatus();
+  const { status } = useWS();
+
+  const wsSearching = status === "connecting" || status === "reconnecting";
+  const kickrStatus: StatusVariant = kickrConnected
+    ? "connected"
+    : wsSearching || status === "connected"
+    ? "searching"
+    : "disconnected";
+
+  const clickStatus: StatusVariant = clickConnected ? "connected" : "searching";
+
+  const allConnected = kickrConnected && clickConnected;
+
+  return (
+    <div data-testid="devices-screen" className="w-full h-full bg-[var(--bg)] flex flex-col px-6 py-8 gap-6 overflow-y-auto">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-base font-medium text-[var(--text)]">Geräte</h1>
+        <p className="text-xs text-[var(--text-muted)]">Verbindungsstatus deiner Trainingsgeräte</p>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <DeviceCard
+          name="Wahoo KICKR Core"
+          description="Trainer · FTMS · BLE"
+          status={kickrStatus}
+        />
+        <DeviceCard
+          name="Zwift Click"
+          description="Schaltsteuerung · BLE"
+          status={clickStatus}
+        />
+      </div>
+
+      {!allConnected && (
+        <p className="text-xs text-[var(--text-subtle)] leading-relaxed">
+          {status === "disconnected"
+            ? "Starte die Engine, um Geräte zu verbinden."
+            : "Geräte werden automatisch verbunden, sobald sie in Reichweite sind."}
+        </p>
+      )}
     </div>
   );
 }

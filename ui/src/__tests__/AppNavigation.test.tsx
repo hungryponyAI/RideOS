@@ -6,6 +6,18 @@ import { AnalyticsScreen } from "../features/analytics/AnalyticsScreen";
 import { DevicesScreen } from "../features/devices/DevicesScreen";
 import { RideSummaryScreen } from "../features/summary/RideSummaryScreen";
 
+vi.mock("../shared/ws/useWS", () => ({
+  useWS: () => ({ sendMessage: vi.fn(), status: "connected" }),
+}));
+
+vi.mock("../shared/ws/useWSSubscription", () => ({
+  useWSSubscription: vi.fn(),
+}));
+
+vi.mock("../features/settings/hooks/useDeviceStatus", () => ({
+  useDeviceStatus: () => ({ kickrConnected: false, clickConnected: false }),
+}));
+
 describe("AppNav", () => {
   it("renders all navigation items", () => {
     const { getByLabelText } = render(

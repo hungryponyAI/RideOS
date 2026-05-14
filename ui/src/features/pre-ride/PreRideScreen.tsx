@@ -4,6 +4,7 @@ import { useWS } from "../../shared/ws/useWS";
 import { useRouteLibrary } from "../routes/hooks/useRouteLibrary";
 import { useAthleteSettings } from "../settings/hooks/useAthleteSettings";
 import { useStravaStatus } from "../strava/hooks/useStravaStatus";
+import { useDeviceStatus } from "../settings/hooks/useDeviceStatus";
 import { StravaConnectModal, type StravaModalStep } from "../strava/StravaConnectModal";
 import type { RouteLibraryEntry } from "../../shared/types/route";
 import { RouteCard } from "./RouteCard";
@@ -23,10 +24,11 @@ function StravaIcon({ size = 14 }: { size?: number }) {
 }
 
 export function PreRideScreen({ onStarted }: Props) {
-  const { sendMessage } = useWS();
+  const { sendMessage, status: wsStatus } = useWS();
   const routeLibrary = useRouteLibrary();
   const { settings: athleteSettings } = useAthleteSettings();
   const { stravaStatus, stravaAuthUrl, stravaError, clearStravaAuthUrl, clearStravaError } = useStravaStatus();
+  const { kickrConnected } = useDeviceStatus();
 
   const [loading, setLoading] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -120,12 +122,28 @@ export function PreRideScreen({ onStarted }: Props) {
   const selectedRouteId = selectedRoute?.id ?? null;
   const otherRoutes = routeLibrary.filter(r => r.id !== selectedRouteId);
 
+  const wsSearching = wsStatus === "connecting" || wsStatus === "reconnecting";
+  const trainerSearching = !kickrConnected && (wsSearching || wsStatus === "connected");
+
   return (
     <div className="w-full h-full bg-[var(--bg)] flex flex-col overflow-hidden">
       <header className="shrink-0 flex items-center px-4 sm:px-8 py-5 border-b border-[var(--border)]">
         <div className="flex flex-col items-start">
           <OudenaLogo height={40} />
-          <p className="text-xs text-[var(--text-subtle)] mt-1">Deine nächste Fahrt</p>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                kickrConnected
+                  ? "bg-[var(--success)] animate-pulse"
+                  : trainerSearching
+                  ? "bg-[var(--warning)] animate-pulse"
+                  : "bg-[var(--critical)]"
+              }`}
+            />
+            <p className={`text-xs ${kickrConnected ? "text-[var(--success)]" : "text-[var(--text-subtle)]"}`}>
+              {kickrConnected ? "Trainer verbunden" : trainerSearching ? "Trainer wird gesucht" : "Trainer nicht verbunden"}
+            </p>
+          </div>
         </div>
         <div className="ml-auto flex items-center gap-3">
           {!isStravaConnected ? (

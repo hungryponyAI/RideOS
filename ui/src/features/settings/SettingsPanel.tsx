@@ -6,6 +6,7 @@ import { useAthleteSettings, type AthleteSettings } from "./hooks/useAthleteSett
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  onReopenOnboarding?: () => void;
 }
 
 function DeviceRow({ label, connected, searching }: { label: string; connected: boolean; searching?: boolean }) {
@@ -47,7 +48,7 @@ function NumberInput({ label, unit, value, min, max, onChange }: { label: string
   );
 }
 
-export function SettingsPanel({ isOpen, onClose }: Props) {
+export function SettingsPanel({ isOpen, onClose, onReopenOnboarding }: Props) {
   const { sendMessage, status } = useWS();
   const { clickConnected, kickrConnected } = useDeviceStatus();
   const { settings, updateSetting } = useAthleteSettings();
@@ -91,6 +92,19 @@ export function SettingsPanel({ isOpen, onClose }: Props) {
             <div className="border-t border-[var(--border)]" />
             <DeviceRow label="Zwift Click" connected={clickConnected} searching={!clickConnected} />
           </div>
+
+          {onReopenOnboarding && (
+            <>
+              <div className="border-t border-[var(--border)]" />
+              <button
+                type="button"
+                onClick={() => { onReopenOnboarding(); onClose(); }}
+                className="text-[10px] font-medium text-[var(--text-muted)] hover:text-[var(--text)] transition-colors duration-150 text-left py-1 cursor-pointer"
+              >
+                Einführung erneut starten
+              </button>
+            </>
+          )}
         </div>
       </div>
     </>

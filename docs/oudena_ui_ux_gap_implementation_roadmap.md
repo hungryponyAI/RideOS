@@ -155,7 +155,7 @@ The backend has `RideService.end_ride`, but there is no inbound WebSocket messag
 - UI test confirms end ride button opens confirmation.
 - UI test confirms confirmed end sends `end_ride`.
 
-## Phase 3: First Launch And Device Readiness
+## Phase 3: First Launch And Device Readiness ✅
 
 ### Goal
 

@@ -8,6 +8,8 @@ import { AnalyticsScreen } from "../features/analytics/AnalyticsScreen";
 import { DevicesScreen } from "../features/devices/DevicesScreen";
 import { RideSummaryScreen } from "../features/summary/RideSummaryScreen";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
+import { OnboardingFlow } from "../features/onboarding/OnboardingFlow";
+import { useOnboarding } from "../features/onboarding/useOnboarding";
 import { AppNav } from "./AppNav";
 import type { AppView } from "./types";
 
@@ -38,6 +40,7 @@ function AppShell() {
   const [view, setView] = useState<AppView>('home');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [rideSummary, setRideSummary] = useState<RideSummaryData | null>(null);
+  const { done: onboardingDone, step, stepIndex, totalSteps, advance, complete, reopen } = useOnboarding();
 
   const isRiding = view === 'ride';
 
@@ -80,7 +83,21 @@ function AppShell() {
       />
 
       <ThemeToggle />
-      <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <SettingsPanel
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onReopenOnboarding={reopen}
+      />
+
+      {!onboardingDone && (
+        <OnboardingFlow
+          step={step}
+          stepIndex={stepIndex}
+          totalSteps={totalSteps}
+          onAdvance={advance}
+          onComplete={complete}
+        />
+      )}
     </div>
   );
 }
