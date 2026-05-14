@@ -39,26 +39,29 @@ export function StravaConnectModal({ step, authUrl, error, onClose, onRequestUrl
 
   return (
     <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/70" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-[var(--bg)] border border-[var(--border)] w-[480px] max-w-[90vw] p-8 flex flex-col gap-6">
+      <div className="bg-[var(--bg)] border border-[var(--border)] rounded-xl w-[480px] max-w-[90vw] p-8 flex flex-col gap-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-[#FC4C02]">
             <StravaIcon size={16} />
-            <span className="font-condensed font-bold text-[13px] tracking-widest uppercase">Mit Strava verbinden</span>
+            <span className="text-sm font-medium">Mit Strava verbinden</span>
           </div>
-          <button type="button" onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer font-bold text-lg leading-none" aria-label="Schließen">×</button>
+          <button type="button" onClick={onClose} aria-label="Schließen"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer -mr-3 rounded transition-colors duration-150">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
 
         <div className={`flex flex-col gap-3 ${step === "enter_code" || step === "connecting" ? "opacity-50" : ""}`}>
           <div className="flex items-start gap-3">
-            <span className="shrink-0 w-5 h-5 rounded-full bg-[#FC4C02] text-white font-condensed font-bold text-[10px] flex items-center justify-center">1</span>
+            <span className="shrink-0 w-5 h-5 rounded-full bg-[#FC4C02] text-white text-[10px] font-medium flex items-center justify-center">1</span>
             <div className="flex flex-col gap-2 flex-1">
-              <span className="font-condensed font-bold text-[11px] tracking-wide text-[var(--text)] uppercase">Strava-Anmeldung öffnen</span>
+              <span className="text-xs font-medium text-[var(--text)]">Strava-Anmeldung öffnen</span>
               {step === "idle" && (
-                <button type="button" onClick={onRequestUrl} className="self-start bg-[#FC4C02] text-white font-condensed font-bold text-[11px] tracking-widest uppercase px-4 py-2 cursor-pointer hover:bg-[#e04400] transition-colors">Strava öffnen →</button>
+                <button type="button" onClick={onRequestUrl} className="self-start bg-[#FC4C02] text-white text-xs font-medium px-4 py-2 rounded cursor-pointer hover:bg-[#e04400] transition-colors">Strava öffnen →</button>
               )}
-              {step === "waiting_url" && <span className="text-[10px] font-condensed text-[var(--text-muted)] tracking-wide">Wird geladen…</span>}
+              {step === "waiting_url" && <span className="text-[10px] font-medium text-[var(--text-muted)]">Wird geladen…</span>}
               {(step === "enter_code" || step === "connecting") && authUrl && (
-                <button type="button" onClick={() => window.open(authUrl, "_blank")} className="self-start border border-[var(--border)] text-[var(--text-muted)] font-condensed font-bold text-[10px] tracking-widest uppercase px-3 py-1.5 cursor-pointer hover:border-[#FC4C02] hover:text-[#FC4C02] transition-colors">Nochmals öffnen</button>
+                <button type="button" onClick={() => window.open(authUrl, "_blank")} className="self-start border border-[var(--border)] text-[var(--text-muted)] text-[10px] font-medium px-3 py-1.5 rounded cursor-pointer hover:border-[#FC4C02] hover:text-[#FC4C02] transition-colors">Nochmals öffnen</button>
               )}
             </div>
           </div>
@@ -66,24 +69,24 @@ export function StravaConnectModal({ step, authUrl, error, onClose, onRequestUrl
 
         <div className={`flex flex-col gap-3 ${step === "idle" || step === "waiting_url" ? "opacity-40 pointer-events-none" : ""}`}>
           <div className="flex items-start gap-3">
-            <span className="shrink-0 w-5 h-5 rounded-full bg-[#FC4C02] text-white font-condensed font-bold text-[10px] flex items-center justify-center">2</span>
+            <span className="shrink-0 w-5 h-5 rounded-full bg-[#FC4C02] text-white text-[10px] font-medium flex items-center justify-center">2</span>
             <div className="flex flex-col gap-2 flex-1">
-              <span className="font-condensed font-bold text-[11px] tracking-wide text-[var(--text)] uppercase">Code aus der URL einfügen</span>
-              <p className="text-[10px] font-condensed text-[var(--text-muted)] leading-relaxed">Nach der Anmeldung erscheint der Code nach <code className="text-[var(--text)] bg-[var(--surface)] px-1">code=</code> in der URL.</p>
+              <span className="text-xs font-medium text-[var(--text)]">Code aus der URL einfügen</span>
+              <p className="text-[10px] font-medium text-[var(--text-muted)] leading-relaxed">Nach der Anmeldung erscheint der Code nach <code className="text-[var(--text)] bg-[var(--surface)] px-1 rounded">code=</code> in der URL.</p>
               <input ref={inputRef} type="text" placeholder="http://localhost/…?code=abc123 oder nur abc123"
                 value={codeInput} onChange={e => setCodeInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") handleSubmit(); }}
-                className="w-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] font-condensed text-[11px] px-3 py-2 focus:outline-none focus:border-[#FC4C02] placeholder:text-[var(--text-muted)]"
+                className="w-full bg-[var(--surface)] border border-[var(--border)] rounded text-[var(--text)] text-xs px-3 py-2 focus:outline-none focus:border-[#FC4C02] placeholder:text-[var(--text-muted)]"
                 disabled={step === "connecting"} />
             </div>
           </div>
         </div>
 
-        {error && <div className="text-[10px] font-condensed font-bold text-[#E10600] tracking-wide border border-[#E10600] px-3 py-2">{error}</div>}
+        {error && <div className="text-[10px] font-medium text-[var(--critical)] border border-[var(--critical)] rounded px-3 py-2">{error}</div>}
 
         <div className="flex justify-end gap-3">
-          <button type="button" onClick={onClose} className="font-condensed font-bold text-[11px] tracking-widest uppercase text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer px-4 py-2">Abbrechen</button>
+          <button type="button" onClick={onClose} className="text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer px-4 py-2 rounded transition-colors duration-150">Abbrechen</button>
           <button type="button" onClick={handleSubmit} disabled={step !== "enter_code" || !codeInput.trim()}
-            className="bg-[#FC4C02] text-white font-condensed font-bold text-[11px] tracking-widest uppercase px-6 py-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#e04400] transition-colors">
+            className="bg-[#FC4C02] text-white text-xs font-medium px-6 py-2 rounded cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#e04400] transition-colors">
             {step === "connecting" ? "Verbinde…" : "Verbinden"}
           </button>
         </div>

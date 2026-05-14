@@ -779,6 +779,19 @@ Make the redesign work intentionally across desktop, tablet, and mobile.
 - All core ride controls are reachable and accessible.
 - Visual hierarchy remains calm and readable.
 
+### Phase 11 Implementation Notes
+
+Status: complete.
+
+- **SettingsPanel.tsx**: All `font-condensed font-bold uppercase tracking-widest` removed. Device dot/text colors migrated to `var(--success)`, `var(--warning)`, `var(--critical)`, `var(--text-subtle)`. `focus:border-[#FFF200]` → `focus:border-[var(--accent)]`. Section labels lowercased ("Athlet", "Geräte"). Device labels sentence-cased ("Wahoo KICKR Core", "Zwift Click"). Close button: `w-6 h-6` → `min-w-[44px] min-h-[44px]`. NumberInput border radius added.
+- **RouteTrimSlider.tsx**: SVG fill/stroke: yellow → glacier `#74AFCB`. Dimmed area unchanged (uses `var(--bg)`). Handle rects: yellow → glacier. Labels: `font-condensed font-bold text-[#FFF200]` → `font-medium text-[var(--accent)]`/`text-[var(--text-muted)]`.
+- **StravaConnectModal.tsx**: All `font-condensed font-bold tracking-widest uppercase` removed; Inter `font-medium` throughout. Strava orange `#FC4C02` preserved. `#E10600` error color → `var(--critical)`. Buttons: added `rounded`. Close button: `text-lg ×` → `min-w-[44px] min-h-[44px]` with SVG icon.
+- **App.tsx** (SettingsButton + ThemeToggle): `w-7 h-7 top-[6px]` (28px) → `min-w-[44px] min-h-[44px] top-0` with `border-b border-l`. `right-[48px]`/`right-4` → `right-[44px]`/`right-0` so buttons stay flush with corner without overlap.
+- **PreRideScreen.tsx**: `px-8` → `px-4 sm:px-8` on header and main container. No-route layout: `flex-row` → `flex-col sm:flex-row`; sidebar `w-[260px]` → `w-full sm:w-[260px]`; overflow allows vertical scroll on mobile. Vertical divider: `hidden sm:block`. GPX dropzone: added `role="button" tabIndex={0} aria-label onKeyDown` (Enter/Space triggers file input).
+- **RideScreen.tsx**: Route error close button: added `aria-label="Fehlermeldung schließen"` and `min-w-[44px] min-h-[44px]`. HUD panel: `min-w-[220px]` → `min-w-[180px] sm:min-w-[220px]`.
+- All active components: zero remaining `#FFF200`, `#E10600`, `#FF1A1A`, `font-condensed` references.
+- Build: clean (792ms, 47 modules). Tests: 23/23 passing.
+
 ## Phase 12: Tests And Verification
 
 ### Automated Tests

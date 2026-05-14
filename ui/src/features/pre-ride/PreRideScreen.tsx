@@ -122,7 +122,7 @@ export function PreRideScreen({ onStarted }: Props) {
 
   return (
     <div className="w-screen h-screen bg-[var(--bg)] flex flex-col overflow-hidden">
-      <header className="shrink-0 flex items-center px-8 py-5 border-b border-[var(--border)]">
+      <header className="shrink-0 flex items-center px-4 sm:px-8 py-5 border-b border-[var(--border)]">
         <div className="flex flex-col items-start">
           <OudenaLogo height={40} />
           <p className="text-xs text-[var(--text-subtle)] mt-1">Deine nächste Fahrt</p>
@@ -144,7 +144,7 @@ export function PreRideScreen({ onStarted }: Props) {
         </div>
       </header>
 
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden px-8 pb-8 pt-6 gap-5">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden px-4 sm:px-8 pb-8 pt-6 gap-5">
         {selectedRoute ? (
           <>
             <RouteCardExpanded route={selectedRoute} athleteSettings={athleteSettings} onStart={handleStartWithConfig} onClose={() => setSelectedRoute(null)} onRename={handleRename} />
@@ -160,16 +160,20 @@ export function PreRideScreen({ onStarted }: Props) {
             )}
           </>
         ) : (
-          <div className="flex-1 flex min-h-0 gap-0">
-            <div className="w-[260px] shrink-0 flex flex-col gap-4 pr-8">
+          <div className="flex-1 flex flex-col sm:flex-row min-h-0 gap-0 overflow-y-auto sm:overflow-hidden">
+            <div className="w-full sm:w-[260px] shrink-0 flex flex-col gap-4 sm:pr-8 pb-4 sm:pb-0">
               <div
-                className={`flex flex-col items-center justify-center gap-3 border border-dashed rounded-xl p-8 cursor-pointer transition-colors duration-150 ${
+                role="button"
+                tabIndex={0}
+                aria-label="GPX-Datei importieren"
+                className={`flex flex-col items-center justify-center gap-3 border border-dashed rounded-xl p-8 cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:border-[var(--accent)] ${
                   dragging ? "border-[var(--accent)] bg-[var(--surface)]" : "border-[var(--border)] bg-transparent hover:border-[var(--accent)] hover:bg-[var(--surface)]"
                 }`}
                 onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files?.[0]; if (f) loadFile(f); }}
                 onDragOver={e => { e.preventDefault(); setDragging(true); }}
                 onDragLeave={() => setDragging(false)}
                 onClick={() => fileInputRef.current?.click()}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInputRef.current?.click(); } }}
               >
                 <input ref={fileInputRef} type="file" accept=".gpx" onChange={e => { const f = e.target.files?.[0]; if (f) loadFile(f); }} className="hidden" />
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className={loading ? "text-[var(--accent)]" : "text-[var(--text-subtle)]"} aria-hidden="true">
@@ -186,9 +190,9 @@ export function PreRideScreen({ onStarted }: Props) {
               </button>
             </div>
 
-            <div className="w-px bg-[var(--border)] shrink-0" />
+            <div className="hidden sm:block w-px bg-[var(--border)] shrink-0" />
 
-            <div className="flex-1 min-w-0 flex flex-col pl-8">
+            <div className="flex-1 min-w-0 flex flex-col sm:pl-8">
               <div className="flex items-center gap-3 mb-4 shrink-0">
                 <span className="text-xs font-medium text-[var(--text-muted)]">Meine Strecken</span>
                 {routeLibrary.length > 0 && (

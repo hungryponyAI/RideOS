@@ -59,18 +59,18 @@ export function RouteTrimSlider({ thumbnail, totalDistM, startM, endM, onChange 
     <div className="flex flex-col gap-1.5 select-none">
       <svg ref={svgRef} viewBox={`0 0 ${SVG_W} ${SVG_H}`} preserveAspectRatio="none" className="w-full cursor-crosshair" style={{ height: 72 }}
         onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}>
-        <path d={pathD} fill="#FFF200" fillOpacity="0.20" stroke="none" />
+        <path d={pathD} fill="#74AFCB" fillOpacity="0.12" stroke="none" />
         <clipPath id="trim-clip"><rect x={xStart} y={0} width={xEnd - xStart} height={SVG_H} /></clipPath>
-        <path d={pathD} fill="#FFF200" stroke="#000" strokeWidth="1.5" vectorEffect="non-scaling-stroke" clipPath="url(#trim-clip)" />
+        <path d={pathD} fill="#74AFCB" fillOpacity="0.28" stroke="#74AFCB" strokeWidth="1.5" vectorEffect="non-scaling-stroke" clipPath="url(#trim-clip)" />
         <rect x={0} y={0} width={xStart} height={SVG_H} fill="var(--bg)" fillOpacity="0.70" />
         <rect x={xEnd} y={0} width={SVG_W - xEnd} height={SVG_H} fill="var(--bg)" fillOpacity="0.70" />
-        <rect x={xStart - 3} y={0} width={6} height={SVG_H} fill="#FFF200" className="cursor-ew-resize" onPointerDown={e => onPointerDown(e, "start")} />
-        <rect x={xEnd - 3} y={0} width={6} height={SVG_H} fill="#FFF200" className="cursor-ew-resize" onPointerDown={e => onPointerDown(e, "end")} />
+        <rect x={xStart - 3} y={0} width={6} height={SVG_H} fill="#74AFCB" className="cursor-ew-resize" onPointerDown={e => onPointerDown(e, "start")} />
+        <rect x={xEnd - 3} y={0} width={6} height={SVG_H} fill="#74AFCB" className="cursor-ew-resize" onPointerDown={e => onPointerDown(e, "end")} />
       </svg>
       <div className="flex justify-between px-0.5">
-        <span className="text-[9px] font-condensed font-bold tabular-nums text-[#FFF200]">{(startM / 1000).toFixed(1)} km</span>
-        <span className="text-[9px] font-condensed font-bold tabular-nums text-[var(--text-muted)]">{((endM - startM) / 1000).toFixed(1)} km ausgewählt</span>
-        <span className="text-[9px] font-condensed font-bold tabular-nums text-[#FFF200]">{(endM / 1000).toFixed(1)} km</span>
+        <span className="text-[9px] font-medium tabular-nums text-[var(--accent)]">{(startM / 1000).toFixed(1)} km</span>
+        <span className="text-[9px] font-medium tabular-nums text-[var(--text-muted)]">{((endM - startM) / 1000).toFixed(1)} km ausgewählt</span>
+        <span className="text-[9px] font-medium tabular-nums text-[var(--accent)]">{(endM / 1000).toFixed(1)} km</span>
       </div>
     </div>
   );

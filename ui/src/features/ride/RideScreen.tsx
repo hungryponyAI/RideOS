@@ -136,13 +136,13 @@ export function RideScreen({ isDark }: Props) {
       {routeError && (
         <div className="absolute top-7 left-0 right-0 z-30 flex items-center justify-between px-4 py-2 bg-[var(--critical)] text-white text-[11px] font-medium">
           <span>Strecke konnte nicht geladen werden: {routeError}</span>
-          <button type="button" onClick={clearRouteError} className="ml-4 font-bold cursor-pointer">✕</button>
+          <button type="button" onClick={clearRouteError} aria-label="Fehlermeldung schließen" className="ml-4 min-w-[44px] min-h-[44px] flex items-center justify-center font-bold cursor-pointer">✕</button>
         </div>
       )}
 
       {/* Top-left: primary metrics HUD */}
       <div className={`absolute top-[40px] left-4 z-10 transition-opacity duration-500 motion-reduce:transition-none ${isCompleted ? "opacity-40" : "opacity-100"}`}>
-        <HudPanel elevated className="p-4 flex flex-col gap-3 min-w-[220px]">
+        <HudPanel elevated className="p-4 flex flex-col gap-3 min-w-[180px] sm:min-w-[220px]">
           <MetricTile
             value={t?.speed_kmh?.toFixed(1) ?? "–"}
             unit="km/h"
