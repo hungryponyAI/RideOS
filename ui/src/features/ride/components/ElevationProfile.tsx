@@ -61,44 +61,59 @@ export const ElevationProfile = memo(function ElevationProfile({ data, positionM
     <div className="w-full h-full flex flex-col bg-[var(--bg)]">
       <div className="flex-1 relative overflow-hidden">
         <svg viewBox="0 0 1000 100" preserveAspectRatio="none" className="w-full h-full block">
+          <defs>
+            <linearGradient id="elevGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#74AFCB" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="#74AFCB" stopOpacity="0" />
+            </linearGradient>
+          </defs>
           <path
             d={chart.pathD}
-            fill={chart.hasRoute ? "#FFF200" : "var(--chart-empty)"}
-            stroke="#000000"
+            fill={chart.hasRoute ? "url(#elevGrad)" : "var(--chart-empty)"}
+            stroke={chart.hasRoute ? "#74AFCB" : "none"}
             strokeWidth="1.5"
             vectorEffect="non-scaling-stroke"
           />
           {chart.posXPct !== null && (
-            <line
-              x1={chart.posXPct * 10} y1={0}
-              x2={chart.posXPct * 10} y2={100}
-              stroke="#E10600"
-              strokeWidth="2"
-              vectorEffect="non-scaling-stroke"
-            />
+            <>
+              <line
+                x1={chart.posXPct * 10} y1={0}
+                x2={chart.posXPct * 10} y2={100}
+                stroke="#74AFCB"
+                strokeWidth="1.5"
+                strokeOpacity="0.9"
+                vectorEffect="non-scaling-stroke"
+              />
+              <circle
+                cx={chart.posXPct * 10} cy={50}
+                r={3}
+                fill="#74AFCB"
+                vectorEffect="non-scaling-stroke"
+              />
+            </>
           )}
         </svg>
         {chart.hasRoute && chart.elevMax !== null && (
           <>
-            <span className="absolute top-1 left-2 text-[10px] font-condensed font-bold text-[var(--text-muted)] select-none leading-none pointer-events-none tabular-nums">
+            <span className="absolute top-1 left-2 text-[10px] font-medium text-[var(--text-muted)] select-none leading-none pointer-events-none tabular-nums">
               {chart.elevMax} m
             </span>
-            <span className="absolute bottom-1 left-2 text-[10px] font-condensed font-bold text-[var(--text-muted)] select-none leading-none pointer-events-none tabular-nums">
+            <span className="absolute bottom-1 left-2 text-[10px] font-medium text-[var(--text-muted)] select-none leading-none pointer-events-none tabular-nums">
               {chart.elevMin} m
             </span>
           </>
         )}
         {!chart.hasRoute && (
-          <span className="absolute inset-0 flex items-center justify-center text-[11px] font-condensed font-bold tracking-widest uppercase text-[var(--text-muted)]">
-            KEINE STRECKE GELADEN
+          <span className="absolute inset-0 flex items-center justify-center text-[11px] font-medium text-[var(--text-muted)]">
+            Keine Strecke geladen
           </span>
         )}
       </div>
-      <div className="h-7 bg-black border-t border-[#111] relative shrink-0 flex items-center">
+      <div className="h-7 bg-[var(--bg-secondary)] border-t border-[var(--border)] relative shrink-0 flex items-center">
         {chart.baseLabels.map(({ xPct, label }) => (
           <span
             key={label}
-            className="absolute text-[11px] font-condensed font-bold text-[#FFF200] -translate-x-1/2 select-none"
+            className="absolute text-[10px] font-medium text-[var(--text-muted)] -translate-x-1/2 select-none tabular-nums"
             style={{ left: `${xPct}%` }}
           >
             {label}

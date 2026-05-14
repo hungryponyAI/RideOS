@@ -115,7 +115,7 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
     if (src) { src.setData(geojson); }
     else {
       map.addSource("route", { type: "geojson", data: geojson });
-      map.addLayer({ id: "route", type: "line", source: "route", paint: { "line-color": "#FFF200", "line-width": 4 } });
+      map.addLayer({ id: "route", type: "line", source: "route", paint: { "line-color": "#74AFCB", "line-width": 3 } });
     }
     if (map.getLayer("route")) map.moveLayer("route");
     if (positionM == null) {
@@ -154,7 +154,7 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
     if (egoSrc) { if (liveUpdate) egoSrc.setData(egoGeo); }
     else {
       map.addSource("ego", { type: "geojson", data: egoGeo });
-      map.addLayer({ id: "ego", type: "circle", source: "ego", paint: { "circle-radius": 8, "circle-color": "#FF1A1A", "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 } });
+      map.addLayer({ id: "ego", type: "circle", source: "ego", paint: { "circle-radius": 8, "circle-color": "#FFFFFF", "circle-stroke-color": "#74AFCB", "circle-stroke-width": 2.5 } });
       map.moveLayer("ego");
     }
     const layers = map.getStyle().layers;
@@ -171,15 +171,15 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
     if (ghostSrc) { ghostSrc.setData(ghostGeo); }
     else {
       map.addSource("ghost", { type: "geojson", data: ghostGeo });
-      map.addLayer({ id: "ghost", type: "circle", source: "ghost", paint: { "circle-radius": 7, "circle-color": "#3a3a3a", "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.5, "circle-opacity": 0.95 } }, map.getLayer("ego") ? "ego" : undefined);
+      map.addLayer({ id: "ghost", type: "circle", source: "ghost", paint: { "circle-radius": 6, "circle-color": "#74AFCB", "circle-stroke-color": "#B7C0CA", "circle-stroke-width": 1.5, "circle-opacity": 0.45 } }, map.getLayer("ego") ? "ego" : undefined);
     }
   }, [ghostLat, ghostLng, loaded]);
 
   return (
     <div className="relative w-full h-full min-h-[300px]">
       <div ref={containerRef} className="w-full h-full" />
-      <div className="absolute bottom-2 right-2 z-[1000] bg-black/60 text-white/90 px-2 py-1 text-[10px] font-condensed tracking-widest uppercase pointer-events-none">
-        {viewMode === "chase" ? "CHASE · M" : viewMode === "follow" ? "FOLLOW · M" : "BIRDSEYE · M"}
+      <div className="absolute bottom-2 right-2 z-[1000] bg-black/50 text-white/60 px-2 py-1 text-[10px] font-medium rounded pointer-events-none">
+        {viewMode === "chase" ? "Chase" : viewMode === "follow" ? "Follow" : "Übersicht"}
       </div>
     </div>
   );

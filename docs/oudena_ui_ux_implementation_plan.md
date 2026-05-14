@@ -720,6 +720,25 @@ Align route visualization with the OUDENA visual language.
 - Ghost is visible but not aggressive.
 - Elevation timeline feels like an emotional route timeline, not a chart wall.
 
+### Phase 10 Implementation Notes
+
+Status: complete.
+
+- `ui/src/features/ride/components/MiniMap.tsx`:
+  - Route line: `#FFF200` / width 4 → `#74AFCB` (glacier) / width 3.
+  - Rider marker (ego): `circle-color #FF1A1A` → `#FFFFFF`; `circle-stroke-color` → `#74AFCB` (glacier ring); stroke-width 2 → 2.5.
+  - Ghost marker: `circle-color #3a3a3a`, `circle-opacity 0.95` → `circle-color #74AFCB`, `circle-opacity 0.45`; stroke-color → `#B7C0CA` (titanium muted); radius 7 → 6. Ghost reads as present-but-calm.
+  - View mode label: `font-condensed tracking-widest uppercase` removed; now `font-medium rounded` with sentence-case German labels ("Chase" / "Follow" / "Übersicht"); opacity reduced to `text-white/60`.
+- `ui/src/features/ride/components/ElevationProfile.tsx`:
+  - SVG gradient: `<linearGradient id="elevGrad">` added in `<defs>`; glacier `#74AFCB` 28% → 0% opacity top-to-bottom.
+  - Path fill: `#FFF200` → `url(#elevGrad)` (route) / `var(--chart-empty)` (no route). Stroke: `#000` → `#74AFCB`.
+  - Rider marker: `#E10600` line → `#74AFCB` line + small glacier dot at mid-height for a clean position indicator.
+  - Label bar: `bg-black border-[#111]` → `bg-[var(--bg-secondary)] border-[var(--border)]`.
+  - Distance labels: `text-[#FFF200] font-condensed font-bold` → `text-[var(--text-muted)] font-medium tabular-nums`.
+  - Elevation labels: `font-condensed font-bold` → `font-medium`.
+  - Empty state: uppercase condensed → `font-medium` Inter, "Keine Strecke geladen".
+- Build: clean (863ms, 47 modules). Tests: 23/23 passing.
+
 ## Phase 11: Responsive And Accessibility QA
 
 ### Goal
