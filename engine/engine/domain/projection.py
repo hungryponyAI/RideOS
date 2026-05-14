@@ -54,6 +54,7 @@ class RideStateView:
     paused: bool = True
     ride_phase: str = "route"
     ride_start_mono: float | None = None
+    ended_reason: str | None = None
 
     # Phase countdown (None when not in a timed phase)
     phase_end_mono: float | None = None
@@ -115,10 +116,11 @@ class RideStateProjection:
                 position_m=0.0,
                 lap_index=0,
                 lap_count=event.laps,
+                ended_reason=None,
             )
 
         elif isinstance(event, RideEnded):
-            v = replace(v, paused=True, ride_phase="done")
+            v = replace(v, paused=True, ride_phase="done", ended_reason=event.reason)
 
         elif isinstance(event, RouteLoaded):
             v = replace(v, route_id=event.route_id, total_dist_m=event.total_dist_m)

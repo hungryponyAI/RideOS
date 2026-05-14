@@ -12,6 +12,11 @@ import { GradeBar } from "./components/GradeBar";
 import { ElevationProfile } from "./components/ElevationProfile";
 import { MiniMap, type MapViewMode } from "./components/MiniMap";
 
+export interface RideSummaryData {
+  elapsed_s: number | null;
+  reason: "completed" | "user_ended";
+}
+
 function formatTime(totalS: number): string {
   const s = Math.max(0, Math.floor(totalS));
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
@@ -36,11 +41,41 @@ function PlayPauseOverlay({ isPaused, visible, onToggle }: { isPaused: boolean; 
   );
 }
 
-interface Props {
-  isDark: boolean;
+function EndRideConfirmation({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center" role="dialog" aria-modal="true" aria-label="Fahrt beenden bestätigen">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative z-10 bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-elevated px-8 py-6 flex flex-col items-center gap-4 min-w-[240px]">
+        <span className="text-[13px] font-medium text-[var(--text)]">Fahrt beenden?</span>
+        <span className="text-[11px] text-[var(--text-muted)] text-center">Die Fahrt wird gestoppt und gespeichert.</span>
+        <div className="flex gap-3 w-full">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 min-h-[44px] rounded-xl border border-[var(--border)] text-[12px] font-medium text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)] transition-colors duration-150 cursor-pointer"
+          >
+            Abbrechen
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            data-testid="end-ride-confirm"
+            className="flex-1 min-h-[44px] rounded-xl bg-[var(--surface-soft)] border border-[var(--border)] text-[12px] font-medium text-[var(--text)] hover:border-[var(--accent)] transition-colors duration-150 cursor-pointer"
+          >
+            Beenden
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-export function RideScreen({ isDark }: Props) {
+interface Props {
+  isDark: boolean;
+  onRideEnded?: (data: RideSummaryData) => void;
+}
+
+export function RideScreen({ isDark, onRideEnded }: Props) {
   const { status, sendMessage } = useWS();
   const t = useRideTelemetry();
   const { routeRef, routeLoaded, routeError, clearRouteError } = useRouteData();
@@ -48,9 +83,11 @@ export function RideScreen({ isDark }: Props) {
 
   const [isPaused, setIsPaused] = useState(true);
   const [showControls, setShowControls] = useState(true);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [viewMode, setViewMode] = useState<MapViewMode>("chase");
   const prevStatusRef = useRef(status);
+  const endedRef = useRef(false);
 
   const isCompleted = t?.ride_phase === "done";
 
@@ -61,6 +98,24 @@ export function RideScreen({ isDark }: Props) {
       return next;
     });
   }, [sendMessage]);
+
+  const handleEndConfirmed = useCallback(() => {
+    setShowEndConfirm(false);
+    sendMessage({ type: "end_ride" });
+  }, [sendMessage]);
+
+  // Transition to summary when ride ends (natural or user-ended)
+  useEffect(() => {
+    if (!isCompleted || endedRef.current) return;
+    endedRef.current = true;
+    const reason = t?.ended_reason === "user_ended" ? "user_ended" : "completed";
+    const elapsed = t?.elapsed_s ?? null;
+    const delay = reason === "completed" ? 1500 : 0;
+    const timer = setTimeout(() => {
+      onRideEnded?.({ elapsed_s: elapsed, reason });
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [isCompleted, t?.ended_reason, t?.elapsed_s, onRideEnded]);
 
   useEffect(() => {
     const prev = prevStatusRef.current;
@@ -79,10 +134,11 @@ export function RideScreen({ isDark }: Props) {
       else if (e.key === "k" || e.key === "K") sendMessage({ type: "gear_shift", direction: "up" });
       else if (e.key === "m" || e.key === "M") setViewMode(m => m === "chase" ? "follow" : m === "follow" ? "birdseye" : "chase");
       else if (e.key === " ") { e.preventDefault(); togglePause(); }
+      else if (e.key === "Escape" && showEndConfirm) setShowEndConfirm(false);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [sendMessage, togglePause]);
+  }, [sendMessage, togglePause, showEndConfirm]);
 
   useEffect(() => {
     if (routeError) console.warn("[RideOS] route_error:", routeError);
@@ -104,6 +160,7 @@ export function RideScreen({ isDark }: Props) {
 
   const stored = routeLoaded ? routeRef.current : null;
   const positionM = t?.position_m ?? null;
+  const controlsVisible = (isPaused || showControls) && !isCompleted;
 
   return (
     <div className="w-screen h-screen overflow-hidden relative bg-[var(--bg)]">
@@ -233,12 +290,37 @@ export function RideScreen({ isDark }: Props) {
         )}
       </div>
 
-      {/* Bottom: elevation timeline — expands during climb focus */}
+      {/* Bottom: elevation timeline */}
       <div className={`absolute bottom-0 left-0 right-0 z-10 transition-[height] duration-500 ease-oudena motion-reduce:transition-none ${isClimbFocus ? "h-[200px]" : "h-[140px]"}`}>
         <ElevationProfile data={stored?.elevationChart ?? null} positionM={positionM} />
       </div>
 
-      <PlayPauseOverlay isPaused={isPaused} visible={isPaused || showControls} onToggle={togglePause} />
+      {/* End ride button — visible when controls shown and ride not completed */}
+      <div
+        className={`absolute bottom-[160px] right-4 z-20 transition-opacity duration-300 motion-reduce:transition-none ${controlsVisible ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+      >
+        <button
+          type="button"
+          data-testid="end-ride-button"
+          onClick={() => setShowEndConfirm(true)}
+          aria-label="Fahrt beenden"
+          className="min-w-[44px] min-h-[44px] px-3 flex items-center gap-1.5 bg-[var(--surface-soft)] backdrop-blur-md border border-[var(--border)] rounded-xl text-[11px] font-medium text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)] transition-colors duration-150 cursor-pointer shadow-soft"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+          </svg>
+          Beenden
+        </button>
+      </div>
+
+      <PlayPauseOverlay isPaused={isPaused} visible={controlsVisible} onToggle={togglePause} />
+
+      {showEndConfirm && (
+        <EndRideConfirmation
+          onConfirm={handleEndConfirmed}
+          onCancel={() => setShowEndConfirm(false)}
+        />
+      )}
     </div>
   );
 }

@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from engine.transport.ws.schemas import (
     AthleteSettingsMsg,
     DeleteRouteMsg,
+    EndRideMsg,
     GearShiftMsg,
     ListRoutesMsg,
     LoadRouteContentMsg,
@@ -213,6 +214,18 @@ class WSInbound:
         if ctx.strava_service is not None:
             ctx.strava_service.disconnect(ctx)
 
+    async def _end_ride(self, ws: "ServerConnection", data: dict) -> None:
+        try:
+            EndRideMsg.model_validate(data)
+        except Exception:
+            return
+        if self._ctx.ride_service is None:
+            return
+        asyncio.create_task(
+            self._ctx.ride_service.end_ride(self._ctx),
+            name="end_ride",
+        )
+
 
 # Dispatch table: one entry per supported message type.
 _DISPATCH: dict[str, _Handler] = {
@@ -229,4 +242,5 @@ _DISPATCH: dict[str, _Handler] = {
     "strava_sync": WSInbound._strava_sync,
     "set_paused": WSInbound._set_paused,
     "strava_disconnect": WSInbound._strava_disconnect,
+    "end_ride": WSInbound._end_ride,
 }

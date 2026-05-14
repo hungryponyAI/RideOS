@@ -240,9 +240,25 @@ async def test_end_ride_cancels_phase_task_and_publishes(route_ctx_factory):
     await svc.end_ride(ctx)
 
     assert ctx.phase_task is None
-    # Either run_phases' on_complete or end_ride's emit will fire RideEnded;
-    # we accept both paths but require at least one event.
     assert len(ended) >= 1
+    assert any(e.reason == "user_ended" for e in ended)
+
+
+async def test_end_ride_reason_is_user_ended(route_ctx_factory):
+    ctx, _, route_id = route_ctx_factory()
+    bus = AsyncioEventBus()
+    ended: list[RideEnded] = []
+    bus.subscribe(RideEnded, ended.append)
+    proj = RideStateProjection()
+    bus.subscribe(RideEnded, proj.apply)
+    svc = RideService(AthleteProfile(), GearEngine(), bus, ErgDebouncer(bus), proj, clock=lambda: 99.0)
+
+    await svc.start_ride(ctx, {"route_id": route_id, "laps": 1})
+    await svc.end_ride(ctx)
+
+    user_ended = [e for e in ended if e.reason == "user_ended"]
+    assert len(user_ended) >= 1
+    assert proj.view.ended_reason == "user_ended"
 
 
 async def test_cancel_active_ride_cleans_up_context(route_ctx_factory):

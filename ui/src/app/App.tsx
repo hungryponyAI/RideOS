@@ -2,7 +2,7 @@ import { useState } from "react";
 import { WSProvider } from "../shared/ws/WSProvider";
 import { ThemeProvider, useTheme } from "./providers/ThemeProvider";
 import { PreRideScreen } from "../features/pre-ride/PreRideScreen";
-import { RideScreen } from "../features/ride/RideScreen";
+import { RideScreen, type RideSummaryData } from "../features/ride/RideScreen";
 import { HistoryScreen } from "../features/history/HistoryScreen";
 import { AnalyticsScreen } from "../features/analytics/AnalyticsScreen";
 import { DevicesScreen } from "../features/devices/DevicesScreen";
@@ -37,13 +37,19 @@ function AppShell() {
   const { isDark } = useTheme();
   const [view, setView] = useState<AppView>('home');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [rideSummary, setRideSummary] = useState<RideSummaryData | null>(null);
 
   const isRiding = view === 'ride';
+
+  const handleRideEnded = (data: RideSummaryData) => {
+    setRideSummary(data);
+    setView('summary');
+  };
 
   if (isRiding) {
     return (
       <>
-        <RideScreen isDark={isDark} />
+        <RideScreen isDark={isDark} onRideEnded={handleRideEnded} />
         <ThemeToggle />
         <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
       </>
@@ -57,7 +63,10 @@ function AppShell() {
           <PreRideScreen onStarted={() => setView('ride')} />
         )}
         {view === 'summary' && (
-          <RideSummaryScreen onReturnHome={() => setView('home')} />
+          <RideSummaryScreen
+            summaryData={rideSummary}
+            onReturnHome={() => { setRideSummary(null); setView('home'); }}
+          />
         )}
         {view === 'history' && <HistoryScreen />}
         {view === 'analytics' && <AnalyticsScreen />}

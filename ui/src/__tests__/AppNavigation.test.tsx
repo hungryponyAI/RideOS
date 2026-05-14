@@ -100,14 +100,21 @@ describe("DevicesScreen", () => {
 
 describe("RideSummaryScreen", () => {
   it("renders with testid", () => {
-    const { getByTestId } = render(<RideSummaryScreen onReturnHome={vi.fn()} />);
+    const { getByTestId } = render(<RideSummaryScreen summaryData={null} onReturnHome={vi.fn()} />);
     expect(getByTestId("summary-screen")).toBeTruthy();
   });
 
   it("calls onReturnHome when button clicked", () => {
     const onReturnHome = vi.fn();
-    const { getByText } = render(<RideSummaryScreen onReturnHome={onReturnHome} />);
+    const { getByText } = render(<RideSummaryScreen summaryData={null} onReturnHome={onReturnHome} />);
     fireEvent.click(getByText("Zur Startseite"));
     expect(onReturnHome).toHaveBeenCalled();
+  });
+
+  it("shows elapsed time when summaryData is provided", () => {
+    const { getByText } = render(
+      <RideSummaryScreen summaryData={{ elapsed_s: 3661, reason: "completed" }} onReturnHome={vi.fn()} />
+    );
+    expect(getByText("1:01:01")).toBeTruthy();
   });
 });

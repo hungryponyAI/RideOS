@@ -21,6 +21,7 @@ export interface TelemetryState {
   phase_remaining_s?: number | null;
   elapsed_s?: number | null;
   dist_remaining_m?: number | null;
+  ended_reason?: "completed" | "user_ended" | null;
 }
 
 export type ConnectionStatus =

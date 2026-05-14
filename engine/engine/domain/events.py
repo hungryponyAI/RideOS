@@ -76,6 +76,7 @@ class RideEnded:
 
     elapsed_s: int
     t_mono: float
+    reason: Literal["completed", "user_ended"] = "completed"
 
 
 @dataclass(frozen=True)

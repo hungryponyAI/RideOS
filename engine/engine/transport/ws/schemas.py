@@ -80,3 +80,7 @@ class SetPausedMsg(BaseModel):
 
 class StravaDisconnectMsg(BaseModel):
     type: Literal["strava_disconnect"]
+
+
+class EndRideMsg(BaseModel):
+    type: Literal["end_ride"]

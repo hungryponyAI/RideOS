@@ -195,7 +195,7 @@ class RideService:
             if ctx.library and rid_snapshot:
                 ctx.library.update_best_time(rid_snapshot, elapsed_s)
                 _put(ctx.broadcast_queue, ctx.library.to_ws_message())
-            self._bus.publish(RideEnded(elapsed_s=elapsed_s, t_mono=self._clock()))
+            self._bus.publish(RideEnded(elapsed_s=elapsed_s, t_mono=self._clock(), reason="completed"))
 
         def _on_phase_change(
             phase: str, target_w: Optional[float], end_mono: Optional[float],
@@ -256,7 +256,7 @@ class RideService:
         if ride_start is not None:
             elapsed_s = int(self._clock() - ride_start)
         await self.cancel_active_ride(ctx)
-        self._bus.publish(RideEnded(elapsed_s=elapsed_s, t_mono=self._clock()))
+        self._bus.publish(RideEnded(elapsed_s=elapsed_s, t_mono=self._clock(), reason="user_ended"))
 
     # ── helpers ───────────────────────────────────────────────────────────
 

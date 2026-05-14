@@ -36,7 +36,7 @@ def test_dispatch_table_keys():
         "gear_shift", "load_route", "load_route_content", "athlete_settings",
         "list_routes", "start_ride", "delete_route", "rename_route",
         "strava_get_auth_url", "strava_submit_code", "strava_sync",
-        "set_paused", "strava_disconnect",
+        "set_paused", "strava_disconnect", "end_ride",
     }
     assert set(_DISPATCH.keys()) == expected
 
@@ -286,6 +286,32 @@ async def test_start_ride_missing_route_id_rejected():
 
     await asyncio.sleep(0.05)
     ride_service.start_ride.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# end_ride
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_end_ride_calls_service():
+    ride_service = MagicMock()
+    ride_service.end_ride = AsyncMock()
+    ctx = _ctx(ride_service=ride_service)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "end_ride"}))
+
+    await asyncio.sleep(0.05)
+    ride_service.end_ride.assert_called_once_with(ctx)
+
+
+@pytest.mark.asyncio
+async def test_end_ride_no_service_is_noop():
+    inbound = WSInbound(_ctx())
+    ws = _fake_ws()
+    await inbound.handle(ws, json.dumps({"type": "end_ride"}))
+    ws.send.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
