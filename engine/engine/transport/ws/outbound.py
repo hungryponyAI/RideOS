@@ -57,7 +57,7 @@ async def run_outbound_loop(
             )
 
             elapsed_s = (
-                int(now_t - v.ride_start_mono) if v.ride_start_mono is not None else None
+                int(v.elapsed_s_at(now_t)) if v.ride_start_mono is not None else None
             )
 
             dist_remaining_m = None

@@ -193,6 +193,7 @@ class RideService:
         rid_snapshot = route_id
 
         def _on_complete(elapsed_s: int) -> None:
+            elapsed_s = int(self._projection.view.elapsed_s_at(self._clock()))
             if ctx.library and rid_snapshot:
                 ctx.library.update_best_time(rid_snapshot, elapsed_s)
                 _put(ctx.broadcast_queue, ctx.library.to_ws_message())
@@ -258,9 +259,8 @@ class RideService:
     async def end_ride(self, ctx: "RouteContext") -> None:
         """Cancel an in-progress ride and publish RideEnded."""
         elapsed_s = 0
-        ride_start = self._projection.view.ride_start_mono
-        if ride_start is not None:
-            elapsed_s = int(self._clock() - ride_start)
+        if self._projection.view.ride_start_mono is not None:
+            elapsed_s = int(self._projection.view.elapsed_s_at(self._clock()))
         await self.cancel_active_ride(ctx)
         self._bus.publish(RideEnded(elapsed_s=elapsed_s, t_mono=self._clock(), reason="user_ended"))
 

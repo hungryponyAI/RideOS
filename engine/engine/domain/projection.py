@@ -54,6 +54,8 @@ class RideStateView:
     paused: bool = True
     ride_phase: str = "route"
     ride_start_mono: float | None = None
+    ride_elapsed_s: float = 0.0
+    ride_last_resume_mono: float | None = None
     ended_reason: str | None = None
 
     # Phase countdown (None when not in a timed phase)
@@ -64,6 +66,14 @@ class RideStateView:
     target_power_w: float | None = None
     erg_committed_power_w: float | None = None
     erg_committed_cadence: int | None = None
+
+    def elapsed_s_at(self, now_mono: float) -> float:
+        """Return active ride time, excluding setup and paused intervals."""
+        if self.ride_start_mono is None:
+            return 0.0
+        if self.paused or self.ride_last_resume_mono is None:
+            return self.ride_elapsed_s
+        return self.ride_elapsed_s + max(0.0, now_mono - self.ride_last_resume_mono)
 
 
 class RideStateProjection:
@@ -113,6 +123,8 @@ class RideStateProjection:
                 paused=event.paused,
                 erg_mode=event.erg_mode,
                 ride_start_mono=event.t_mono,
+                ride_elapsed_s=0.0,
+                ride_last_resume_mono=None if event.paused else event.t_mono,
                 position_m=0.0,
                 lap_index=0,
                 lap_count=event.laps,
@@ -120,13 +132,28 @@ class RideStateProjection:
             )
 
         elif isinstance(event, RideEnded):
-            v = replace(v, paused=True, ride_phase="done", ended_reason=event.reason)
+            v = replace(
+                v,
+                paused=True,
+                ride_phase="done",
+                ended_reason=event.reason,
+                ride_elapsed_s=v.elapsed_s_at(event.t_mono),
+                ride_last_resume_mono=None,
+            )
 
         elif isinstance(event, RouteLoaded):
             v = replace(v, route_id=event.route_id, total_dist_m=event.total_dist_m)
 
         elif isinstance(event, RidePauseToggled):
-            v = replace(v, paused=event.paused)
+            if event.paused:
+                v = replace(
+                    v,
+                    paused=True,
+                    ride_elapsed_s=v.elapsed_s_at(event.t_mono),
+                    ride_last_resume_mono=None,
+                )
+            else:
+                v = replace(v, paused=False, ride_last_resume_mono=event.t_mono)
 
         self._view = v
         return v

@@ -6,6 +6,7 @@ from engine.domain.events import (
     GearShifted,
     PositionAdvanced,
     RideEnded,
+    RidePauseToggled,
     RidePhaseChanged,
     RideStarted,
     RouteLoaded,
@@ -137,15 +138,72 @@ def test_ride_started_unpauses_and_resets_position():
 
 def test_ride_started_erg_mode_propagates():
     p = proj()
-    v = p.apply(RideStarted(route_id="r2", laps=2, warmup_s=120, cooldown_s=60, erg_mode=True, t_mono=0.0))
+    v = p.apply(
+        RideStarted(route_id="r2", laps=2, warmup_s=120, cooldown_s=60, erg_mode=True, t_mono=0.0)
+    )
     assert v.erg_mode is True
 
 
 def test_ride_started_can_keep_ride_paused():
     p = proj()
-    v = p.apply(RideStarted(route_id="r3", laps=1, warmup_s=0, cooldown_s=0, erg_mode=False, t_mono=0.0, paused=True))
+    v = p.apply(
+        RideStarted(
+            route_id="r3",
+            laps=1,
+            warmup_s=0,
+            cooldown_s=0,
+            erg_mode=False,
+            t_mono=0.0,
+            paused=True,
+        )
+    )
     assert v.paused is True
     assert v.route_id == "r3"
+    assert v.elapsed_s_at(30.0) == 0.0
+
+
+def test_elapsed_starts_on_resume_not_paused_start():
+    p = proj()
+    p.apply(
+        RideStarted(
+            route_id="r1",
+            laps=1,
+            warmup_s=0,
+            cooldown_s=0,
+            erg_mode=False,
+            t_mono=10.0,
+            paused=True,
+        )
+    )
+
+    assert p.view.elapsed_s_at(20.0) == 0.0
+
+    p.apply(RidePauseToggled(paused=False, t_mono=25.0))
+
+    assert p.view.elapsed_s_at(40.0) == 15.0
+
+
+def test_elapsed_freezes_while_paused_and_resumes():
+    p = proj()
+    p.apply(
+        RideStarted(
+            route_id="r1",
+            laps=1,
+            warmup_s=0,
+            cooldown_s=0,
+            erg_mode=False,
+            t_mono=10.0,
+            paused=True,
+        )
+    )
+    p.apply(RidePauseToggled(paused=False, t_mono=20.0))
+    p.apply(RidePauseToggled(paused=True, t_mono=35.0))
+
+    assert p.view.elapsed_s_at(100.0) == 15.0
+
+    p.apply(RidePauseToggled(paused=False, t_mono=120.0))
+
+    assert p.view.elapsed_s_at(125.0) == 20.0
 
 
 # ── RideEnded ─────────────────────────────────────────────────────────────────

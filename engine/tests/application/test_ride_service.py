@@ -312,6 +312,33 @@ async def test_end_ride_reason_is_user_ended(route_ctx_factory):
     assert proj.view.ended_reason == "user_ended"
 
 
+async def test_end_ride_uses_active_elapsed_excluding_paused_time(route_ctx_factory):
+    ctx, _, route_id = route_ctx_factory()
+    now = 0.0
+
+    def clock() -> float:
+        return now
+
+    bus = AsyncioEventBus()
+    ended: list[RideEnded] = []
+    proj = RideStateProjection()
+    for event_type in (RideStarted, RidePauseToggled, RideEnded):
+        bus.subscribe(event_type, proj.apply)
+    bus.subscribe(RideEnded, ended.append)
+    svc = RideService(AthleteProfile(), GearEngine(), bus, ErgDebouncer(bus), proj, clock=clock)
+
+    await svc.start_ride(ctx, {"route_id": route_id, "laps": 1, "paused": True})
+    now = 10.0
+    svc.set_paused(False)
+    now = 25.0
+    svc.set_paused(True)
+    now = 100.0
+    await svc.end_ride(ctx)
+
+    user_ended = [e for e in ended if e.reason == "user_ended"]
+    assert user_ended[-1].elapsed_s == 15
+
+
 async def test_cancel_active_ride_cleans_up_context(route_ctx_factory):
     ctx, _, route_id = route_ctx_factory()
     bus = AsyncioEventBus()
