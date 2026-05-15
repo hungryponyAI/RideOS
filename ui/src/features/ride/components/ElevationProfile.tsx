@@ -101,7 +101,7 @@ export const ElevationProfile = memo(function ElevationProfile({ data, gradesPct
   }, [data, gradesPct, positionM, ghostDistM]);
 
   return (
-    <div className="w-full h-full flex flex-col bg-[var(--bg)]">
+    <div className="w-full h-full flex flex-col bg-transparent">
       <div className="flex-1 relative overflow-hidden">
         <svg viewBox="0 0 1000 100" preserveAspectRatio="none" className="w-full h-full block">
           <defs>
@@ -191,7 +191,7 @@ export const ElevationProfile = memo(function ElevationProfile({ data, gradesPct
           </span>
         )}
       </div>
-      <div className="h-7 bg-[var(--bg-secondary)] border-t border-[var(--border)] relative shrink-0 flex items-center">
+      <div className="h-7 border-t border-[var(--border)] relative shrink-0 flex items-center">
         {chart.baseLabels.map(({ xPct, label }) => (
           <span
             key={label}

@@ -6,9 +6,9 @@ interface Props {
 
 export const GearStrip = memo(function GearStrip({ gear }: Props) {
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex items-center gap-3 min-w-0">
       <svg
-        width="24" height="24" viewBox="0 0 24 24"
+        width="22" height="22" viewBox="0 0 24 24"
         fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
         className="text-[var(--label-accent)] shrink-0"
         aria-hidden="true"
@@ -22,9 +22,14 @@ export const GearStrip = memo(function GearStrip({ gear }: Props) {
         <line x1="4.2"  y1="16.5" x2="9.4"  y2="13.5"/>
         <line x1="4.2"  y1="7.5"  x2="9.4"  y2="10.5"/>
       </svg>
-      <span className="text-[48px] font-data font-bold text-[var(--text)] tabular-nums leading-none">
-        {gear ?? "–"}
-      </span>
+      <div className="flex flex-col leading-none">
+        <span className="text-[9px] font-sans font-medium uppercase tracking-[0.15em] text-[var(--text-subtle)] mb-0.5">
+          Gang
+        </span>
+        <span className="text-[32px] font-data font-bold text-[var(--text)] tabular-nums leading-none">
+          {gear ?? "–"}
+        </span>
+      </div>
     </div>
   );
 });

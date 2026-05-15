@@ -25,10 +25,10 @@ export const MetricTile = memo(function MetricTile({
             {label}
           </span>
         )}
-        <span className="font-data font-bold tabular-nums text-[var(--text)] text-[clamp(64px,8vw,120px)] leading-none">
+        <span className="font-data font-bold tabular-nums text-[var(--text)] text-[40px] sm:text-[44px] leading-none">
           {value}
         </span>
-        <span className="font-sans font-medium text-[13px] uppercase tracking-wider text-[var(--text-muted)] mt-1.5">
+        <span className="font-sans font-medium text-[11px] uppercase tracking-wider text-[var(--text-muted)] mt-1">
           {unit}
         </span>
         {note && (
@@ -47,7 +47,7 @@ export const MetricTile = memo(function MetricTile({
           {label}
         </span>
       )}
-      <span className="font-data font-bold tabular-nums text-[var(--text)] text-[28px] leading-none">
+      <span className="font-data font-bold tabular-nums text-[var(--text)] text-[30px] leading-none">
         {value}
       </span>
       <span className="font-sans font-medium text-[10px] uppercase tracking-wider text-[var(--text-muted)] mt-0.5">

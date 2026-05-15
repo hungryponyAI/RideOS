@@ -313,22 +313,23 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
 
       {/* Top-left: primary metrics HUD */}
       <div className={`absolute top-[40px] left-4 z-10 transition-opacity duration-500 motion-reduce:transition-none ${isCompleted ? "opacity-40" : "opacity-100"}`}>
-        <HudPanel elevated className="p-4 flex flex-col gap-3 min-w-[180px] sm:min-w-[220px]">
+        <HudPanel elevated className="p-4 flex flex-col gap-3 min-w-[190px] sm:min-w-[230px]">
           <MetricTile
+            label="Geschwindigkeit"
             value={t?.speed_kmh?.toFixed(1) ?? "–"}
             unit="km/h"
             emphasis="primary"
           />
 
-          <div className={`flex gap-5 transition-opacity duration-500 motion-reduce:transition-none ${isClimbFocus ? "opacity-60" : "opacity-100"}`}>
+          <div className={`grid grid-cols-2 gap-4 transition-opacity duration-500 motion-reduce:transition-none ${isClimbFocus ? "opacity-60" : "opacity-100"}`}>
             <div className="flex flex-col gap-0.5">
-              <MetricTile value={t?.power_w ?? "–"} unit="Watt" emphasis="secondary" />
+              <MetricTile label="Leistung" value={t?.power_w ?? "–"} unit="Watt" emphasis="secondary" />
               {t?.erg_mode && t?.target_power_w != null && (
                 <span className="text-[9px] font-medium text-[var(--accent)]">Ziel {Math.round(t.target_power_w)} W</span>
               )}
             </div>
             <div className="flex flex-col gap-0.5">
-              <MetricTile value={t?.cadence_rpm ?? "–"} unit="U/Min" emphasis="secondary" />
+              <MetricTile label="Kadenz" value={t?.cadence_rpm ?? "–"} unit="U/Min" emphasis="secondary" />
               {t?.erg_mode && t?.target_cadence_rpm != null && (
                 <span className="text-[9px] font-medium text-[var(--accent)]">Ziel {t.target_cadence_rpm} rpm</span>
               )}
@@ -336,7 +337,7 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
           </div>
 
           {!t?.erg_mode && (
-            <div className="flex gap-5 border-t border-[var(--border)] pt-2.5">
+            <div className="grid grid-cols-2 gap-4 border-t border-[var(--border)] pt-2.5">
               <GearStrip gear={t?.gear ?? null} />
               <GradeBar effective={t?.effective_grade_pct ?? 0} highlight={isClimbFocus} />
             </div>
@@ -408,13 +409,25 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
       </div>
 
       {/* Bottom: elevation timeline */}
-      <div className={`absolute bottom-0 left-0 right-0 z-10 transition-[height] duration-500 ease-oudena motion-reduce:transition-none ${isClimbFocus ? "h-[200px]" : "h-[140px]"}`}>
-        <ElevationProfile
-          data={stored?.elevationChart ?? null}
-          gradesPct={stored?.gradesPct ?? null}
-          positionM={positionM}
-          ghostDistM={t?.ghost_dist_m ?? null}
-        />
+      <div className={`absolute bottom-3 left-4 right-4 z-10 transition-[height] duration-500 ease-oudena motion-reduce:transition-none ${isClimbFocus ? "h-[200px]" : "h-[140px]"}`}>
+        <HudPanel className="h-full overflow-hidden flex flex-col">
+          <div className="h-7 shrink-0 px-3 flex items-center justify-between border-b border-[var(--border)]">
+            <span className="text-[9px] font-sans font-medium uppercase tracking-[0.15em] text-[var(--text-subtle)]">
+              Höhenprofil
+            </span>
+            <span className="text-[10px] font-medium text-[var(--text-muted)]">
+              Nächste 10 km
+            </span>
+          </div>
+          <div className="min-h-0 flex-1">
+            <ElevationProfile
+              data={stored?.elevationChart ?? null}
+              gradesPct={stored?.gradesPct ?? null}
+              positionM={positionM}
+              ghostDistM={t?.ghost_dist_m ?? null}
+            />
+          </div>
+        </HudPanel>
       </div>
 
       {/* Ride controls: gear, camera, pause, end */}
