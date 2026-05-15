@@ -92,13 +92,16 @@ function AppShell() {
 
   if (isPreparing && rideStartCtx) {
     return (
-      <RideStartRitual
-        routeId={rideStartCtx.routeId}
-        routeName={rideStartCtx.routeName}
-        config={rideStartCtx.config}
-        onReady={() => { setView('ride'); }}
-        onCancel={() => { setRideStartCtx(null); setView('routes'); }}
-      />
+      <>
+        <RideScreen isDark={isDark} onRideEnded={handleRideEnded} />
+        <RideStartRitual
+          routeId={rideStartCtx.routeId}
+          routeName={rideStartCtx.routeName}
+          config={rideStartCtx.config}
+          onReady={() => { setView('ride'); }}
+          onCancel={() => { setRideStartCtx(null); setView('routes'); }}
+        />
+      </>
     );
   }
 

@@ -6,6 +6,7 @@ mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN as string;
 if (!mapboxgl.accessToken) {
   throw new Error("VITE_MAPBOX_TOKEN is not set");
 }
+mapboxgl.prewarm();
 
 export type MapViewMode = "chase" | "follow" | "birdseye";
 
@@ -24,6 +25,11 @@ interface MiniMapProps {
 
 const STYLE = "mapbox://styles/mapbox/standard";
 const LIGHT_PRESET: "dawn" | "day" | "dusk" | "night" = "day";
+const BASEMAP_CONFIG = {
+  lightPreset: LIGHT_PRESET,
+  theme: "monochrome",
+  show3dObjects: true,
+};
 const DEM_SOURCE_ID = "mapbox-dem";
 const DEM_URL = "mapbox://mapbox.mapbox-terrain-dem-v1";
 const TERRAIN_EXAGGERATION = 1.5;
@@ -74,14 +80,27 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    let revealTimer: ReturnType<typeof setTimeout> | null = null;
+    let disposed = false;
     const map = new mapboxgl.Map({
       container,
       style: STYLE,
+      config: { basemap: BASEMAP_CONFIG },
       center: [10, 50],
       zoom: 13,
       pitch: viewMode === "chase" ? CHASE_PITCH : BIRDSEYE_PITCH,
       attributionControl: false,
     });
+
+    const revealConfiguredMap = () => {
+      if (disposed) return;
+      setLoaded(true);
+      if (revealTimer) {
+        clearTimeout(revealTimer);
+        revealTimer = null;
+      }
+    };
+
     const markLoaded = () => {
       try {
         map.setConfigProperty("basemap", "lightPreset", LIGHT_PRESET);
@@ -93,14 +112,16 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
       }
       map.setTerrain({ source: DEM_SOURCE_ID, exaggeration: TERRAIN_EXAGGERATION });
       map.resize();
-      setLoaded(true);
+      map.once("idle", revealConfiguredMap);
+      revealTimer = setTimeout(revealConfiguredMap, 1200);
     };
     map.once("load", markLoaded);
-    map.once("styledata", markLoaded);
     const ro = new ResizeObserver(() => map.resize());
     ro.observe(container);
     mapRef.current = map;
     return () => {
+      disposed = true;
+      if (revealTimer) clearTimeout(revealTimer);
       ro.disconnect();
       setLoaded(false);
       map.remove();
@@ -192,9 +213,12 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
   }, [ghostLat, ghostLng, loaded]);
 
   return (
-    <div className="relative w-full h-full min-h-[300px]">
-      <div ref={containerRef} className="w-full h-full" />
-      <div className="absolute bottom-2 right-2 z-[1000] bg-black/50 text-white/60 px-2 py-1 text-[10px] font-medium rounded pointer-events-none">
+    <div className="relative w-full h-full min-h-[300px] bg-[var(--bg)]">
+      <div
+        ref={containerRef}
+        className={`w-full h-full transition-opacity duration-200 motion-reduce:transition-none ${loaded ? "opacity-100" : "opacity-0"}`}
+      />
+      <div className={`absolute bottom-2 right-2 z-[1000] bg-black/50 text-white/60 px-2 py-1 text-[10px] font-medium rounded pointer-events-none transition-opacity duration-200 ${loaded ? "opacity-100" : "opacity-0"}`}>
         {viewMode === "chase" ? "Chase" : viewMode === "follow" ? "Follow" : "Übersicht"}
       </div>
     </div>
