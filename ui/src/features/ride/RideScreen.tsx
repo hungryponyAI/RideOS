@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useWS } from "../../shared/ws/useWS";
 import { useRideTelemetry } from "./hooks/useRideTelemetry";
 import { useClimbFocus } from "./hooks/useClimbFocus";
+import { useDescentState } from "./hooks/useDescentState";
 import { useRouteData } from "./hooks/useRouteData";
 import { loadAthleteSettings } from "../settings/hooks/useAthleteSettings";
 import { ConnectionBanner } from "../../shared/ui/ConnectionBanner";
@@ -11,6 +12,7 @@ import { GearStrip } from "./components/GearStrip";
 import { GradeBar } from "./components/GradeBar";
 import { ElevationProfile } from "./components/ElevationProfile";
 import { MiniMap, type MapViewMode } from "./components/MiniMap";
+import { RideControls } from "./components/RideControls";
 
 export interface RideSummaryData {
   elapsed_s: number | null;
@@ -22,23 +24,6 @@ function formatTime(totalS: number): string {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   return `${m}:${String(sec).padStart(2, "0")}`;
-}
-
-function PlayPauseOverlay({ isPaused, visible, onToggle }: { isPaused: boolean; visible: boolean; onToggle: () => void }) {
-  return (
-    <div className={`fixed inset-0 z-[1500] flex items-center justify-center transition-opacity duration-300 ${visible ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-      <button type="button" onClick={onToggle} aria-label={isPaused ? "Fahrt fortsetzen" : "Fahrt pausieren"} className="flex flex-col items-center gap-2 cursor-pointer group">
-        <div className={`w-20 h-20 rounded-full backdrop-blur-md border flex items-center justify-center text-[var(--text)] transition-all duration-150 ${isPaused ? "bg-[var(--surface)] border-[var(--accent)] shadow-elevated" : "bg-[var(--surface-soft)] border-[var(--border)] group-hover:bg-[var(--surface)] group-hover:border-[var(--accent)]"}`}>
-          {isPaused ? (
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-          ) : (
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
-          )}
-        </div>
-        <span className="text-[var(--text-muted)] font-medium text-[11px]">{isPaused ? "Fortsetzen" : "Pause"}</span>
-      </button>
-    </div>
-  );
 }
 
 function EndRideConfirmation({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
@@ -80,14 +65,42 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
   const t = useRideTelemetry();
   const { routeRef, routeLoaded, routeError, clearRouteError } = useRouteData();
   const isClimbFocus = useClimbFocus(t?.effective_grade_pct);
+  const isDescending = useDescentState(t?.effective_grade_pct);
 
   const [isPaused, setIsPaused] = useState(true);
   const [showControls, setShowControls] = useState(true);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [viewMode, setViewMode] = useState<MapViewMode>("chase");
   const prevStatusRef = useRef(status);
   const endedRef = useRef(false);
+
+  // Ghost trend tracking
+  const prevGhostGapRef = useRef<number | null>(null);
+  const ghostGap = t?.ghost_time_gap_s ?? null;
+  const prevGap = prevGhostGapRef.current;
+  const ghostTrend = ghostGap != null && prevGap != null
+    ? ghostGap < prevGap ? "closing" : ghostGap > prevGap ? "losing" : "neutral"
+    : null;
+
+  useEffect(() => {
+    prevGhostGapRef.current = ghostGap;
+  }, [ghostGap]);
+
+  const ghostColor = ghostGap == null
+    ? "text-[var(--text)]"
+    : ghostGap < 0
+      ? "text-[var(--success)]"
+      : ghostTrend === "closing"
+        ? "text-[var(--accent)]"
+        : ghostTrend === "losing"
+          ? "text-[var(--warning)]"
+          : "text-[var(--text)]";
+
+  // Aria-live announcement tracking
+  const prevPausedAnnounceRef = useRef<boolean | null>(null);
+  const prevCompletedAnnounceRef = useRef(false);
 
   const isCompleted = t?.ride_phase === "done";
 
@@ -104,7 +117,30 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
     sendMessage({ type: "end_ride" });
   }, [sendMessage]);
 
-  // Transition to summary when ride ends (natural or user-ended)
+  const shiftGear = useCallback((dir: "up" | "down") => {
+    sendMessage({ type: "gear_shift", direction: dir });
+  }, [sendMessage]);
+
+  const cycleCamera = useCallback(() => {
+    setViewMode(m => m === "chase" ? "follow" : m === "follow" ? "birdseye" : "chase");
+  }, []);
+
+  // Pause announcement
+  useEffect(() => {
+    const prev = prevPausedAnnounceRef.current;
+    prevPausedAnnounceRef.current = isPaused;
+    if (prev === null) return;
+    setAnnouncement(isPaused ? "Fahrt pausiert" : "Fahrt fortgesetzt");
+  }, [isPaused]);
+
+  // Completed announcement
+  useEffect(() => {
+    if (isCompleted && !prevCompletedAnnounceRef.current) {
+      prevCompletedAnnounceRef.current = true;
+      setAnnouncement("Fahrt beendet");
+    }
+  }, [isCompleted]);
+
   useEffect(() => {
     if (!isCompleted || endedRef.current) return;
     endedRef.current = true;
@@ -126,19 +162,21 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
       sendMessage({ type: "athlete_settings", ...loadAthleteSettings() });
       sendMessage({ type: "set_paused", paused: true });
     }
+    if (status === "disconnected") setAnnouncement("Verbindung unterbrochen");
+    else if (status === "reconnecting") setAnnouncement("Verbindung wird wiederhergestellt");
   }, [status, sendMessage]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "j" || e.key === "J") sendMessage({ type: "gear_shift", direction: "down" });
       else if (e.key === "k" || e.key === "K") sendMessage({ type: "gear_shift", direction: "up" });
-      else if (e.key === "m" || e.key === "M") setViewMode(m => m === "chase" ? "follow" : m === "follow" ? "birdseye" : "chase");
+      else if (e.key === "m" || e.key === "M") cycleCamera();
       else if (e.key === " ") { e.preventDefault(); togglePause(); }
       else if (e.key === "Escape" && showEndConfirm) setShowEndConfirm(false);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [sendMessage, togglePause, showEndConfirm]);
+  }, [sendMessage, togglePause, cycleCamera, showEndConfirm]);
 
   useEffect(() => {
     if (routeError) console.warn("[RideOS] route_error:", routeError);
@@ -164,6 +202,16 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
 
   return (
     <div className="w-screen h-screen overflow-hidden relative bg-[var(--bg)]">
+      {/* Screen reader live region */}
+      <div
+        data-testid="ride-announcer"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {announcement}
+      </div>
+
       {/* Map fills full viewport */}
       <div className="absolute inset-0 z-0">
         <MiniMap
@@ -172,6 +220,7 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
           positionM={positionM}
           isDark={isDark}
           viewMode={viewMode}
+          isDescending={isDescending}
           ghostLat={t?.ghost_lat ?? null}
           ghostLng={t?.ghost_lng ?? null}
           ghostBearingDeg={t?.ghost_bearing_deg ?? null}
@@ -183,6 +232,16 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
         className={`absolute inset-0 z-[5] pointer-events-none transition-opacity duration-300 motion-reduce:transition-none ${isPaused ? "opacity-100" : "opacity-0"}`}
         style={{ backgroundColor: "rgba(0,0,0,0.22)" }}
       />
+
+      {/* Reconnecting: subtle edge indicator */}
+      {(status === "reconnecting") && (
+        <div
+          data-testid="reconnecting-overlay"
+          className="absolute inset-0 z-[6] pointer-events-none rounded-none"
+          style={{ boxShadow: "inset 0 0 0 2px rgba(var(--warning-rgb, 220 150 50) / 0.35)" }}
+          aria-hidden="true"
+        />
+      )}
 
       {/* Connection status — docked at top */}
       <div className="absolute top-0 left-0 right-0 z-30">
@@ -240,10 +299,10 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
 
       {/* Top-right: ghost delta + ride time + distance */}
       <div className={`absolute top-[40px] right-4 z-10 flex flex-col gap-1.5 items-end transition-opacity duration-500 motion-reduce:transition-none ${isCompleted ? "opacity-40" : "opacity-100"}`}>
-        {t?.ghost_time_gap_s != null && (
+        {ghostGap != null && (
           <div className="bg-[var(--surface-soft)] backdrop-blur-md border border-[var(--border)] rounded-lg px-2.5 py-1.5 shadow-soft">
-            <span className={`text-[12px] font-data font-bold tabular-nums transition-colors duration-300 ${isClimbFocus ? "text-[var(--accent)]" : "text-[var(--text)]"}`}>
-              {t.ghost_time_gap_s > 0 ? `+${Math.round(t.ghost_time_gap_s)}s` : `${Math.round(t.ghost_time_gap_s)}s`}
+            <span className={`text-[12px] font-data font-bold tabular-nums transition-colors duration-300 ${ghostColor}`}>
+              {ghostGap > 0 ? `+${Math.round(ghostGap)}s` : `${Math.round(ghostGap)}s`}
             </span>
           </div>
         )}
@@ -295,25 +354,18 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
         <ElevationProfile data={stored?.elevationChart ?? null} positionM={positionM} />
       </div>
 
-      {/* End ride button — visible when controls shown and ride not completed */}
-      <div
-        className={`absolute bottom-[160px] right-4 z-20 transition-opacity duration-300 motion-reduce:transition-none ${controlsVisible ? "opacity-100" : "opacity-0 pointer-events-none"}`}
-      >
-        <button
-          type="button"
-          data-testid="end-ride-button"
-          onClick={() => setShowEndConfirm(true)}
-          aria-label="Fahrt beenden"
-          className="min-w-[44px] min-h-[44px] px-3 flex items-center gap-1.5 bg-[var(--surface-soft)] backdrop-blur-md border border-[var(--border)] rounded-xl text-[11px] font-medium text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)] transition-colors duration-150 cursor-pointer shadow-soft"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-          </svg>
-          Beenden
-        </button>
-      </div>
-
-      <PlayPauseOverlay isPaused={isPaused} visible={controlsVisible} onToggle={togglePause} />
+      {/* Ride controls: gear, camera, pause, end */}
+      {!isCompleted && (
+        <RideControls
+          isPaused={isPaused}
+          visible={controlsVisible}
+          onTogglePause={togglePause}
+          onEndRide={() => setShowEndConfirm(true)}
+          onShiftGear={shiftGear}
+          onCycleCamera={cycleCamera}
+          viewMode={viewMode}
+        />
+      )}
 
       {showEndConfirm && (
         <EndRideConfirmation

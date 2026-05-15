@@ -18,6 +18,7 @@ interface MiniMapProps {
   ghostBearingDeg?: number | null;
   isDark: boolean;
   viewMode: MapViewMode;
+  isDescending?: boolean;
 }
 
 const STYLE = "mapbox://styles/mapbox/standard";
@@ -28,6 +29,8 @@ const TERRAIN_EXAGGERATION = 1.5;
 const BEARING_LOOKAHEAD_M = 200;
 const CHASE_PITCH = 60, CHASE_ZOOM = 17, CHASE_OFFSET: [number, number] = [0, 150];
 const FOLLOW_PITCH = 78, FOLLOW_ZOOM = 18.5, FOLLOW_OFFSET: [number, number] = [0, 220];
+const DESCENT_CHASE_PITCH = 45, DESCENT_CHASE_ZOOM = 16.5;
+const DESCENT_FOLLOW_PITCH = 60, DESCENT_FOLLOW_ZOOM = 17.5;
 const BIRDSEYE_PITCH = 0, BIRDSEYE_ZOOM = 14, BIRDSEYE_OFFSET: [number, number] = [0, 0];
 const POS_TWEEN_MS = 80, VIEW_TWEEN_MS = 600;
 const LINEAR = (t: number) => t;
@@ -58,7 +61,7 @@ function calcBearing(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
 }
 
-export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMode }: MiniMapProps) {
+export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMode, isDescending }: MiniMapProps) {
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -142,8 +145,15 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
     }
     if (!ego && lastEgoRef.current) { ego = lastEgoRef.current.ego; bearing = viewMode === "birdseye" ? 0 : lastEgoRef.current.bearing; }
     let pitch = BIRDSEYE_PITCH, zoom = BIRDSEYE_ZOOM, offset: [number, number] = BIRDSEYE_OFFSET;
-    if (viewMode === "chase") { pitch = CHASE_PITCH; zoom = CHASE_ZOOM; offset = CHASE_OFFSET; }
-    else if (viewMode === "follow") { pitch = FOLLOW_PITCH; zoom = FOLLOW_ZOOM; offset = FOLLOW_OFFSET; }
+    if (viewMode === "chase") {
+      pitch = isDescending ? DESCENT_CHASE_PITCH : CHASE_PITCH;
+      zoom = isDescending ? DESCENT_CHASE_ZOOM : CHASE_ZOOM;
+      offset = CHASE_OFFSET;
+    } else if (viewMode === "follow") {
+      pitch = isDescending ? DESCENT_FOLLOW_PITCH : FOLLOW_PITCH;
+      zoom = isDescending ? DESCENT_FOLLOW_ZOOM : FOLLOW_ZOOM;
+      offset = FOLLOW_OFFSET;
+    }
     const viewChanged = lastViewModeRef.current !== viewMode;
     lastViewModeRef.current = viewMode;
     const center: [number, number] = ego ? [ego[1], ego[0]] : (map.getCenter().toArray() as [number, number]);
