@@ -109,11 +109,13 @@ export function RideOptions({ config, hasStravaOrBestTime, onChange }: Props) {
       </button>
 
       <div className={`flex flex-col gap-2 overflow-hidden transition-[max-height,opacity] duration-panel ease-oudena ${
-        showAdvanced ? "max-h-[300px] opacity-100" : "max-h-0 opacity-0"
+        showAdvanced ? "max-h-[400px] opacity-100" : "max-h-0 opacity-0"
       }`}>
         <Toggle label="Rückwärts" checked={config.reverse} onChange={v => set({ reverse: v, ghost: v ? false : config.ghost })} />
         <Toggle label="ERG Mode" sublabel="Fixe Watt nach Profil + FTP" checked={config.ergMode} onChange={v => set({ ergMode: v, ghost: v ? false : config.ghost })} />
         <Toggle label="Physics" sublabel="Power-basierter Fortschritt" checked={config.physicsMode} onChange={v => set({ physicsMode: v })} />
+        <Toggle label="Trainer-Schwierigkeit" sublabel="Bald verfügbar" checked={false} disabled onChange={() => {}} />
+        <Toggle label="Tempo-Ziel" sublabel="Bald verfügbar" checked={false} disabled onChange={() => {}} />
       </div>
     </div>
   );

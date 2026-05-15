@@ -10,6 +10,8 @@ interface Props {
   athleteSettings: AthleteSettings;
   isSelected?: boolean;
   compact?: boolean;
+  isFavorite?: boolean;
+  onToggleFavorite?: (routeId: string) => void;
 }
 
 function formatTime(seconds: number): string {
@@ -32,6 +34,22 @@ function estimateTimeS(distanceKm: number, elevationGainM: number, ftpW: number,
   return Math.round((distanceKm * 1000) / ((lo + hi) / 2));
 }
 
+function formatLastAttempt(dateStr: string | null): string | null {
+  if (!dateStr) return null;
+  try {
+    const d = new Date(dateStr);
+    const diffDays = Math.floor((Date.now() - d.getTime()) / 86_400_000);
+    if (diffDays === 0) return "Heute";
+    if (diffDays === 1) return "Gestern";
+    if (diffDays < 7) return `Vor ${diffDays} Tagen`;
+    if (diffDays < 30) return `Vor ${Math.floor(diffDays / 7)} Wo.`;
+    if (diffDays < 365) return `Vor ${Math.floor(diffDays / 30)} Mon.`;
+    return `Vor ${Math.floor(diffDays / 365)} J.`;
+  } catch {
+    return null;
+  }
+}
+
 function MiniProfile({ thumbnail }: { thumbnail: number[] }) {
   if (thumbnail.length < 2) return <div className="w-full h-full bg-[var(--chart-empty)]" />;
   const min = Math.min(...thumbnail), max = Math.max(...thumbnail), range = Math.max(max - min, 1), n = thumbnail.length;
@@ -46,7 +64,9 @@ function MiniProfile({ thumbnail }: { thumbnail: number[] }) {
   );
 }
 
-export const RouteCard = memo(function RouteCard({ route, onLoad, onDelete, onRename, athleteSettings, isSelected, compact }: Props) {
+export const RouteCard = memo(function RouteCard({
+  route, onLoad, onDelete, onRename, athleteSettings, isSelected, compact, isFavorite, onToggleFavorite,
+}: Props) {
   const [editing, setEditing] = useState(false);
   const [nameVal, setNameVal] = useState(route.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -62,11 +82,18 @@ export const RouteCard = memo(function RouteCard({ route, onLoad, onDelete, onRe
   }, [nameVal, route.id, route.name, onRename]);
 
   const estTime = estimateTimeS(route.distance_km, route.elevation_gain_m, athleteSettings.ftp_w, athleteSettings.weight_kg, athleteSettings.height_cm);
+  const lastAttempt = formatLastAttempt(route.activity_date);
+  const hasGhost = route.best_time_s !== null;
 
   return (
     <div className={`flex flex-col bg-[var(--surface)] border rounded-xl overflow-hidden cursor-pointer group transition-all duration-150 ${isSelected ? "border-[var(--accent)] shadow-soft" : "border-[var(--border)] hover:border-[var(--accent)] hover:shadow-soft"} ${compact ? "opacity-60 hover:opacity-100" : ""}`}>
-      <div className={`${compact ? "h-[28px]" : "h-[44px]"} overflow-hidden shrink-0`} onClick={() => onLoad(route.id)}>
+      <div className={`${compact ? "h-[28px]" : "h-[44px]"} overflow-hidden shrink-0 relative`} onClick={() => onLoad(route.id)}>
         <MiniProfile thumbnail={route.elevation_thumbnail} />
+        {hasGhost && !compact && (
+          <span className="absolute top-1 right-1 text-[8px] text-[var(--accent)] bg-[var(--bg)] border border-[var(--accent)] rounded px-1 py-px leading-none opacity-80" title="Ghost verfügbar">
+            Ghost
+          </span>
+        )}
       </div>
       <div className="flex items-start gap-2 px-3 py-2">
         <div className="flex-1 min-w-0 flex flex-col gap-1" onClick={() => !editing && onLoad(route.id)}>
@@ -89,18 +116,27 @@ export const RouteCard = memo(function RouteCard({ route, onLoad, onDelete, onRe
             <span className="text-[10px] text-[var(--text-muted)] tabular-nums">{route.distance_km.toFixed(1)} km</span>
             <span className="text-[10px] text-[var(--text-subtle)]">·</span>
             <span className="text-[10px] text-[var(--text-muted)] tabular-nums">↑{route.elevation_gain_m} m</span>
-            <span className="text-[10px] text-[var(--text-subtle)]">·</span>
-            <span className="text-[10px] text-[var(--text-muted)] tabular-nums">↓{route.elevation_loss_m} m</span>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
             {route.best_time_s !== null ? (
-              <><span className="text-[10px] text-[var(--success)]">Bestzeit</span><span className="text-[10px] font-data tabular-nums text-[var(--success)] ml-1">{formatTime(route.best_time_s)}</span></>
+              <><span className="text-[10px] text-[var(--success)]">Bestzeit</span><span className="text-[10px] font-data tabular-nums text-[var(--success)] ml-0.5">{formatTime(route.best_time_s)}</span></>
             ) : (
-              <><span className="text-[10px] text-[var(--text-subtle)]">ca.</span><span className="text-[10px] font-data tabular-nums text-[var(--text-muted)] ml-1">{formatTime(estTime)}</span></>
+              <><span className="text-[10px] text-[var(--text-subtle)]">ca.</span><span className="text-[10px] font-data tabular-nums text-[var(--text-muted)] ml-0.5">{formatTime(estTime)}</span></>
+            )}
+            {lastAttempt && (
+              <><span className="text-[10px] text-[var(--text-subtle)]">·</span><span className="text-[10px] text-[var(--text-subtle)]">{lastAttempt}</span></>
             )}
           </div>
         </div>
         <div className="flex flex-col gap-1 shrink-0">
+          {onToggleFavorite && (
+            <button type="button" onClick={e => { e.stopPropagation(); onToggleFavorite(route.id); }} aria-label={isFavorite ? "Favorit entfernen" : "Als Favorit speichern"}
+              className={`w-6 h-6 flex items-center justify-center cursor-pointer transition-colors ${isFavorite ? "text-[var(--accent)]" : "text-[var(--text-subtle)] hover:text-[var(--accent)] opacity-0 group-hover:opacity-100"}`}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill={isFavorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+              </svg>
+            </button>
+          )}
           <button type="button" onClick={e => { e.stopPropagation(); setEditing(true); }} aria-label="Umbenennen" className="w-6 h-6 flex items-center justify-center text-[var(--text-subtle)] hover:text-[var(--text)] cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>

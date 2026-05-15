@@ -183,6 +183,25 @@ class RouteService:
             self._apply_pending_ghost(ctx, route)
             ctx.pending_ghost = None
 
+    async def preview_route(self, ctx: "RouteContext", route_id: str) -> Optional[dict]:
+        """Return decimated lat/lon coords for route preview. No side effects."""
+        if ctx.library is None:
+            return None
+        gpx_path = ctx.library.get_gpx_path(route_id)
+        if gpx_path is None:
+            return None
+        from engine.route.loader import load_gpx
+        try:
+            route = await asyncio.to_thread(load_gpx, str(gpx_path))
+        except Exception as exc:
+            _log.warning("preview_route failed for %s: %s", route_id, exc)
+            return None
+        n = len(route.lats)
+        step = max(1, n // 120)
+        lats = list(route.lats[::step])
+        lons = list(route.lons[::step])
+        return {"type": "route_preview", "route_id": route_id, "lats": lats, "lons": lons}
+
     @staticmethod
     def _apply_pending_ghost(ctx: "RouteContext", route: "RouteData") -> None:
         """Create GhostTracker from ctx.pending_ghost config and the loaded route."""

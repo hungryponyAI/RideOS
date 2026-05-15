@@ -84,3 +84,8 @@ class StravaDisconnectMsg(BaseModel):
 
 class EndRideMsg(BaseModel):
     type: Literal["end_ride"]
+
+
+class PreviewRouteMsg(BaseModel):
+    type: Literal["preview_route"]
+    route_id: str

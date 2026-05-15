@@ -3,6 +3,7 @@ import type { RouteLibraryEntry } from "../../shared/types/route";
 import type { AthleteSettings } from "../settings/hooks/useAthleteSettings";
 import { RouteTrimSlider } from "./RouteTrimSlider";
 import { RideOptions, type RideConfig } from "./RideOptions";
+import { useRoutePreview } from "../routes/hooks/useRoutePreview";
 
 interface Props {
   route: RouteLibraryEntry;
@@ -10,6 +11,8 @@ interface Props {
   onStart: (config: RideConfig) => void;
   onClose: () => void;
   onRename: (routeId: string, name: string) => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: (routeId: string) => void;
 }
 
 function formatTime(seconds: number): string {
@@ -32,7 +35,34 @@ function estimateTimeS(distanceKm: number, elevationGainM: number, ftpW: number,
   return Math.round((distanceKm * 1000) / ((lo + hi) / 2));
 }
 
-export const RouteCardExpanded = memo(function RouteCardExpanded({ route, athleteSettings, onStart, onClose, onRename }: Props) {
+function RouteTraceSVG({ lats, lons }: { lats: number[]; lons: number[] }) {
+  if (lats.length < 2) return null;
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+  const latRange = Math.max(maxLat - minLat, 0.0001);
+  const lonRange = Math.max(maxLon - minLon, 0.0001);
+  const W = 400, H = 200, pad = 16;
+  const pts = lats.map((lat, i) => {
+    const x = pad + ((lons[i] - minLon) / lonRange) * (W - 2 * pad);
+    const y = H - pad - ((lat - minLat) / latRange) * (H - 2 * pad);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const startX = pad + ((lons[0] - minLon) / lonRange) * (W - 2 * pad);
+  const startY = H - pad - ((lats[0] - minLat) / latRange) * (H - 2 * pad);
+  const endX = pad + ((lons[lons.length - 1] - minLon) / lonRange) * (W - 2 * pad);
+  const endY = H - pad - ((lats[lats.length - 1] - minLat) / latRange) * (H - 2 * pad);
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full block" aria-hidden="true">
+      <polyline points={pts} fill="none" stroke="#74AFCB" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={startX.toFixed(1)} cy={startY.toFixed(1)} r="4" fill="#74AFCB" opacity="0.9" />
+      <circle cx={endX.toFixed(1)} cy={endY.toFixed(1)} r="4" fill="var(--accent)" opacity="0.9" />
+    </svg>
+  );
+}
+
+export const RouteCardExpanded = memo(function RouteCardExpanded({
+  route, athleteSettings, onStart, onClose, onRename, isFavorite, onToggleFavorite,
+}: Props) {
   const totalDistM = route.distance_km * 1000;
   const [config, setConfig] = useState<RideConfig>(() => ({ ghost: false, reverse: false, cutoutStartM: null, cutoutEndM: null, laps: 1, warmup: false, cooldown: false, ergMode: false, physicsMode: false }));
   const [trimStart, setTrimStart] = useState(0);
@@ -40,10 +70,13 @@ export const RouteCardExpanded = memo(function RouteCardExpanded({ route, athlet
   const [trimEnabled, setTrimEnabled] = useState(false);
   const [editing, setEditing] = useState(false);
   const [nameVal, setNameVal] = useState(route.name);
+  const [showMap, setShowMap] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { setNameVal(route.name); }, [route.name]);
   useEffect(() => { if (editing) inputRef.current?.select(); }, [editing]);
+
+  const preview = useRoutePreview(route.id);
 
   const commitRename = useCallback(() => {
     setEditing(false);
@@ -64,9 +97,13 @@ export const RouteCardExpanded = memo(function RouteCardExpanded({ route, athlet
 
   const estTime = estimateTimeS(route.distance_km, route.elevation_gain_m, athleteSettings.ftp_w, athleteSettings.weight_kg, athleteSettings.height_cm);
   const hasStravaOrBestTime = !!(route.strava_id || route.best_time_s);
+  const hasGhost = route.best_time_s !== null;
+  const gainPerKm = route.distance_km > 0 ? route.elevation_gain_m / route.distance_km : 0;
+  const isClimby = gainPerKm > 15;
 
   return (
     <div className="flex flex-col bg-[var(--surface)] border border-[var(--accent)] rounded-xl overflow-hidden shadow-elevated">
+      {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)]">
         <div className="flex-1 min-w-0">
           {editing ? (
@@ -77,6 +114,7 @@ export const RouteCardExpanded = memo(function RouteCardExpanded({ route, athlet
             <div className="flex items-center gap-1.5 min-w-0">
               {route.strava_id && <svg width="10" height="10" viewBox="0 0 24 24" fill="#FC4C02" aria-hidden="true"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" /></svg>}
               <span className="text-sm font-medium text-[var(--text)] truncate cursor-pointer" onDoubleClick={() => setEditing(true)}>{route.name}</span>
+              {isClimby && <span className="text-[9px] text-[var(--text-subtle)] shrink-0">↑ Bergig</span>}
             </div>
           )}
           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -93,7 +131,15 @@ export const RouteCardExpanded = memo(function RouteCardExpanded({ route, athlet
             )}
           </div>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
+          {onToggleFavorite && (
+            <button type="button" onClick={() => onToggleFavorite(route.id)} aria-label={isFavorite ? "Favorit entfernen" : "Als Favorit speichern"}
+              className={`w-6 h-6 flex items-center justify-center cursor-pointer transition-colors ${isFavorite ? "text-[var(--accent)]" : "text-[var(--text-subtle)] hover:text-[var(--accent)]"}`}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill={isFavorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+              </svg>
+            </button>
+          )}
           <button type="button" onClick={() => setEditing(true)} aria-label="Umbenennen" className="w-6 h-6 flex items-center justify-center text-[var(--text-subtle)] hover:text-[var(--text)] cursor-pointer transition-colors">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
@@ -101,43 +147,86 @@ export const RouteCardExpanded = memo(function RouteCardExpanded({ route, athlet
         </div>
       </div>
 
-      <div className="px-4 pt-3 pb-2 border-b border-[var(--border)]">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] font-medium text-[var(--text-muted)]">Streckenprofil</span>
-          <button type="button" onClick={handleToggleTrim}
-            className={`text-[10px] font-medium px-2 py-0.5 border rounded transition-colors cursor-pointer ${trimEnabled ? "border-[var(--accent)] text-[var(--accent)]" : "border-[var(--border)] text-[var(--text-subtle)] hover:border-[var(--text-muted)] hover:text-[var(--text-muted)]"}`}>
-            {trimEnabled ? "Ausschnitt an" : "Ausschnitt"}
-          </button>
+      {/* Route visualization: map trace + elevation */}
+      <div className="border-b border-[var(--border)]">
+        <div className="flex items-center justify-between px-4 pt-3 pb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-[var(--text-muted)]">Streckenprofil</span>
+            {preview && (
+              <div className="flex items-center gap-1">
+                <button type="button" onClick={() => setShowMap(false)}
+                  className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${!showMap ? "border-[var(--accent)] text-[var(--accent)]" : "border-[var(--border)] text-[var(--text-subtle)] hover:border-[var(--text-muted)]"}`}>
+                  Höhe
+                </button>
+                <button type="button" onClick={() => setShowMap(true)}
+                  className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${showMap ? "border-[var(--accent)] text-[var(--accent)]" : "border-[var(--border)] text-[var(--text-subtle)] hover:border-[var(--text-muted)]"}`}>
+                  Karte
+                </button>
+              </div>
+            )}
+          </div>
+          {!showMap && (
+            <button type="button" onClick={handleToggleTrim}
+              className={`text-[10px] font-medium px-2 py-0.5 border rounded transition-colors cursor-pointer ${trimEnabled ? "border-[var(--accent)] text-[var(--accent)]" : "border-[var(--border)] text-[var(--text-subtle)] hover:border-[var(--text-muted)] hover:text-[var(--text-muted)]"}`}>
+              {trimEnabled ? "Ausschnitt an" : "Ausschnitt"}
+            </button>
+          )}
         </div>
-        {route.elevation_thumbnail.length >= 2 ? (
-          trimEnabled ? (
-            <RouteTrimSlider thumbnail={route.elevation_thumbnail} totalDistM={totalDistM} startM={trimStart} endM={trimEnd} onChange={handleTrimChange} />
-          ) : (
-            <div style={{ height: 72 }}>
-              <svg viewBox="0 0 1000 80" preserveAspectRatio="none" className="w-full h-full block">
-                {(() => {
-                  const thumb = route.elevation_thumbnail, n = thumb.length;
-                  const minE = Math.min(...thumb), maxE = Math.max(...thumb), range = Math.max(maxE - minE, 1);
-                  const pts = thumb.map((e, i) => `${((i / (n - 1)) * 1000).toFixed(1)},${(80 - ((e - minE) / range) * 72).toFixed(1)}`);
-                  const areaPath = `M0,80 L${pts.join(" L")} L1000,80 Z`;
-                  const linePath = `M${pts.join(" L")}`;
-                  return (
-                    <>
-                      <path d={areaPath} fill="#74AFCB" fillOpacity="0.15" />
-                      <path d={linePath} fill="none" stroke="#74AFCB" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-                    </>
-                  );
-                })()}
-              </svg>
+
+        {/* Map view */}
+        {showMap && preview ? (
+          <div style={{ height: 120 }} className="px-4 pb-3">
+            <div className="w-full h-full rounded-lg overflow-hidden bg-[var(--bg)] border border-[var(--border)]">
+              <RouteTraceSVG lats={preview.lats} lons={preview.lons} />
             </div>
-          )
+          </div>
         ) : (
-          <div className="h-[72px] flex items-center justify-center">
-            <span className="text-[10px] text-[var(--text-subtle)]">Kein Profil verfügbar</span>
+          <div className="px-4 pb-3">
+            {route.elevation_thumbnail.length >= 2 ? (
+              trimEnabled ? (
+                <RouteTrimSlider thumbnail={route.elevation_thumbnail} totalDistM={totalDistM} startM={trimStart} endM={trimEnd} onChange={handleTrimChange} />
+              ) : (
+                <div style={{ height: 72 }}>
+                  <svg viewBox="0 0 1000 80" preserveAspectRatio="none" className="w-full h-full block">
+                    {(() => {
+                      const thumb = route.elevation_thumbnail, n = thumb.length;
+                      const minE = Math.min(...thumb), maxE = Math.max(...thumb), range = Math.max(maxE - minE, 1);
+                      const pts = thumb.map((e, i) => `${((i / (n - 1)) * 1000).toFixed(1)},${(80 - ((e - minE) / range) * 72).toFixed(1)}`);
+                      const areaPath = `M0,80 L${pts.join(" L")} L1000,80 Z`;
+                      const linePath = `M${pts.join(" L")}`;
+                      return (<><path d={areaPath} fill="#74AFCB" fillOpacity="0.15" /><path d={linePath} fill="none" stroke="#74AFCB" strokeWidth="1.5" vectorEffect="non-scaling-stroke" /></>);
+                    })()}
+                  </svg>
+                </div>
+              )
+            ) : (
+              <div className="h-[72px] flex items-center justify-center">
+                <span className="text-[10px] text-[var(--text-subtle)]">Kein Profil verfügbar</span>
+              </div>
+            )}
           </div>
         )}
       </div>
 
+      {/* Ghost section */}
+      {hasGhost && (
+        <div className="px-4 py-3 border-b border-[var(--border)] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-full bg-[var(--accent)] bg-opacity-10 flex items-center justify-center">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--accent)" aria-hidden="true">
+                <path d="M12 2a7 7 0 0 1 7 7v9l-2.5-2.5L14 18l-2-2-2 2-2.5-2.5L5 18V9a7 7 0 0 1 7-7z" />
+              </svg>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-medium text-[var(--text)]">Ghost Rider verfügbar</span>
+              <span className="text-[9px] text-[var(--text-subtle)]">Bestzeit: {formatTime(route.best_time_s!)}</span>
+            </div>
+          </div>
+          <span className="text-[9px] text-[var(--accent)] border border-[var(--accent)] rounded px-1.5 py-0.5">Schlag dich selbst</span>
+        </div>
+      )}
+
+      {/* Ride options */}
       <div className="px-4 py-3 border-b border-[var(--border)]">
         <RideOptions config={config} totalDistM={totalDistM} hasStravaOrBestTime={hasStravaOrBestTime} onChange={setConfig} />
       </div>

@@ -21,6 +21,7 @@ from engine.transport.ws.schemas import (
     ListRoutesMsg,
     LoadRouteContentMsg,
     LoadRouteMsg,
+    PreviewRouteMsg,
     RenameRouteMsg,
     SetPausedMsg,
     StartRideMsg,
@@ -226,6 +227,17 @@ class WSInbound:
             name="end_ride",
         )
 
+    async def _preview_route(self, ws: "ServerConnection", data: dict) -> None:
+        try:
+            msg = PreviewRouteMsg.model_validate(data)
+        except ValidationError:
+            return
+        if self._ctx.route_service is None:
+            return
+        result = await self._ctx.route_service.preview_route(self._ctx, msg.route_id)
+        if result is not None:
+            await ws.send(json.dumps(result))
+
 
 # Dispatch table: one entry per supported message type.
 _DISPATCH: dict[str, _Handler] = {
@@ -243,4 +255,5 @@ _DISPATCH: dict[str, _Handler] = {
     "set_paused": WSInbound._set_paused,
     "strava_disconnect": WSInbound._strava_disconnect,
     "end_ride": WSInbound._end_ride,
+    "preview_route": WSInbound._preview_route,
 }

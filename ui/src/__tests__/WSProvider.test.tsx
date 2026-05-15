@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, act, renderHook } from "@testing-library/react";
+import { render, act } from "@testing-library/react";
 import { useEffect, useCallback } from "react";
 import { WSProvider } from "../shared/ws/WSProvider";
 import { useWS } from "../shared/ws/useWS";

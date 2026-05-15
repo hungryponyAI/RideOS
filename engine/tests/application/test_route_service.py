@@ -166,3 +166,41 @@ def test_library_snapshot_without_library_returns_none():
     )
     svc = RouteService(AsyncioEventBus())
     assert svc.library_snapshot(ctx) is None
+
+
+# ── preview_route ─────────────────────────────────────────────────────────────
+
+async def test_preview_route_returns_decimated_coords(tmp_path):
+    ctx, lib = _ctx(tmp_path)
+    content = (FIXTURES / "route_simple.gpx").read_text()
+    from engine.route.loader import load_gpx_content
+    entry = lib.add_route("preview-test", content, load_gpx_content(content))
+    svc = RouteService(AsyncioEventBus())
+
+    result = await svc.preview_route(ctx, entry.id)
+
+    assert result is not None
+    assert result["type"] == "route_preview"
+    assert result["route_id"] == entry.id
+    assert len(result["lats"]) >= 1
+    assert len(result["lons"]) >= 1
+    # No side effects: tracker should not be spawned
+    assert ctx.tracker is None
+    assert ctx.current_route is None
+
+
+async def test_preview_route_unknown_id_returns_none(tmp_path):
+    ctx, _ = _ctx(tmp_path)
+    svc = RouteService(AsyncioEventBus())
+    result = await svc.preview_route(ctx, "nonexistent")
+    assert result is None
+
+
+async def test_preview_route_without_library_returns_none():
+    ctx = RouteContext(
+        broadcast_queue=asyncio.Queue(maxsize=10),
+        stop_event=asyncio.Event(),
+    )
+    svc = RouteService(AsyncioEventBus())
+    result = await svc.preview_route(ctx, "any")
+    assert result is None

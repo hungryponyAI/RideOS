@@ -90,6 +90,13 @@ export interface StravaErrorMessage {
   message: string;
 }
 
+export interface RoutePreviewMessage {
+  type: "route_preview";
+  route_id: string;
+  lats: number[];
+  lons: number[];
+}
+
 export type IncomingMessage =
   | TelemetryMessage
   | RouteDataMessage
@@ -97,6 +104,7 @@ export type IncomingMessage =
   | ClickStatusMessage
   | KickrStatusMessage
   | RouteLibraryMessage
+  | RoutePreviewMessage
   | StravaStatusMessage
   | StravaAuthUrlMessage
   | StravaErrorMessage;
@@ -136,6 +144,11 @@ export interface StartRideMessage {
   physics_mode: boolean;
 }
 
+export interface PreviewRouteOutMessage {
+  type: "preview_route";
+  route_id: string;
+}
+
 export type OutgoingMessage =
   | GearShiftMessage
   | LoadRouteMessage
@@ -143,7 +156,8 @@ export type OutgoingMessage =
   | LoadSavedRouteMessage
   | DeleteRouteMessage
   | RenameRouteMessage
-  | StartRideMessage;
+  | StartRideMessage
+  | PreviewRouteOutMessage;
 
 export interface ElevationChartDatum {
   dist: number;

@@ -5,11 +5,13 @@ import { useRouteLibrary } from "../routes/hooks/useRouteLibrary";
 import { useAthleteSettings } from "../settings/hooks/useAthleteSettings";
 import { useStravaStatus } from "../strava/hooks/useStravaStatus";
 import { useDeviceStatus } from "../settings/hooks/useDeviceStatus";
+import { useRouteFavorites } from "../routes/hooks/useRouteFavorites";
 import { StravaConnectModal, type StravaModalStep } from "../strava/StravaConnectModal";
 import { setLastRouteId } from "../home/hooks/useHomeRecommendation";
 import type { RouteLibraryEntry } from "../../shared/types/route";
 import { RouteCard } from "./RouteCard";
 import { RouteCardExpanded } from "./RouteCardExpanded";
+import { RouteFilterBar, applyRouteFilters, type RouteFilter } from "../routes/components/RouteFilterBar";
 import type { RideConfig } from "./RideOptions";
 
 interface Props {
@@ -31,12 +33,14 @@ export function PreRideScreen({ onStarted, initialRouteId }: Props) {
   const { settings: athleteSettings } = useAthleteSettings();
   const { stravaStatus, stravaAuthUrl, stravaError, clearStravaAuthUrl, clearStravaError } = useStravaStatus();
   const { kickrConnected } = useDeviceStatus();
+  const { isFavorite, toggle: toggleFavorite, favorites } = useRouteFavorites();
 
   const [loading, setLoading] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<RouteLibraryEntry | null>(null);
+  const [activeFilters, setActiveFilters] = useState<Set<RouteFilter>>(new Set());
   const hasAppliedInitial = useRef(false);
 
   useEffect(() => {
@@ -132,7 +136,9 @@ export function PreRideScreen({ onStarted, initialRouteId }: Props) {
   const isStravaConnected = stravaStatus?.connected ?? false;
   const isStravaSyncing = stravaStatus?.syncing ?? false;
   const selectedRouteId = selectedRoute?.id ?? null;
-  const otherRoutes = routeLibrary.filter(r => r.id !== selectedRouteId);
+
+  const filteredLibrary = applyRouteFilters(routeLibrary, activeFilters, favorites);
+  const otherRoutes = filteredLibrary.filter(r => r.id !== selectedRouteId);
 
   const wsSearching = wsStatus === "connecting" || wsStatus === "reconnecting";
   const trainerSearching = !kickrConnected && (wsSearching || wsStatus === "connected");
@@ -177,13 +183,22 @@ export function PreRideScreen({ onStarted, initialRouteId }: Props) {
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden px-4 sm:px-8 pb-8 pt-6 gap-5">
         {selectedRoute ? (
           <>
-            <RouteCardExpanded route={selectedRoute} athleteSettings={athleteSettings} onStart={handleStartWithConfig} onClose={() => setSelectedRoute(null)} onRename={handleRename} />
+            <RouteCardExpanded
+              route={selectedRoute}
+              athleteSettings={athleteSettings}
+              onStart={handleStartWithConfig}
+              onClose={() => setSelectedRoute(null)}
+              onRename={handleRename}
+              isFavorite={isFavorite(selectedRoute.id)}
+              onToggleFavorite={toggleFavorite}
+            />
             {otherRoutes.length > 0 && (
               <div className="flex-1 min-h-0 overflow-y-auto">
                 <p className="text-xs font-medium text-[var(--text-muted)] mb-3">Weitere Strecken</p>
                 <div className="grid grid-cols-3 xl:grid-cols-4 gap-2">
                   {otherRoutes.map(route => (
-                    <RouteCard key={route.id} route={route} onLoad={handleSelectRoute} onDelete={handleDelete} onRename={handleRename} athleteSettings={athleteSettings} isSelected={false} compact />
+                    <RouteCard key={route.id} route={route} onLoad={handleSelectRoute} onDelete={handleDelete} onRename={handleRename} athleteSettings={athleteSettings} isSelected={false} compact
+                      isFavorite={isFavorite(route.id)} onToggleFavorite={toggleFavorite} />
                   ))}
                 </div>
               </div>
@@ -223,22 +238,42 @@ export function PreRideScreen({ onStarted, initialRouteId }: Props) {
             <div className="hidden sm:block w-px bg-[var(--border)] shrink-0" />
 
             <div className="flex-1 min-w-0 flex flex-col sm:pl-8">
-              <div className="flex items-center gap-3 mb-4 shrink-0">
+              <div className="flex items-center gap-3 mb-3 shrink-0 flex-wrap">
                 <span className="text-xs font-medium text-[var(--text-muted)]">Meine Strecken</span>
                 {routeLibrary.length > 0 && (
-                  <span className="text-xs text-[var(--text-subtle)] bg-[var(--surface)] border border-[var(--border)] rounded px-1.5 py-0.5">{routeLibrary.length}</span>
+                  <span className="text-xs text-[var(--text-subtle)] bg-[var(--surface)] border border-[var(--border)] rounded px-1.5 py-0.5">
+                    {filteredLibrary.length < routeLibrary.length ? `${filteredLibrary.length}/${routeLibrary.length}` : routeLibrary.length}
+                  </span>
                 )}
               </div>
+
+              {routeLibrary.length > 0 && (
+                <div className="mb-3 shrink-0">
+                  <RouteFilterBar
+                    active={activeFilters}
+                    routes={routeLibrary}
+                    favorites={favorites}
+                    onChange={setActiveFilters}
+                  />
+                </div>
+              )}
+
               {routeLibrary.length === 0 ? (
                 <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center">
                   <span className="text-sm font-medium text-[var(--text)]">Noch keine Routen</span>
                   <span className="text-xs text-[var(--text-subtle)]">Importiere eine GPX-Datei oder verbinde Strava.</span>
                 </div>
+              ) : filteredLibrary.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center">
+                  <span className="text-sm font-medium text-[var(--text)]">Keine passenden Strecken</span>
+                  <button type="button" onClick={() => setActiveFilters(new Set())} className="text-xs text-[var(--accent)] hover:underline cursor-pointer">Filter zurücksetzen</button>
+                </div>
               ) : (
                 <div className="flex-1 overflow-y-auto min-h-0 pr-1">
                   <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
-                    {routeLibrary.map((route: RouteLibraryEntry) => (
-                      <RouteCard key={route.id} route={route} onLoad={handleSelectRoute} onDelete={handleDelete} onRename={handleRename} athleteSettings={athleteSettings} isSelected={selectedRouteId === route.id} />
+                    {filteredLibrary.map((route: RouteLibraryEntry) => (
+                      <RouteCard key={route.id} route={route} onLoad={handleSelectRoute} onDelete={handleDelete} onRename={handleRename} athleteSettings={athleteSettings} isSelected={selectedRouteId === route.id}
+                        isFavorite={isFavorite(route.id)} onToggleFavorite={toggleFavorite} />
                     ))}
                   </div>
                 </div>
