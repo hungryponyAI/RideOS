@@ -102,3 +102,12 @@ class ListRidesMsg(BaseModel):
 class GetRideMsg(BaseModel):
     type: Literal["get_ride"]
     ride_id: str
+
+
+class GetAnalyticsOverviewMsg(BaseModel):
+    type: Literal["get_analytics_overview"]
+
+
+class GetRideAnalyticsMsg(BaseModel):
+    type: Literal["get_ride_analytics"]
+    ride_id: str

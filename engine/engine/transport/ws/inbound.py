@@ -18,6 +18,8 @@ from engine.transport.ws.schemas import (
     DeleteRouteMsg,
     EndRideMsg,
     GearShiftMsg,
+    GetAnalyticsOverviewMsg,
+    GetRideAnalyticsMsg,
     GetRideMsg,
     GetRideSummaryMsg,
     ListRidesMsg,
@@ -304,6 +306,33 @@ class WSInbound:
             },
         }))
 
+    async def _get_analytics_overview(self, ws: "ServerConnection", data: dict) -> None:
+        try:
+            GetAnalyticsOverviewMsg.model_validate(data)
+        except ValidationError:
+            return
+        ctx = self._ctx
+        if ctx.ride_repo is None:
+            return
+        from engine.application.analytics_service import AnalyticsService
+        result = AnalyticsService(ctx.ride_repo).get_overview()
+        await ws.send(json.dumps(result))
+
+    async def _get_ride_analytics(self, ws: "ServerConnection", data: dict) -> None:
+        try:
+            msg = GetRideAnalyticsMsg.model_validate(data)
+        except ValidationError:
+            return
+        ctx = self._ctx
+        if ctx.ride_repo is None:
+            return
+        from engine.application.analytics_service import AnalyticsService
+        result = AnalyticsService(ctx.ride_repo).get_ride_analytics(msg.ride_id)
+        if result is None:
+            await ws.send(json.dumps({"type": "ride_analytics", "found": False}))
+        else:
+            await ws.send(json.dumps(result))
+
     async def _get_ride_summary(self, ws: "ServerConnection", data: dict) -> None:
         try:
             GetRideSummaryMsg.model_validate(data)
@@ -347,4 +376,6 @@ _DISPATCH: dict[str, _Handler] = {
     "get_ride_summary": WSInbound._get_ride_summary,
     "list_rides": WSInbound._list_rides,
     "get_ride": WSInbound._get_ride,
+    "get_analytics_overview": WSInbound._get_analytics_overview,
+    "get_ride_analytics": WSInbound._get_ride_analytics,
 }
