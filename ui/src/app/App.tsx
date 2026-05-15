@@ -4,6 +4,7 @@ import { ThemeProvider, useTheme } from "./providers/ThemeProvider";
 import { HomeScreen } from "../features/home/HomeScreen";
 import { PreRideScreen } from "../features/pre-ride/PreRideScreen";
 import { RideScreen, type RideSummaryData } from "../features/ride/RideScreen";
+import { RideStartRitual } from "../features/ride-start/RideStartRitual";
 import { HistoryScreen } from "../features/history/HistoryScreen";
 import { AnalyticsScreen } from "../features/analytics/AnalyticsScreen";
 import { DevicesScreen } from "../features/devices/DevicesScreen";
@@ -13,6 +14,13 @@ import { OnboardingFlow } from "../features/onboarding/OnboardingFlow";
 import { useOnboarding } from "../features/onboarding/useOnboarding";
 import { AppNav } from "./AppNav";
 import type { AppView } from "./types";
+import type { RideConfig } from "../features/pre-ride/RideOptions";
+
+interface RideStartContext {
+  routeId: string;
+  routeName: string;
+  config: RideConfig;
+}
 
 function ThemeToggle() {
   const { isDark, toggleTheme } = useTheme();
@@ -42,9 +50,11 @@ function AppShell() {
   const [routePreSelect, setRoutePreSelect] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [rideSummary, setRideSummary] = useState<RideSummaryData | null>(null);
+  const [rideStartCtx, setRideStartCtx] = useState<RideStartContext | null>(null);
   const { done: onboardingDone, step, stepIndex, totalSteps, advance, complete, reopen } = useOnboarding();
 
   const isRiding = view === 'ride';
+  const isPreparing = view === 'preparing';
 
   const handleRideEnded = (data: RideSummaryData) => {
     setRideSummary(data);
@@ -61,6 +71,11 @@ function AppShell() {
     setView(v);
   }, []);
 
+  const handleStartRide = useCallback((routeId: string, routeName: string, config: RideConfig) => {
+    setRideStartCtx({ routeId, routeName, config });
+    setView('preparing');
+  }, []);
+
   if (isRiding) {
     return (
       <>
@@ -68,6 +83,18 @@ function AppShell() {
         <ThemeToggle />
         <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
       </>
+    );
+  }
+
+  if (isPreparing && rideStartCtx) {
+    return (
+      <RideStartRitual
+        routeId={rideStartCtx.routeId}
+        routeName={rideStartCtx.routeName}
+        config={rideStartCtx.config}
+        onReady={() => { setRideStartCtx(null); setView('ride'); }}
+        onCancel={() => { setRideStartCtx(null); setView('routes'); }}
+      />
     );
   }
 
@@ -81,7 +108,7 @@ function AppShell() {
           />
         )}
         {view === 'routes' && (
-          <PreRideScreen onStarted={() => setView('ride')} initialRouteId={routePreSelect} />
+          <PreRideScreen onStarted={() => setView('ride')} onStartRide={handleStartRide} initialRouteId={routePreSelect} />
         )}
         {view === 'summary' && (
           <RideSummaryScreen

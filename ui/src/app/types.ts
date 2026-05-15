@@ -1,1 +1,1 @@
-export type AppView = 'home' | 'routes' | 'ride' | 'summary' | 'history' | 'analytics' | 'devices' | 'settings';
+export type AppView = 'home' | 'routes' | 'preparing' | 'ride' | 'summary' | 'history' | 'analytics' | 'devices' | 'settings';

@@ -16,6 +16,7 @@ import type { RideConfig } from "./RideOptions";
 
 interface Props {
   onStarted: () => void;
+  onStartRide?: (routeId: string, routeName: string, config: RideConfig) => void;
   initialRouteId?: string | null;
 }
 
@@ -27,7 +28,7 @@ function StravaIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-export function PreRideScreen({ onStarted, initialRouteId }: Props) {
+export function PreRideScreen({ onStarted, onStartRide, initialRouteId }: Props) {
   const { sendMessage, status: wsStatus } = useWS();
   const routeLibrary = useRouteLibrary();
   const { settings: athleteSettings } = useAthleteSettings();
@@ -108,21 +109,25 @@ export function PreRideScreen({ onStarted, initialRouteId }: Props) {
 
   const handleStartWithConfig = useCallback((config: RideConfig) => {
     if (!selectedRoute) return;
-    sendMessage({
-      type: "start_ride",
-      route_id: selectedRoute.id,
-      reverse: config.reverse,
-      cutout_start_m: config.cutoutStartM,
-      cutout_end_m: config.cutoutEndM,
-      laps: config.laps,
-      ghost: config.ghost,
-      warmup_s: config.warmup ? 120 : 0,
-      cooldown_s: config.cooldown ? 120 : 0,
-      erg_mode: config.ergMode,
-      physics_mode: config.physicsMode,
-    });
-    onStarted();
-  }, [selectedRoute, sendMessage, onStarted]);
+    if (onStartRide) {
+      onStartRide(selectedRoute.id, selectedRoute.name, config);
+    } else {
+      sendMessage({
+        type: "start_ride",
+        route_id: selectedRoute.id,
+        reverse: config.reverse,
+        cutout_start_m: config.cutoutStartM,
+        cutout_end_m: config.cutoutEndM,
+        laps: config.laps,
+        ghost: config.ghost,
+        warmup_s: config.warmup ? 120 : 0,
+        cooldown_s: config.cooldown ? 120 : 0,
+        erg_mode: config.ergMode,
+        physics_mode: config.physicsMode,
+      });
+      onStarted();
+    }
+  }, [selectedRoute, sendMessage, onStarted, onStartRide]);
 
   const handleDelete = useCallback((routeId: string) => {
     if (selectedRoute?.id === routeId) setSelectedRoute(null);
