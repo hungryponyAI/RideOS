@@ -16,30 +16,42 @@ export function RideControls({ isPaused, visible, onTogglePause, onEndRide, onSh
 
   return (
     <>
-      {isPaused && (
+      {/* Centered play/pause overlay — always shown when paused, shown on mouse hover when riding */}
+      {(isPaused || visible) && (
         <div className="absolute inset-0 z-[1500] flex items-center justify-center pointer-events-none">
           <div className="pointer-events-auto flex flex-col items-center gap-3">
             <button
               type="button"
-              data-testid="resume-button"
+              data-testid={isPaused ? "resume-button" : "pause-button"}
               onClick={onTogglePause}
-              aria-label="Fahrt fortsetzen"
+              aria-label={isPaused ? "Fahrt fortsetzen" : "Fahrt pausieren"}
               className="w-[72px] h-[72px] rounded-full bg-[var(--surface)] border border-[var(--accent)] shadow-elevated flex items-center justify-center text-[var(--text)] cursor-pointer transition-colors duration-150 hover:bg-[var(--surface-soft)]"
             >
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <polygon points="5 3 19 12 5 21 5 3" />
-              </svg>
+              {isPaused ? (
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
+              ) : (
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <rect x="6" y="4" width="4" height="16" rx="1" />
+                  <rect x="14" y="4" width="4" height="16" rx="1" />
+                </svg>
+              )}
             </button>
-            <span className="text-[11px] font-medium text-[var(--text-muted)]">Fortsetzen</span>
-            <button
-              type="button"
-              data-testid="end-ride-paused"
-              onClick={onEndRide}
-              aria-label="Fahrt beenden"
-              className="mt-1 min-h-[44px] px-5 rounded-xl border border-[var(--border)] text-[11px] font-medium text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)] transition-colors duration-150 cursor-pointer"
-            >
-              Beenden
-            </button>
+            <span className="text-[11px] font-medium text-[var(--text-muted)]">
+              {isPaused ? "Fortsetzen" : "Pausieren"}
+            </span>
+            {isPaused && (
+              <button
+                type="button"
+                data-testid="end-ride-paused"
+                onClick={onEndRide}
+                aria-label="Fahrt beenden"
+                className="mt-1 min-h-[44px] px-5 rounded-xl border border-[var(--border)] text-[11px] font-medium text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)] transition-colors duration-150 cursor-pointer"
+              >
+                Beenden
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -88,34 +100,18 @@ export function RideControls({ isPaused, visible, onTogglePause, onEndRide, onSh
           </button>
         </div>
 
-        {!isPaused && (
-          <div className="flex gap-1">
-            <button
-              type="button"
-              data-testid="pause-button"
-              onClick={onTogglePause}
-              aria-label="Fahrt pausieren"
-              className="min-w-[44px] min-h-[44px] flex items-center justify-center bg-[var(--surface-soft)] backdrop-blur-md border border-[var(--border)] rounded-xl text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)] transition-colors duration-150 cursor-pointer shadow-soft"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <rect x="6" y="4" width="4" height="16" rx="1" />
-                <rect x="14" y="4" width="4" height="16" rx="1" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              data-testid="end-ride-button"
-              onClick={onEndRide}
-              aria-label="Fahrt beenden"
-              className="min-w-[44px] min-h-[44px] px-3 flex items-center gap-1.5 bg-[var(--surface-soft)] backdrop-blur-md border border-[var(--border)] rounded-xl text-[11px] font-medium text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)] transition-colors duration-150 cursor-pointer shadow-soft"
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-              </svg>
-              Beenden
-            </button>
-          </div>
-        )}
+        <button
+          type="button"
+          data-testid="end-ride-button"
+          onClick={onEndRide}
+          aria-label="Fahrt beenden"
+          className="min-w-[44px] min-h-[44px] px-3 flex items-center gap-1.5 bg-[var(--surface-soft)] backdrop-blur-md border border-[var(--border)] rounded-xl text-[11px] font-medium text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)] transition-colors duration-150 cursor-pointer shadow-soft"
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+          </svg>
+          Beenden
+        </button>
       </div>
     </>
   );

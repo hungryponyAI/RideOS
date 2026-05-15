@@ -22,13 +22,18 @@ describe("RideControls", () => {
     viewMode: "chase" as const,
   };
 
-  it("shows pause and end-ride buttons when riding", () => {
+  it("shows centered pause button and end-ride button when riding", () => {
     render(<RideControls {...baseProps} />);
     expect(screen.getByTestId("pause-button")).toBeTruthy();
     expect(screen.getByTestId("end-ride-button")).toBeTruthy();
     expect(screen.getByTestId("gear-down")).toBeTruthy();
     expect(screen.getByTestId("gear-up")).toBeTruthy();
     expect(screen.getByTestId("camera-mode-button")).toBeTruthy();
+  });
+
+  it("centered pause button hidden when not visible and not paused", () => {
+    render(<RideControls {...baseProps} visible={false} isPaused={false} />);
+    expect(screen.queryByTestId("pause-button")).toBeNull();
   });
 
   it("calls onTogglePause when pause button clicked", () => {
@@ -70,6 +75,9 @@ describe("RideControls", () => {
     render(<RideControls {...baseProps} isPaused={true} />);
     expect(screen.getByTestId("resume-button")).toBeTruthy();
     expect(screen.getByTestId("end-ride-paused")).toBeTruthy();
+    // corner end-ride-button is always present in the strip
+    expect(screen.getByTestId("end-ride-button")).toBeTruthy();
+    // centered button uses resume-button testid when paused, no separate pause-button
     expect(screen.queryByTestId("pause-button")).toBeNull();
   });
 

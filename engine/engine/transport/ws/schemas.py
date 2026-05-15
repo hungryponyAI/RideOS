@@ -93,3 +93,12 @@ class PreviewRouteMsg(BaseModel):
 
 class GetRideSummaryMsg(BaseModel):
     type: Literal["get_ride_summary"]
+
+
+class ListRidesMsg(BaseModel):
+    type: Literal["list_rides"]
+
+
+class GetRideMsg(BaseModel):
+    type: Literal["get_ride"]
+    ride_id: str

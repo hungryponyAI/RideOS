@@ -194,10 +194,10 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
       hideTimerRef.current = setTimeout(() => setShowControls(false), 2000);
     };
-    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mousemove", onMove, true);
     hideTimerRef.current = setTimeout(() => setShowControls(false), 2000);
     return () => {
-      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mousemove", onMove, true);
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     };
   }, []);

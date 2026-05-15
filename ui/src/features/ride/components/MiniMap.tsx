@@ -156,9 +156,9 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
     }
     const viewChanged = lastViewModeRef.current !== viewMode;
     lastViewModeRef.current = viewMode;
-    const center: [number, number] = ego ? [ego[1], ego[0]] : (map.getCenter().toArray() as [number, number]);
-    map.easeTo({ center, bearing: ego ? bearing : map.getBearing(), pitch, zoom, offset, duration: viewChanged ? VIEW_TWEEN_MS : POS_TWEEN_MS, easing: viewChanged ? undefined : LINEAR, essential: true });
     if (!ego) return;
+    const center: [number, number] = [ego[1], ego[0]];
+    map.easeTo({ center, bearing, pitch, zoom, offset, duration: viewChanged ? VIEW_TWEEN_MS : POS_TWEEN_MS, easing: viewChanged ? undefined : LINEAR, essential: true });
     const egoGeo = { type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [ego[1], ego[0]] }, properties: {} };
     const egoSrc = map.getSource("ego") as mapboxgl.GeoJSONSource | undefined;
     if (egoSrc) { if (liveUpdate) egoSrc.setData(egoGeo); }

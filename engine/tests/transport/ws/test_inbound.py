@@ -37,7 +37,7 @@ def test_dispatch_table_keys():
         "list_routes", "start_ride", "delete_route", "rename_route",
         "strava_get_auth_url", "strava_submit_code", "strava_sync",
         "set_paused", "strava_disconnect", "end_ride", "preview_route",
-        "get_ride_summary",
+        "get_ride_summary", "list_rides", "get_ride",
     }
     assert set(_DISPATCH.keys()) == expected
 
@@ -388,3 +388,166 @@ async def test_get_ride_summary_returns_last_ride():
     assert data["found"] is True
     assert data["avg_power_w"] == 185.0
     assert data["distance_m"] == 25400.0
+
+
+# ---------------------------------------------------------------------------
+# list_rides
+# ---------------------------------------------------------------------------
+
+def _fake_ride_row(
+    ride_id: str = "r1",
+    route_id: str | None = "route1",
+    started_at: str = "2026-05-15T10:00:00+00:00",
+    finished_at: str | None = "2026-05-15T11:00:00+00:00",
+    duration_s: float | None = 3600.0,
+    distance_m: float | None = 25000.0,
+    avg_power_w: float | None = 185.0,
+) -> MagicMock:
+    data = {
+        "id": ride_id,
+        "route_id": route_id,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_s": duration_s,
+        "distance_m": distance_m,
+        "avg_power_w": avg_power_w,
+    }
+    row = MagicMock()
+    row.__getitem__ = lambda self, k: data[k]
+    return row
+
+
+@pytest.mark.asyncio
+async def test_list_rides_no_repo_is_noop():
+    inbound = WSInbound(_ctx())
+    ws = _fake_ws()
+    await inbound.handle(ws, json.dumps({"type": "list_rides"}))
+    ws.send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_list_rides_empty_returns_empty_list():
+    ride_repo = MagicMock()
+    ride_repo.list_rides = MagicMock(return_value=[])
+    ctx = _ctx(ride_repo=ride_repo)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "list_rides"}))
+
+    ws.send.assert_called_once()
+    data = json.loads(ws.send.call_args.args[0])
+    assert data["type"] == "ride_list"
+    assert data["rides"] == []
+
+
+@pytest.mark.asyncio
+async def test_list_rides_returns_rides_sorted_newest_first():
+    rows = [
+        _fake_ride_row("r2", started_at="2026-05-15T12:00:00+00:00"),
+        _fake_ride_row("r1", started_at="2026-05-14T10:00:00+00:00"),
+    ]
+    ride_repo = MagicMock()
+    ride_repo.list_rides = MagicMock(return_value=rows)
+    ctx = _ctx(ride_repo=ride_repo)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "list_rides"}))
+
+    data = json.loads(ws.send.call_args.args[0])
+    assert data["rides"][0]["id"] == "r2"
+    assert data["rides"][1]["id"] == "r1"
+
+
+@pytest.mark.asyncio
+async def test_list_rides_completed_flag():
+    rows = [
+        _fake_ride_row("r1", finished_at="2026-05-15T11:00:00+00:00"),
+        _fake_ride_row("r2", finished_at=None),
+    ]
+    ride_repo = MagicMock()
+    ride_repo.list_rides = MagicMock(return_value=rows)
+    ctx = _ctx(ride_repo=ride_repo)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "list_rides"}))
+
+    data = json.loads(ws.send.call_args.args[0])
+    assert data["rides"][0]["completed"] is True
+    assert data["rides"][1]["completed"] is False
+
+
+# ---------------------------------------------------------------------------
+# get_ride
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_get_ride_no_repo_is_noop():
+    inbound = WSInbound(_ctx())
+    ws = _fake_ws()
+    await inbound.handle(ws, json.dumps({"type": "get_ride", "ride_id": "r1"}))
+    ws.send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_ride_not_found():
+    ride_repo = MagicMock()
+    ride_repo.get_ride = MagicMock(return_value=None)
+    ctx = _ctx(ride_repo=ride_repo)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "get_ride", "ride_id": "missing"}))
+
+    ws.send.assert_called_once()
+    data = json.loads(ws.send.call_args.args[0])
+    assert data["type"] == "ride_detail"
+    assert data["found"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_ride_returns_ride_detail():
+    data_map = {
+        "id": "r1",
+        "route_id": "route1",
+        "started_at": "2026-05-15T10:00:00+00:00",
+        "finished_at": "2026-05-15T11:00:00+00:00",
+        "duration_s": 3600.0,
+        "distance_m": 25000.0,
+        "avg_power_w": 185.0,
+        "max_power_w": 310.0,
+    }
+    row = MagicMock()
+    row.__getitem__ = lambda self, k: data_map[k]
+    ride_repo = MagicMock()
+    ride_repo.get_ride = MagicMock(return_value=row)
+    ctx = _ctx(ride_repo=ride_repo)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "get_ride", "ride_id": "r1"}))
+
+    ws.send.assert_called_once()
+    data = json.loads(ws.send.call_args.args[0])
+    assert data["type"] == "ride_detail"
+    assert data["found"] is True
+    ride = data["ride"]
+    assert ride["id"] == "r1"
+    assert ride["duration_s"] == 3600.0
+    assert ride["avg_power_w"] == 185.0
+    assert ride["completed"] is True
+
+
+@pytest.mark.asyncio
+async def test_get_ride_missing_ride_id_rejected():
+    ride_repo = MagicMock()
+    ctx = _ctx(ride_repo=ride_repo)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "get_ride"}))  # ride_id missing
+
+    ws.send.assert_not_called()
+    ride_repo.get_ride.assert_not_called()

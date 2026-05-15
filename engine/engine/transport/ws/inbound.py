@@ -18,7 +18,9 @@ from engine.transport.ws.schemas import (
     DeleteRouteMsg,
     EndRideMsg,
     GearShiftMsg,
+    GetRideMsg,
     GetRideSummaryMsg,
+    ListRidesMsg,
     ListRoutesMsg,
     LoadRouteContentMsg,
     LoadRouteMsg,
@@ -239,6 +241,69 @@ class WSInbound:
         if result is not None:
             await ws.send(json.dumps(result))
 
+    async def _list_rides(self, ws: "ServerConnection", data: dict) -> None:
+        try:
+            ListRidesMsg.model_validate(data)
+        except ValidationError:
+            return
+        ctx = self._ctx
+        if ctx.ride_repo is None:
+            return
+        rows = ctx.ride_repo.list_rides()
+        rides = []
+        for row in rows:
+            route_name: str | None = None
+            if ctx.library is not None and row["route_id"]:
+                entry = ctx.library._routes.get(row["route_id"])
+                if entry is not None:
+                    route_name = entry.name
+            rides.append({
+                "id": row["id"],
+                "route_id": row["route_id"],
+                "route_name": route_name,
+                "started_at": row["started_at"],
+                "finished_at": row["finished_at"],
+                "duration_s": row["duration_s"],
+                "distance_m": row["distance_m"],
+                "avg_power_w": row["avg_power_w"],
+                "completed": row["finished_at"] is not None,
+            })
+        await ws.send(json.dumps({"type": "ride_list", "rides": rides}))
+
+    async def _get_ride(self, ws: "ServerConnection", data: dict) -> None:
+        try:
+            msg = GetRideMsg.model_validate(data)
+        except ValidationError:
+            return
+        ctx = self._ctx
+        if ctx.ride_repo is None:
+            return
+        row = ctx.ride_repo.get_ride(msg.ride_id)
+        if row is None:
+            await ws.send(json.dumps({"type": "ride_detail", "found": False}))
+            return
+        route_name: str | None = None
+        if ctx.library is not None and row["route_id"]:
+            entry = ctx.library._routes.get(row["route_id"])
+            if entry is not None:
+                route_name = entry.name
+        await ws.send(json.dumps({
+            "type": "ride_detail",
+            "found": True,
+            "ride": {
+                "id": row["id"],
+                "route_id": row["route_id"],
+                "route_name": route_name,
+                "started_at": row["started_at"],
+                "finished_at": row["finished_at"],
+                "duration_s": row["duration_s"],
+                "distance_m": row["distance_m"],
+                "avg_power_w": row["avg_power_w"],
+                "max_power_w": row["max_power_w"],
+                "completed": row["finished_at"] is not None,
+            },
+        }))
+
     async def _get_ride_summary(self, ws: "ServerConnection", data: dict) -> None:
         try:
             GetRideSummaryMsg.model_validate(data)
@@ -280,4 +345,6 @@ _DISPATCH: dict[str, _Handler] = {
     "end_ride": WSInbound._end_ride,
     "preview_route": WSInbound._preview_route,
     "get_ride_summary": WSInbound._get_ride_summary,
+    "list_rides": WSInbound._list_rides,
+    "get_ride": WSInbound._get_ride,
 }
