@@ -256,6 +256,7 @@ async def test_start_ride_defaults_passed_to_service():
     assert msg_arg["erg_mode"] is False
     assert msg_arg["physics_mode"] is False
     assert msg_arg["reverse"] is False
+    assert msg_arg["paused"] is False
 
 
 @pytest.mark.asyncio

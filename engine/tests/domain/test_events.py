@@ -81,6 +81,12 @@ def test_ride_started():
     assert e.route_id == "abc"
     assert e.laps == 2
     assert not e.erg_mode
+    assert e.paused is False
+
+
+def test_ride_started_can_begin_paused():
+    e = RideStarted(route_id="abc", laps=1, warmup_s=0, cooldown_s=0, erg_mode=False, t_mono=0.0, paused=True)
+    assert e.paused is True
 
 
 def test_ride_ended():

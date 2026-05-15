@@ -77,7 +77,7 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
   const [announcement, setAnnouncement] = useState("");
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [viewMode, setViewMode] = useState<MapViewMode>("chase");
-  const prevStatusRef = useRef(status);
+  const prevStatusRef = useRef<typeof status>("connecting");
   const endedRef = useRef(false);
 
   // Ghost trend tracking

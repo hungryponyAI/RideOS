@@ -31,7 +31,7 @@ export function RideStartRitual({ routeId, routeName, config, onReady, onCancel 
   onCancelRef.current = onCancel;
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Send start_ride + set_paused once when WS is connected
+  // Start setup paused; RideScreen's play button sends resume when the rider starts.
   useEffect(() => {
     if (startedRef.current) return;
     if (status !== "connected" && status !== "live") return;
@@ -48,6 +48,7 @@ export function RideStartRitual({ routeId, routeName, config, onReady, onCancel 
       cooldown_s: config.cooldown ? 120 : 0,
       erg_mode: config.ergMode,
       physics_mode: config.physicsMode,
+      paused: true,
     });
     sendMessage({ type: "set_paused", paused: true });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -78,7 +79,6 @@ export function RideStartRitual({ routeId, routeName, config, onReady, onCancel 
         if (c <= 1) {
           clearInterval(countdownRef.current!);
           countdownRef.current = null;
-          sendMessage({ type: "set_paused", paused: false });
           onReadyRef.current();
           return 0;
         }

@@ -47,6 +47,7 @@ class StartRideMsg(BaseModel):
     erg_mode: bool = False
     ghost: bool = False
     physics_mode: bool = False
+    paused: bool = False
 
 
 class DeleteRouteMsg(BaseModel):

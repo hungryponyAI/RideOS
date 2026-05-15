@@ -68,6 +68,7 @@ class RideStarted:
     cooldown_s: int
     erg_mode: bool
     t_mono: float
+    paused: bool = False
 
 
 @dataclass(frozen=True)

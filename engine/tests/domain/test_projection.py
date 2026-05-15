@@ -11,7 +11,7 @@ from engine.domain.events import (
     RouteLoaded,
     TelemetryReading,
 )
-from engine.domain.projection import RideStateProjection, RideStateView
+from engine.domain.projection import RideStateProjection
 
 
 def proj() -> RideStateProjection:
@@ -139,6 +139,13 @@ def test_ride_started_erg_mode_propagates():
     p = proj()
     v = p.apply(RideStarted(route_id="r2", laps=2, warmup_s=120, cooldown_s=60, erg_mode=True, t_mono=0.0))
     assert v.erg_mode is True
+
+
+def test_ride_started_can_keep_ride_paused():
+    p = proj()
+    v = p.apply(RideStarted(route_id="r3", laps=1, warmup_s=0, cooldown_s=0, erg_mode=False, t_mono=0.0, paused=True))
+    assert v.paused is True
+    assert v.route_id == "r3"
 
 
 # ── RideEnded ─────────────────────────────────────────────────────────────────

@@ -103,6 +103,7 @@ describe("RideStartRitual", () => {
     expect(startMsg).toBeTruthy();
     expect(JSON.parse(startMsg!).route_id).toBe("r42");
     expect(JSON.parse(startMsg!).ghost).toBe(true);
+    expect(JSON.parse(startMsg!).paused).toBe(true);
     const pausedMsg = mockWs.sentMessages.find(m => {
       const p = JSON.parse(m);
       return p.type === "set_paused" && p.paused === true;
@@ -131,7 +132,7 @@ describe("RideStartRitual", () => {
     expect(screen.getByTestId("cancel-countdown")).toBeTruthy();
   });
 
-  it("countdown sends set_paused false and calls onReady when complete", () => {
+  it("countdown opens the ride screen without resuming the backend", () => {
     const onReady = vi.fn();
     render(
       <Wrapper>
@@ -155,7 +156,7 @@ describe("RideStartRitual", () => {
       const p = JSON.parse(m);
       return p.type === "set_paused" && p.paused === false;
     });
-    expect(resumeMsg).toBeTruthy();
+    expect(resumeMsg).toBeUndefined();
     expect(onReady).toHaveBeenCalledOnce();
   });
 

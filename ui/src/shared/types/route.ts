@@ -142,6 +142,7 @@ export interface StartRideMessage {
   cooldown_s: number;
   erg_mode: boolean;
   physics_mode: boolean;
+  paused?: boolean;
 }
 
 export interface PreviewRouteOutMessage {

@@ -189,6 +189,7 @@ class RideService:
         warmup_s = max(0, int(msg.get("warmup_s", 0)))
         cooldown_s = max(0, int(msg.get("cooldown_s", 0)))
         use_physics = bool(msg.get("physics_mode", False))
+        initially_paused = bool(msg.get("paused", False))
         rid_snapshot = route_id
 
         def _on_complete(elapsed_s: int) -> None:
@@ -207,7 +208,9 @@ class RideService:
                 t_mono=self._clock(),
             ))
 
-        speed_fn = lambda: self._projection.view.speed_kmh  # noqa: E731
+        def speed_fn() -> Optional[float]:
+            return 0.0 if self._projection.view.paused else self._projection.view.speed_kmh
+
         physics_config = None
         power_fn = None
         if use_physics:
@@ -215,7 +218,9 @@ class RideService:
                 rider_mass_kg=self._athlete.weight_kg,
                 cda_m2=estimate_cda(self._athlete.weight_kg, self._athlete.height_cm),
             )
-            power_fn = lambda: self._projection.view.power_w  # noqa: E731
+
+            def power_fn() -> Optional[float]:
+                return None if self._projection.view.paused else self._projection.view.power_w
 
         ctx.phase_task = asyncio.create_task(
             run_phases(
@@ -242,11 +247,12 @@ class RideService:
             cooldown_s=cooldown_s,
             erg_mode=erg_mode,
             t_mono=self._clock(),
+            paused=initially_paused,
         ))
         _log.info(
-            "start_ride: route=%s reverse=%s laps=%d warmup=%ds cooldown=%ds erg=%s ghost=%s physics=%s",
+            "start_ride: route=%s reverse=%s laps=%d warmup=%ds cooldown=%ds erg=%s ghost=%s physics=%s paused=%s",
             route_id, msg.get("reverse", False), laps, warmup_s, cooldown_s, erg_mode, use_ghost,
-            use_physics,
+            use_physics, initially_paused,
         )
 
     async def end_ride(self, ctx: "RouteContext") -> None:

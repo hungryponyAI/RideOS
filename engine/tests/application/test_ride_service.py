@@ -16,6 +16,7 @@ from engine.domain.events import (
     RidePauseToggled,
     RidePhaseChanged,
     RideStarted,
+    TelemetryReading,
 )
 from engine.domain.projection import RideStateProjection
 from engine.gears.engine import GearEngine
@@ -150,6 +151,56 @@ async def test_start_ride_publishes_ride_started(route_ctx_factory):
     assert ctx.phase_task is not None
 
     # cleanup so the spawned task doesn't leak
+    ctx.stop_event.set()
+    if ctx.phase_task is not None:
+        await asyncio.wait_for(ctx.phase_task, timeout=2.0)
+
+
+async def test_start_ride_can_begin_paused_for_countdown(route_ctx_factory):
+    ctx, _, route_id = route_ctx_factory()
+    bus = AsyncioEventBus()
+    captured: list[RideStarted] = []
+    bus.subscribe(RideStarted, captured.append)
+    proj = RideStateProjection()
+    bus.subscribe(RideStarted, proj.apply)
+    bus.subscribe(RidePauseToggled, proj.apply)
+    svc = RideService(AthleteProfile(), GearEngine(), bus, ErgDebouncer(bus), proj, clock=lambda: 7.0)
+
+    await svc.start_ride(ctx, {
+        "route_id": route_id, "laps": 1, "warmup_s": 0, "cooldown_s": 0, "paused": True,
+    })
+
+    assert captured[0].paused is True
+    assert proj.view.paused is True
+
+    svc.set_paused(False)
+    assert proj.view.paused is False
+
+    ctx.stop_event.set()
+    if ctx.phase_task is not None:
+        await asyncio.wait_for(ctx.phase_task, timeout=2.0)
+
+
+async def test_start_ride_paused_freezes_tracker_until_resume(route_ctx_factory):
+    ctx, _, route_id = route_ctx_factory()
+    bus = AsyncioEventBus()
+    proj = RideStateProjection()
+    bus.subscribe(RideStarted, proj.apply)
+    bus.subscribe(RidePauseToggled, proj.apply)
+    svc = RideService(AthleteProfile(), GearEngine(), bus, ErgDebouncer(bus), proj, clock=lambda: 7.0)
+
+    await svc.start_ride(ctx, {"route_id": route_id, "laps": 1, "paused": True})
+    proj.apply(TelemetryReading(speed_kmh=36.0, power_w=180, cadence_rpm=90.0, t_mono=7.1))
+    await asyncio.sleep(0.35)
+
+    assert ctx.tracker is not None
+    assert ctx.tracker.position_m == pytest.approx(0.0)
+
+    svc.set_paused(False)
+    await asyncio.sleep(0.35)
+
+    assert ctx.tracker.position_m > 0.0
+
     ctx.stop_event.set()
     if ctx.phase_task is not None:
         await asyncio.wait_for(ctx.phase_task, timeout=2.0)

@@ -110,7 +110,7 @@ class RideStateProjection:
             v = replace(
                 v,
                 route_id=event.route_id,
-                paused=False,
+                paused=event.paused,
                 erg_mode=event.erg_mode,
                 ride_start_mono=event.t_mono,
                 position_m=0.0,
