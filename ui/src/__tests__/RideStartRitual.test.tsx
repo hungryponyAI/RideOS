@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, act, screen, fireEvent } from "@testing-library/react";
-import { useEffect, useCallback } from "react";
 import { WSProvider } from "../shared/ws/WSProvider";
 import { RideStartRitual } from "../features/ride-start/RideStartRitual";
 import type { RideConfig } from "../features/pre-ride/RideOptions";

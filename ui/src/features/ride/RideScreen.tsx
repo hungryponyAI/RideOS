@@ -30,6 +30,52 @@ function formatTime(totalS: number): string {
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
+function formatGhostGap(gapS: number | null): string {
+  if (gapS == null) return "–";
+  const rounded = Math.round(gapS);
+  return rounded > 0 ? `+${rounded}s` : `${rounded}s`;
+}
+
+function formatDistanceRemaining(distanceM: number | null | undefined): string {
+  if (distanceM == null) return "–";
+  return `${(distanceM / 1000).toFixed(1)} km`;
+}
+
+function ghostGapCaption(gapS: number | null): string {
+  if (gapS == null) return "Kein Ghost";
+  if (gapS > 0) return "Ghost voraus";
+  if (gapS < 0) return "Du voraus";
+  return "Gleichauf";
+}
+
+function RideStatusMetric({
+  label,
+  value,
+  caption,
+  valueClassName = "text-[var(--text)]",
+}: {
+  label: string;
+  value: string;
+  caption: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className="min-w-0 flex items-baseline justify-between gap-3 border-b border-[var(--border)] pb-2 last:border-b-0 last:pb-0">
+      <div className="min-w-0 flex flex-col gap-0.5">
+        <span className="text-[9px] font-sans font-medium uppercase tracking-[0.15em] text-[var(--text-subtle)]">
+          {label}
+        </span>
+        <span className="text-[10px] font-medium text-[var(--text-muted)] truncate">
+          {caption}
+        </span>
+      </div>
+      <span className={`shrink-0 font-data text-[18px] font-bold tabular-nums leading-none ${valueClassName}`}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
 function EndRideConfirmation({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
   return (
     <div className="fixed inset-0 z-[2000] flex items-center justify-center" role="dialog" aria-modal="true" aria-label="Fahrt beenden bestätigen">
@@ -205,6 +251,8 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
   const stored = routeLoaded ? routeRef.current : null;
   const positionM = t?.position_m ?? null;
   const controlsVisible = (isPaused || showControls) && !isCompleted;
+  const elapsedValue = t?.elapsed_s != null ? formatTime(t.elapsed_s) : "0:00";
+  const distanceRemainingValue = formatDistanceRemaining(t?.dist_remaining_m);
 
   return (
     <div className="w-screen h-screen overflow-hidden relative bg-[var(--bg)]">
@@ -304,25 +352,28 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
         </HudPanel>
       </div>
 
-      {/* Top-right: ghost delta + ride time + distance */}
-      <div className={`absolute top-[40px] right-4 z-10 flex flex-col gap-1.5 items-end transition-opacity duration-500 motion-reduce:transition-none ${isCompleted ? "opacity-40" : "opacity-100"}`}>
-        {ghostGap != null && (
-          <div className="bg-[var(--surface-soft)] backdrop-blur-md border border-[var(--border)] rounded-lg px-2.5 py-1.5 shadow-soft">
-            <span className={`text-[12px] font-data font-bold tabular-nums transition-colors duration-300 ${ghostColor}`}>
-              {ghostGap > 0 ? `+${Math.round(ghostGap)}s` : `${Math.round(ghostGap)}s`}
-            </span>
-          </div>
-        )}
-        {t?.elapsed_s != null && (
-          <div className="bg-[var(--surface-soft)] backdrop-blur-md border border-[var(--border)] rounded-lg px-2.5 py-1.5 shadow-soft">
-            <span className="text-[12px] font-data tabular-nums text-[var(--text-muted)]">{formatTime(t.elapsed_s)}</span>
-          </div>
-        )}
-        {t?.dist_remaining_m != null && (
-          <div className="bg-[var(--surface-soft)] backdrop-blur-md border border-[var(--border)] rounded-lg px-2.5 py-1.5 shadow-soft">
-            <span className="text-[11px] font-medium text-[var(--text-muted)]">{(t.dist_remaining_m / 1000).toFixed(1)} km</span>
-          </div>
-        )}
+      {/* Top-right: ride status HUD */}
+      <div className={`absolute top-[40px] right-4 z-10 w-[min(280px,calc(100vw-2rem))] transition-opacity duration-500 motion-reduce:transition-none ${isCompleted ? "opacity-40" : "opacity-100"}`}>
+        <HudPanel className="p-3 flex flex-col gap-2">
+          <RideStatusMetric
+            label="Ghost Gap"
+            caption={ghostGapCaption(ghostGap)}
+            value={formatGhostGap(ghostGap)}
+            valueClassName={`transition-colors duration-300 ${ghostColor}`}
+          />
+          <RideStatusMetric
+            label="Fahrzeit"
+            caption="Aktive Zeit"
+            value={elapsedValue}
+            valueClassName="text-[var(--text)]"
+          />
+          <RideStatusMetric
+            label="Reststrecke"
+            caption="Bis Ziel"
+            value={distanceRemainingValue}
+            valueClassName="text-[var(--text)]"
+          />
+        </HudPanel>
       </div>
 
       {/* Centre banners: ride phase + ERG countdown + completed */}

@@ -252,4 +252,28 @@ describe("RideScreen – ride controls integration", () => {
     const announcer = screen.getByTestId("ride-announcer");
     expect(announcer.textContent).toBe("Fahrt beendet");
   });
+
+  it("renders labeled ride status metrics", () => {
+    render(
+      <WSProvider>
+        <RideScreen isDark={true} />
+      </WSProvider>
+    );
+    openWs();
+    simulateTelemetry({
+      ghost_time_gap_s: 42,
+      elapsed_s: 3661,
+      dist_remaining_m: 12500,
+    });
+
+    expect(screen.getByText("Ghost Gap")).toBeTruthy();
+    expect(screen.getByText("Ghost voraus")).toBeTruthy();
+    expect(screen.getByText("+42s")).toBeTruthy();
+    expect(screen.getByText("Fahrzeit")).toBeTruthy();
+    expect(screen.getByText("Aktive Zeit")).toBeTruthy();
+    expect(screen.getByText("1:01:01")).toBeTruthy();
+    expect(screen.getByText("Reststrecke")).toBeTruthy();
+    expect(screen.getByText("Bis Ziel")).toBeTruthy();
+    expect(screen.getByText("12.5 km")).toBeTruthy();
+  });
 });
