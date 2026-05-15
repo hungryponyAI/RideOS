@@ -17,6 +17,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from engine.transport.ws.inbound import WSInbound
 
 if TYPE_CHECKING:
+    from engine.adapters.persistence.sqlite.ride_repo import SqliteRideRepo
     from engine.application.ride_service import RideService
     from engine.application.route_service import RouteService
     from engine.application.strava_service import StravaService
@@ -55,6 +56,7 @@ class RouteContext:
     route_service: "RouteService | None" = None
     strava_service: "StravaService | None" = None
     projection: "RideStateProjection | None" = None
+    ride_repo: "SqliteRideRepo | None" = None
 
 
 async def broadcast_loop(

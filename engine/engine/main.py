@@ -180,6 +180,7 @@ async def main() -> int:
         route_service=route_service,
         strava_service=strava_service,
         projection=projection,
+        ride_repo=_ride_repo,
     )
 
     shifter_adapter = KeyboardShifterAdapter(gear_engine, bus)

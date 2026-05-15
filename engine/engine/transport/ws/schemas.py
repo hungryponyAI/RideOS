@@ -89,3 +89,7 @@ class EndRideMsg(BaseModel):
 class PreviewRouteMsg(BaseModel):
     type: Literal["preview_route"]
     route_id: str
+
+
+class GetRideSummaryMsg(BaseModel):
+    type: Literal["get_ride_summary"]

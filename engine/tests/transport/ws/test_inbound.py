@@ -37,6 +37,7 @@ def test_dispatch_table_keys():
         "list_routes", "start_ride", "delete_route", "rename_route",
         "strava_get_auth_url", "strava_submit_code", "strava_sync",
         "set_paused", "strava_disconnect", "end_ride", "preview_route",
+        "get_ride_summary",
     }
     assert set(_DISPATCH.keys()) == expected
 
@@ -334,3 +335,56 @@ async def test_rename_route_strips_whitespace():
     }))
 
     route_service.rename_route.assert_called_once_with(ctx, "r1", "My Route")
+
+
+# ---------------------------------------------------------------------------
+# get_ride_summary
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_get_ride_summary_no_repo_is_noop():
+    inbound = WSInbound(_ctx())
+    ws = _fake_ws()
+    await inbound.handle(ws, json.dumps({"type": "get_ride_summary"}))
+    ws.send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_ride_summary_empty_returns_not_found():
+    ride_repo = MagicMock()
+    ride_repo.list_rides = MagicMock(return_value=[])
+    ctx = _ctx(ride_repo=ride_repo)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "get_ride_summary"}))
+
+    ws.send.assert_called_once()
+    data = json.loads(ws.send.call_args.args[0])
+    assert data["type"] == "ride_summary"
+    assert data["found"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_ride_summary_returns_last_ride():
+    row = MagicMock()
+    row.__getitem__ = lambda self, k: {
+        "duration_s": 3600.0,
+        "distance_m": 25400.0,
+        "avg_power_w": 185.0,
+        "max_power_w": 310.0,
+    }[k]
+    ride_repo = MagicMock()
+    ride_repo.list_rides = MagicMock(return_value=[row])
+    ctx = _ctx(ride_repo=ride_repo)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "get_ride_summary"}))
+
+    ws.send.assert_called_once()
+    data = json.loads(ws.send.call_args.args[0])
+    assert data["type"] == "ride_summary"
+    assert data["found"] is True
+    assert data["avg_power_w"] == 185.0
+    assert data["distance_m"] == 25400.0

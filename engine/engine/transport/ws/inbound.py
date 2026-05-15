@@ -18,6 +18,7 @@ from engine.transport.ws.schemas import (
     DeleteRouteMsg,
     EndRideMsg,
     GearShiftMsg,
+    GetRideSummaryMsg,
     ListRoutesMsg,
     LoadRouteContentMsg,
     LoadRouteMsg,
@@ -238,6 +239,28 @@ class WSInbound:
         if result is not None:
             await ws.send(json.dumps(result))
 
+    async def _get_ride_summary(self, ws: "ServerConnection", data: dict) -> None:
+        try:
+            GetRideSummaryMsg.model_validate(data)
+        except ValidationError:
+            return
+        ctx = self._ctx
+        if ctx.ride_repo is None:
+            return
+        rides = ctx.ride_repo.list_rides()
+        if not rides:
+            await ws.send(json.dumps({"type": "ride_summary", "found": False}))
+            return
+        last = rides[0]
+        await ws.send(json.dumps({
+            "type": "ride_summary",
+            "found": True,
+            "duration_s": last["duration_s"],
+            "distance_m": last["distance_m"],
+            "avg_power_w": last["avg_power_w"],
+            "max_power_w": last["max_power_w"],
+        }))
+
 
 # Dispatch table: one entry per supported message type.
 _DISPATCH: dict[str, _Handler] = {
@@ -256,4 +279,5 @@ _DISPATCH: dict[str, _Handler] = {
     "strava_disconnect": WSInbound._strava_disconnect,
     "end_ride": WSInbound._end_ride,
     "preview_route": WSInbound._preview_route,
+    "get_ride_summary": WSInbound._get_ride_summary,
 }

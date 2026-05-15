@@ -57,7 +57,11 @@ function AppShell() {
   const isPreparing = view === 'preparing';
 
   const handleRideEnded = (data: RideSummaryData) => {
-    setRideSummary(data);
+    setRideSummary({
+      ...data,
+      route_name: rideStartCtx?.routeName ?? null,
+      route_id: rideStartCtx?.routeId ?? null,
+    });
     setView('summary');
   };
 
@@ -92,7 +96,7 @@ function AppShell() {
         routeId={rideStartCtx.routeId}
         routeName={rideStartCtx.routeName}
         config={rideStartCtx.config}
-        onReady={() => { setRideStartCtx(null); setView('ride'); }}
+        onReady={() => { setView('ride'); }}
         onCancel={() => { setRideStartCtx(null); setView('routes'); }}
       />
     );
@@ -113,7 +117,16 @@ function AppShell() {
         {view === 'summary' && (
           <RideSummaryScreen
             summaryData={rideSummary}
-            onReturnHome={() => { setRideSummary(null); setView('home'); }}
+            onReturnHome={() => { setRideSummary(null); setRideStartCtx(null); setView('home'); }}
+            onRideAgain={rideSummary?.route_id
+              ? () => {
+                  const id = rideSummary!.route_id!;
+                  setRideSummary(null);
+                  setRideStartCtx(null);
+                  handleOpenRoutes(id);
+                }
+              : undefined
+            }
           />
         )}
         {view === 'history' && <HistoryScreen />}

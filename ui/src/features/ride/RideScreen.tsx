@@ -17,6 +17,10 @@ import { RideControls } from "./components/RideControls";
 export interface RideSummaryData {
   elapsed_s: number | null;
   reason: "completed" | "user_ended";
+  route_name?: string | null;
+  route_id?: string | null;
+  distance_m?: number | null;
+  ghost_time_gap_s?: number | null;
 }
 
 function formatTime(totalS: number): string {
@@ -146,9 +150,11 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
     endedRef.current = true;
     const reason = t?.ended_reason === "user_ended" ? "user_ended" : "completed";
     const elapsed = t?.elapsed_s ?? null;
+    const distance_m = t?.position_m ?? null;
+    const ghost_time_gap_s = t?.ghost_time_gap_s ?? null;
     const delay = reason === "completed" ? 1500 : 0;
     const timer = setTimeout(() => {
-      onRideEnded?.({ elapsed_s: elapsed, reason });
+      onRideEnded?.({ elapsed_s: elapsed, reason, distance_m, ghost_time_gap_s });
     }, delay);
     return () => clearTimeout(timer);
   }, [isCompleted, t?.ended_reason, t?.elapsed_s, onRideEnded]);
