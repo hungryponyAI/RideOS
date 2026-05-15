@@ -3,18 +3,29 @@ import type { ElevationChartDatum } from "../../../shared/types/route";
 
 interface Props {
   data: ElevationChartDatum[] | null;
+  gradesPct: number[] | null;
   positionM: number | null;
+  ghostDistM?: number | null;
 }
 
 const WINDOW_M = 10_000;
 const LABEL_STEP_M = 2_000;
+const CLIMB_THRESHOLD_PCT = 4;
+const DESCENT_THRESHOLD_PCT = -3;
 
-export const ElevationProfile = memo(function ElevationProfile({ data, positionM }: Props) {
+type TerrainType = "climb" | "descent" | "flat";
+
+function terrainType(grade: number): TerrainType {
+  if (grade >= CLIMB_THRESHOLD_PCT) return "climb";
+  if (grade <= DESCENT_THRESHOLD_PCT) return "descent";
+  return "flat";
+}
+
+export const ElevationProfile = memo(function ElevationProfile({ data, gradesPct, positionM, ghostDistM }: Props) {
   const chart = useMemo(() => {
     const hasRoute = data !== null && data.length >= 2;
-    if (!hasRoute) {
-      return { pathD: `M0,100 L1000,100`, baseLabels: [] as Array<{ xPct: number; label: string }>, posXPct: null, hasRoute: false, elevMin: null, elevMax: null };
-    }
+    const empty = { pathD: `M0,100 L1000,100`, baseLabels: [] as Array<{ xPct: number; label: string }>, posXPct: null, ghostXPct: null, hasRoute: false, elevMin: null, elevMax: null, terrainRects: [] as Array<{ x: number; w: number; type: TerrainType }> };
+    if (!hasRoute) return empty;
 
     const totalDistM = data![data!.length - 1].dist;
     const posM = positionM ?? 0;
@@ -26,9 +37,7 @@ export const ElevationProfile = memo(function ElevationProfile({ data, positionM
     }
 
     const visible = data!.filter(d => d.dist >= xMin && d.dist <= xMax);
-    if (visible.length < 2) {
-      return { pathD: `M0,100 L1000,100`, baseLabels: [] as Array<{ xPct: number; label: string }>, posXPct: null, hasRoute: true, elevMin: null, elevMax: null };
-    }
+    if (visible.length < 2) return { ...empty, hasRoute: true };
 
     const elevMin = Math.min(...visible.map(d => d.elev));
     const elevMax = Math.max(...visible.map(d => d.elev));
@@ -54,8 +63,42 @@ export const ElevationProfile = memo(function ElevationProfile({ data, positionM
         ? ((positionM - xMin) / span) * 100
         : null;
 
-    return { pathD, baseLabels, posXPct, hasRoute: true, elevMin: Math.round(elevMin), elevMax: Math.round(elevMax) };
-  }, [data, positionM]);
+    const ghostXPct =
+      ghostDistM != null && ghostDistM >= xMin && ghostDistM <= xMax
+        ? ((ghostDistM - xMin) / span) * 100
+        : null;
+
+    // Terrain highlight rects at the bottom strip
+    const terrainRects: Array<{ x: number; w: number; type: TerrainType }> = [];
+    if (gradesPct && gradesPct.length === data!.length) {
+      const visibleWithGrades = data!
+        .map((d, i) => ({ dist: d.dist, grade: gradesPct[i] }))
+        .filter(d => d.dist >= xMin && d.dist <= xMax);
+
+      if (visibleWithGrades.length >= 2) {
+        let curType: TerrainType = terrainType(visibleWithGrades[0].grade);
+        let segX = toX(visibleWithGrades[0].dist);
+
+        for (let i = 1; i < visibleWithGrades.length; i++) {
+          const t = terrainType(visibleWithGrades[i].grade);
+          if (t !== curType) {
+            const endX = toX(visibleWithGrades[i].dist);
+            if (curType !== "flat" && endX > segX) {
+              terrainRects.push({ x: segX, w: endX - segX, type: curType });
+            }
+            curType = t;
+            segX = endX;
+          }
+        }
+        const lastX = toX(visibleWithGrades[visibleWithGrades.length - 1].dist);
+        if (curType !== "flat" && lastX > segX) {
+          terrainRects.push({ x: segX, w: lastX - segX, type: curType });
+        }
+      }
+    }
+
+    return { pathD, baseLabels, posXPct, ghostXPct, hasRoute: true, elevMin: Math.round(elevMin), elevMax: Math.round(elevMax), terrainRects };
+  }, [data, gradesPct, positionM, ghostDistM]);
 
   return (
     <div className="w-full h-full flex flex-col bg-[var(--bg)]">
@@ -67,6 +110,7 @@ export const ElevationProfile = memo(function ElevationProfile({ data, positionM
               <stop offset="100%" stopColor="#74AFCB" stopOpacity="0" />
             </linearGradient>
           </defs>
+
           <path
             d={chart.pathD}
             fill={chart.hasRoute ? "url(#elevGrad)" : "var(--chart-empty)"}
@@ -74,6 +118,44 @@ export const ElevationProfile = memo(function ElevationProfile({ data, positionM
             strokeWidth="1.5"
             vectorEffect="non-scaling-stroke"
           />
+
+          {/* Terrain highlight strip */}
+          {chart.terrainRects.map((r, i) => (
+            <rect
+              key={i}
+              x={r.x}
+              y={96}
+              width={r.w}
+              height={4}
+              fill={r.type === "climb" ? "#E58B4A" : "#74AFCB"}
+              fillOpacity={r.type === "climb" ? 0.7 : 0.5}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+
+          {/* Ghost position marker */}
+          {chart.ghostXPct !== null && (
+            <>
+              <line
+                x1={chart.ghostXPct * 10} y1={0}
+                x2={chart.ghostXPct * 10} y2={96}
+                stroke="#74AFCB"
+                strokeWidth="1"
+                strokeOpacity="0.55"
+                strokeDasharray="4 3"
+                vectorEffect="non-scaling-stroke"
+              />
+              <circle
+                cx={chart.ghostXPct * 10} cy={50}
+                r={2.5}
+                fill="#74AFCB"
+                fillOpacity="0.45"
+                vectorEffect="non-scaling-stroke"
+              />
+            </>
+          )}
+
+          {/* Rider position marker */}
           {chart.posXPct !== null && (
             <>
               <line

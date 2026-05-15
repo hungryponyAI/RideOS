@@ -169,4 +169,5 @@ export interface StoredRoute {
   elevationChart: ElevationChartDatum[];
   cumDist: number[];
   totalDistM: number;
+  gradesPct: number[];
 }

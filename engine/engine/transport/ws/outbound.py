@@ -93,6 +93,7 @@ async def run_outbound_loop(
                 "ghost_lng": ghost_snap.lng if ghost_snap is not None else None,
                 "ghost_bearing_deg": ghost_snap.bearing_deg if ghost_snap is not None else None,
                 "ghost_time_gap_s": ghost_snap.time_gap_s if ghost_snap is not None else None,
+                "ghost_dist_m": ghost_snap.dist_m if ghost_snap is not None else None,
                 "ride_phase": v.ride_phase,
                 "lap_index": v.lap_index,
                 "lap_count": v.lap_count,

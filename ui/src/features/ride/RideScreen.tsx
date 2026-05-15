@@ -227,6 +227,7 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
           isDark={isDark}
           viewMode={viewMode}
           isDescending={isDescending}
+          isClimbing={isClimbFocus}
           ghostLat={t?.ghost_lat ?? null}
           ghostLng={t?.ghost_lng ?? null}
           ghostBearingDeg={t?.ghost_bearing_deg ?? null}
@@ -357,7 +358,12 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
 
       {/* Bottom: elevation timeline */}
       <div className={`absolute bottom-0 left-0 right-0 z-10 transition-[height] duration-500 ease-oudena motion-reduce:transition-none ${isClimbFocus ? "h-[200px]" : "h-[140px]"}`}>
-        <ElevationProfile data={stored?.elevationChart ?? null} positionM={positionM} />
+        <ElevationProfile
+          data={stored?.elevationChart ?? null}
+          gradesPct={stored?.gradesPct ?? null}
+          positionM={positionM}
+          ghostDistM={t?.ghost_dist_m ?? null}
+        />
       </div>
 
       {/* Ride controls: gear, camera, pause, end */}

@@ -42,6 +42,7 @@ class GhostSnapshot(NamedTuple):
     lng: float
     bearing_deg: float
     time_gap_s: float  # >0 ghost leads, <0 rider leads
+    dist_m: float  # ghost's position along route in metres
 
 
 class GhostTracker:
@@ -145,7 +146,7 @@ class GhostTracker:
         """
         n = len(self._times)
         if n == 0:
-            return GhostSnapshot(0.0, 0.0, 0.0, 0.0)
+            return GhostSnapshot(0.0, 0.0, 0.0, 0.0, 0.0)
 
         ghost_total = self._times[-1] if self._times[-1] > 0 else 1.0
         elapsed_mod = self._elapsed_s % ghost_total
@@ -163,8 +164,9 @@ class GhostTracker:
         # time_gap within current lap
         ghost_time_at_rider = self._time_at_dist(rider_position_m)
         time_gap_s = elapsed_mod - ghost_time_at_rider
+        ghost_dist_m = self._dist_at_time(elapsed_mod)
 
-        return GhostSnapshot(lat, lng, bearing, time_gap_s)
+        return GhostSnapshot(lat, lng, bearing, time_gap_s, ghost_dist_m)
 
     def _time_at_dist(self, dist_m: float) -> float:
         if not self._cum_dist:
@@ -178,3 +180,16 @@ class GhostTracker:
         if d1 == d0:
             return t0
         return t0 + (dist_m - d0) / (d1 - d0) * (t1 - t0)
+
+    def _dist_at_time(self, elapsed_s: float) -> float:
+        if not self._times:
+            return 0.0
+        idx = max(0, min(bisect.bisect_right(self._times, elapsed_s) - 1, len(self._cum_dist) - 1))
+        next_idx = min(idx + 1, len(self._cum_dist) - 1)
+        if next_idx == idx:
+            return self._cum_dist[idx]
+        t0, t1 = self._times[idx], self._times[next_idx]
+        d0, d1 = self._cum_dist[idx], self._cum_dist[next_idx]
+        if t1 == t0:
+            return d0
+        return d0 + (elapsed_s - t0) / (t1 - t0) * (d1 - d0)

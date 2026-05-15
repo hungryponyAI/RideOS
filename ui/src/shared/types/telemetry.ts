@@ -11,6 +11,7 @@ export interface TelemetryState {
   ghost_lng?: number | null;
   ghost_bearing_deg?: number | null;
   ghost_time_gap_s?: number | null;
+  ghost_dist_m?: number | null;
   ride_phase?: "warmup" | "route" | "cooldown" | "done";
   lap_index?: number;
   lap_count?: number;

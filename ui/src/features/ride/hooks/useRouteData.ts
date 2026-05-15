@@ -17,6 +17,7 @@ export function useRouteData() {
       elevationChart: msg.cum_dist_m.map((d, i) => ({ dist: d, elev: msg.elevations_m[i] })),
       cumDist: msg.cum_dist_m,
       totalDistM: msg.total_dist_m,
+      gradesPct: msg.grades_pct,
     };
     setRouteLoaded(true);
     setRouteError(null);
