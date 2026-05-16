@@ -287,7 +287,11 @@ class RideService:
         elapsed_s = 0
         if self._projection.view.ride_start_mono is not None:
             elapsed_s = int(self._projection.view.elapsed_s_at(self._clock()))
+        session_id = ctx.current_ride_session_id
         await self.cancel_active_ride(ctx)
+        # Restore session ID so the outbound loop can deliver the final ride_phase="done" tick
+        # with the correct ride_session_id — without it the frontend filters the message out.
+        ctx.current_ride_session_id = session_id
         self._bus.publish(RideEnded(elapsed_s=elapsed_s, t_mono=self._clock(), reason="user_ended"))
 
     # ── helpers ───────────────────────────────────────────────────────────

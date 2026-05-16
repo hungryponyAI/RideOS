@@ -42,7 +42,7 @@ const DESCENT_FOLLOW_PITCH = 60, DESCENT_FOLLOW_ZOOM = 17.5;
 const CLIMB_CHASE_PITCH = 70, CLIMB_CHASE_ZOOM = 17.5;
 const CLIMB_FOLLOW_PITCH = 82, CLIMB_FOLLOW_ZOOM = 19;
 const BIRDSEYE_PITCH = 0, BIRDSEYE_ZOOM = 14, BIRDSEYE_OFFSET: [number, number] = [0, 0];
-const POS_TWEEN_MS = 80, VIEW_TWEEN_MS = 600;
+const POS_TWEEN_MS = 80;
 const LINEAR = (t: number) => t;
 
 function bisectRight(arr: number[], x: number): number {
@@ -214,12 +214,11 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
       offset = FOLLOW_OFFSET;
     }
     const viewChanged = lastViewModeRef.current !== viewMode;
-    lastViewModeRef.current = viewMode;
     if (!ego) return;
+    lastViewModeRef.current = viewMode;
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const center: [number, number] = [ego[1], ego[0]];
     const posDur = prefersReducedMotion ? 0 : POS_TWEEN_MS;
-    const viewDur = prefersReducedMotion ? 0 : VIEW_TWEEN_MS;
     if (!initialCameraSetRef.current) {
       map.stop();
       map.easeTo({ center, bearing, pitch, zoom, offset, duration: 0, essential: true });
@@ -233,8 +232,11 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
       };
       map.once("idle", revealCamera);
       cameraRevealTimerRef.current = setTimeout(revealCamera, 250);
+    } else if (viewChanged) {
+      map.stop();
+      map.easeTo({ center, bearing, pitch, zoom, offset, duration: 0, essential: true });
     } else {
-      map.easeTo({ center, bearing, pitch, zoom, offset, duration: viewChanged ? viewDur : posDur, easing: viewChanged ? undefined : LINEAR, essential: true });
+      map.easeTo({ center, bearing, pitch, zoom, offset, duration: posDur, easing: LINEAR, essential: true });
     }
     const egoGeo = { type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [ego[1], ego[0]] }, properties: {} };
     const egoSrc = map.getSource("ego") as mapboxgl.GeoJSONSource | undefined;
@@ -268,9 +270,6 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
         ref={containerRef}
         className={`w-full h-full transition-opacity duration-200 motion-reduce:transition-none ${revealed ? "opacity-100" : "opacity-0"}`}
       />
-      <div className={`absolute bottom-2 right-2 z-[1000] bg-black/50 text-white/60 px-2 py-1 text-[10px] font-medium rounded pointer-events-none transition-opacity duration-200 ${revealed ? "opacity-100" : "opacity-0"}`}>
-        {viewMode === "chase" ? "Chase" : viewMode === "follow" ? "Follow" : "Übersicht"}
-      </div>
     </div>
   );
 }

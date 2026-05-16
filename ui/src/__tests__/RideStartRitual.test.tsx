@@ -162,7 +162,7 @@ describe("RideStartRitual", () => {
     openWs();
 
     const cameraButton = screen.getByTestId("countdown-camera-mode-button");
-    expect(cameraButton.textContent).toBe("Follow");
+    expect(cameraButton.getAttribute("aria-label")).toBe("Kameraansicht: Follow");
     fireEvent.click(cameraButton);
     expect(onCycleCamera).toHaveBeenCalledOnce();
   });

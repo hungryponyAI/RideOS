@@ -231,9 +231,12 @@ export function RideStartRitual({
           data-testid="countdown-camera-mode-button"
           onClick={onCycleCamera}
           aria-label={`Kameraansicht: ${cameraLabel}`}
-          className="fixed right-4 bottom-[calc(160px_+_env(safe-area-inset-bottom,0px))] z-[1810] min-w-[44px] min-h-[44px] rounded-xl bg-[var(--surface-soft)] border border-[var(--border)] text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--accent)] transition-colors duration-150 cursor-pointer shadow-soft px-3"
+          className="fixed right-4 bottom-[calc(160px_+_env(safe-area-inset-bottom,0px))] z-[1810] min-w-[44px] min-h-[44px] rounded-xl bg-[var(--surface-soft)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--accent)] transition-colors duration-150 cursor-pointer shadow-soft flex items-center justify-center"
         >
-          {cameraLabel}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+            <circle cx="12" cy="13" r="4" />
+          </svg>
         </button>
       )}
     </div>
