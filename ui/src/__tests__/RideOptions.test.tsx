@@ -25,13 +25,14 @@ describe("RideOptions", () => {
   });
 
   it("expands advanced options when disclosure button is clicked", () => {
-    const { getByText } = render(
+    const { getByText, queryByText } = render(
       <RideOptions config={defaultConfig} totalDistM={10000} hasStravaOrBestTime={false} onChange={vi.fn()} />
     );
     fireEvent.click(getByText("Erweiterte Optionen"));
     expect(getByText("Weniger Optionen")).toBeTruthy();
     expect(getByText("Rückwärts")).toBeTruthy();
     expect(getByText("ERG Mode")).toBeTruthy();
+    expect(queryByText("Physics")).toBeNull();
   });
 
   it("basic options are always visible", () => {

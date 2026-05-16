@@ -110,7 +110,7 @@ export function PreRideScreen({ onStarted, onStartRide, initialRouteId }: Props)
   const handleStartWithConfig = useCallback((config: RideConfig) => {
     if (!selectedRoute) return;
     if (onStartRide) {
-      onStartRide(selectedRoute.id, selectedRoute.name, config);
+      onStartRide(selectedRoute.id, selectedRoute.name, { ...config, physicsMode: true });
     } else {
       sendMessage({
         type: "start_ride",
@@ -123,7 +123,7 @@ export function PreRideScreen({ onStarted, onStartRide, initialRouteId }: Props)
         warmup_s: config.warmup ? 120 : 0,
         cooldown_s: config.cooldown ? 120 : 0,
         erg_mode: config.ergMode,
-        physics_mode: config.physicsMode,
+        physics_mode: true,
       });
       onStarted();
     }

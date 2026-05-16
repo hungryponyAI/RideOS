@@ -13,7 +13,7 @@ import json
 import logging
 import time
 import uuid
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Protocol
 
 from engine.control.athlete import AthleteProfile
 from engine.domain.events import (
@@ -33,6 +33,11 @@ if TYPE_CHECKING:
     from engine.ws.server import RouteContext
 
 _log = logging.getLogger("rideos.application.ride")
+
+
+class WakeLockPort(Protocol):
+    def start(self) -> None: ...
+    def stop(self) -> None: ...
 
 
 def _put(queue: "asyncio.Queue[dict]", msg: dict) -> None:
@@ -59,6 +64,7 @@ class RideService:
         projection: "RideStateProjection",
         *,
         clock: Callable[[], float] = time.monotonic,
+        wake_lock: WakeLockPort | None = None,
     ) -> None:
         self._athlete = athlete
         self._gears = gear_engine
@@ -66,6 +72,7 @@ class RideService:
         self._erg = erg_debouncer
         self._projection = projection
         self._clock = clock
+        self._wake_lock = wake_lock
 
     # ── synchronous user actions ──────────────────────────────────────────
 
@@ -80,6 +87,10 @@ class RideService:
         if self._projection.view.paused == paused:
             return
         self._bus.publish(RidePauseToggled(paused=paused, t_mono=self._clock()))
+        if paused:
+            self._wake_lock_stop()
+        else:
+            self._wake_lock_start()
 
     def update_athlete_settings(
         self,
@@ -119,6 +130,7 @@ class RideService:
         ctx.current_route_id = None
         ctx.current_ride_session_id = None
         self._erg.reset()
+        self._wake_lock_stop()
 
     async def start_ride(self, ctx: "RouteContext", msg: dict) -> None:
         """Handle a start_ride request: load, transform, configure, spawn phase machine."""
@@ -197,6 +209,10 @@ class RideService:
             t_mono=self._clock(),
             paused=initially_paused,
         ))
+        if initially_paused:
+            self._wake_lock_stop()
+        else:
+            self._wake_lock_start()
 
         _put(ctx.broadcast_queue, {
             "type": "route_data",
@@ -232,6 +248,7 @@ class RideService:
             if ctx.library and rid_snapshot:
                 ctx.library.update_best_time(rid_snapshot, elapsed_s)
                 _put(ctx.broadcast_queue, ctx.library.to_ws_message())
+            self._wake_lock_stop()
             self._bus.publish(RideEnded(elapsed_s=elapsed_s, t_mono=self._clock(), reason="completed"))
 
         def _on_phase_change(
@@ -293,8 +310,25 @@ class RideService:
         # with the correct ride_session_id — without it the frontend filters the message out.
         ctx.current_ride_session_id = session_id
         self._bus.publish(RideEnded(elapsed_s=elapsed_s, t_mono=self._clock(), reason="user_ended"))
+        self._wake_lock_stop()
 
     # ── helpers ───────────────────────────────────────────────────────────
+
+    def _wake_lock_start(self) -> None:
+        if self._wake_lock is None:
+            return
+        try:
+            self._wake_lock.start()
+        except Exception:
+            _log.exception("Wake lock start failed")
+
+    def _wake_lock_stop(self) -> None:
+        if self._wake_lock is None:
+            return
+        try:
+            self._wake_lock.stop()
+        except Exception:
+            _log.exception("Wake lock stop failed")
 
     def _setup_ghost(
         self,

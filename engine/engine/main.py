@@ -31,6 +31,7 @@ from engine.adapters.persistence.ride_repo_sink import RideRepoSink
 from engine.adapters.persistence.sqlite.connection import get_connection
 from engine.adapters.persistence.sqlite.ride_repo import SqliteRideRepo
 from engine.application.ride_service import RideService
+from engine.application.wake_lock import MacOSWakeLock
 from engine.application.route_service import RouteService
 from engine.application.strava_service import StravaService
 from engine.ble.client import telemetry_consumer
@@ -165,7 +166,14 @@ async def main() -> int:
     )
 
     erg_debouncer = ErgDebouncer(bus)
-    ride_service = RideService(athlete, gear_engine, bus, erg_debouncer, projection)
+    ride_service = RideService(
+        athlete,
+        gear_engine,
+        bus,
+        erg_debouncer,
+        projection,
+        wake_lock=MacOSWakeLock(),
+    )
     route_service = RouteService(bus)
     strava_service = StravaService(bus)
 

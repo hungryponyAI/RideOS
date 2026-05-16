@@ -59,7 +59,7 @@ export function RideStartRitual({
       warmup_s: config.warmup ? 120 : 0,
       cooldown_s: config.cooldown ? 120 : 0,
       erg_mode: config.ergMode,
-      physics_mode: config.physicsMode,
+      physics_mode: true,
       paused: true,
     });
     sendMessage({ type: "set_paused", paused: true });

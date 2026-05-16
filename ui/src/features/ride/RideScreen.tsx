@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWS } from "../../shared/ws/useWS";
 import { useAppVisibility } from "../../shared/hooks/useAppVisibility";
+import { useWakeLock } from "../../shared/hooks/useWakeLock";
 import { useRideTelemetry } from "./hooks/useRideTelemetry";
 import { useClimbFocus } from "./hooks/useClimbFocus";
 import { useDescentState } from "./hooks/useDescentState";
@@ -185,6 +186,7 @@ export function RideScreen({
   const prevCompletedAnnounceRef = useRef(false);
 
   const isCompleted = t?.ride_phase === "done";
+  const wakeLock = useWakeLock(!isPaused && !isCompleted);
 
   const togglePause = useCallback(() => {
     setIsPaused(p => {
@@ -356,6 +358,12 @@ export function RideScreen({
       <div className="absolute top-0 left-0 right-0 z-30">
         <ConnectionBanner status={status} />
       </div>
+
+      {wakeLock.warning && (
+        <div className="absolute top-9 left-1/2 z-30 -translate-x-1/2 rounded-lg border border-[var(--warning)] bg-[var(--surface)] px-3 py-2 text-[11px] font-medium text-[var(--text)] shadow-elevated">
+          {wakeLock.warning}
+        </div>
+      )}
 
       {/* Route load error */}
       {routeError && (

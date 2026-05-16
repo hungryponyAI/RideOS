@@ -48,6 +48,8 @@ const CLIMB_FOLLOW_PITCH = 82, CLIMB_FOLLOW_ZOOM = 19;
 const BIRDSEYE_PITCH = 0, BIRDSEYE_ZOOM = 14, BIRDSEYE_OFFSET: [number, number] = [0, 0];
 const POS_TWEEN_MS = 80;
 const LINEAR = (t: number) => t;
+const GHOST_COLOR = "#E58B4A";
+const GHOST_STROKE = "#FFFFFF";
 
 function finiteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -314,8 +316,32 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
       if (ghostSrc) { ghostSrc.setData(ghostGeo); }
       else {
         map.addSource("ghost", { type: "geojson", data: ghostGeo });
-        map.addLayer({ id: "ghost", type: "circle", source: "ghost", paint: { "circle-radius": 6, "circle-color": "#74AFCB", "circle-stroke-color": "#B7C0CA", "circle-stroke-width": 1.5, "circle-opacity": 0.45 } }, map.getLayer("ego") ? "ego" : undefined);
+        map.addLayer({
+          id: "ghost-halo",
+          type: "circle",
+          source: "ghost",
+          paint: {
+            "circle-radius": 18,
+            "circle-color": GHOST_COLOR,
+            "circle-opacity": 0.24,
+            "circle-blur": 0.35,
+          },
+        }, map.getLayer("ego") ? "ego" : undefined);
+        map.addLayer({
+          id: "ghost",
+          type: "circle",
+          source: "ghost",
+          paint: {
+            "circle-radius": 7.5,
+            "circle-color": GHOST_COLOR,
+            "circle-stroke-color": GHOST_STROKE,
+            "circle-stroke-width": 2.5,
+            "circle-opacity": 0.95,
+          },
+        }, map.getLayer("ego") ? "ego" : undefined);
       }
+      if (map.getLayer("ghost-halo")) map.moveLayer("ghost-halo", map.getLayer("ego") ? "ego" : undefined);
+      if (map.getLayer("ghost")) map.moveLayer("ghost", map.getLayer("ego") ? "ego" : undefined);
     } catch (error) {
       console.warn("[RideOS] Ghost layer update failed", error);
     }

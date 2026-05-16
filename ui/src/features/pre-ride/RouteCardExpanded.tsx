@@ -96,7 +96,12 @@ export const RouteCardExpanded = memo(function RouteCardExpanded({
   }, [trimEnabled, totalDistM]);
 
   const handleStart = useCallback(() => {
-    onStart({ ...config, cutoutStartM: trimEnabled ? trimStart : null, cutoutEndM: trimEnabled ? trimEnd : null });
+    onStart({
+      ...config,
+      physicsMode: true,
+      cutoutStartM: trimEnabled ? trimStart : null,
+      cutoutEndM: trimEnabled ? trimEnd : null,
+    });
   }, [config, trimEnabled, trimStart, trimEnd, onStart]);
 
   const estTime = estimateTimeS(route.distance_km, route.elevation_gain_m, athleteSettings.ftp_w, athleteSettings.weight_kg, athleteSettings.height_cm);

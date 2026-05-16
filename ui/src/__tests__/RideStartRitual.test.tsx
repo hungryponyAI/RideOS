@@ -95,7 +95,7 @@ describe("RideStartRitual", () => {
           routeId="r42"
           rideSessionId="s42"
           routeName="Testroute"
-          config={{ ...DEFAULT_CONFIG, ghost: true }}
+          config={{ ...DEFAULT_CONFIG, ghost: true, physicsMode: false }}
           viewMode="chase"
           onCycleCamera={vi.fn()}
           onReady={vi.fn()}
@@ -109,6 +109,7 @@ describe("RideStartRitual", () => {
     expect(JSON.parse(startMsg!).route_id).toBe("r42");
     expect(JSON.parse(startMsg!).ride_session_id).toBe("s42");
     expect(JSON.parse(startMsg!).ghost).toBe(true);
+    expect(JSON.parse(startMsg!).physics_mode).toBe(true);
     expect(JSON.parse(startMsg!).paused).toBe(true);
     const pausedMsg = mockWs.sentMessages.find(m => {
       const p = JSON.parse(m);

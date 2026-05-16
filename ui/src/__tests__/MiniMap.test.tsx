@@ -235,4 +235,29 @@ describe("MiniMap", () => {
     await waitFor(() => expect(map.easeToCalls.length).toBeGreaterThan(2));
     expect(map.easeToCalls.at(-1)).toMatchObject({ center: [11.004, 47.002] });
   });
+
+  it("renders ghost as a distinct competitor marker with halo", async () => {
+    const { MiniMap } = await import("../features/ride/components/MiniMap");
+    render(
+      <MiniMap
+        coords={[[47, 11], [47.001, 11.002]]}
+        cumDist={[0, 200]}
+        positionM={100}
+        ghostLat={47.0005}
+        ghostLng={11.001}
+        isDark={false}
+        viewMode="chase"
+      />
+    );
+
+    const map = mapboxMock.MockMap.instances[0];
+    map.trigger("load");
+    map.trigger("idle");
+
+    await waitFor(() => expect(map.getLayer("ghost-halo")).toBeTruthy());
+    expect(map.getLayer("ghost")).toBeTruthy();
+    expect(map.getSource("ghost")?.data).toMatchObject({
+      geometry: { coordinates: [11.001, 47.0005] },
+    });
+  });
 });

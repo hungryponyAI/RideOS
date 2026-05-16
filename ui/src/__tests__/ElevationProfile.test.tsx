@@ -37,6 +37,7 @@ describe("ElevationProfile", () => {
       el => el.getAttribute("stroke-dasharray") != null,
     );
     expect(dashed.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("GHOST")).toBeTruthy();
   });
 
   it("does not render ghost marker when ghostDistM is null", () => {
@@ -48,6 +49,7 @@ describe("ElevationProfile", () => {
       el => el.getAttribute("stroke-dasharray") != null,
     );
     expect(dashed.length).toBe(0);
+    expect(screen.queryByText("GHOST")).toBeNull();
   });
 
   it("does not render ghost marker when ghostDistM is outside visible window", () => {

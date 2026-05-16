@@ -12,6 +12,7 @@ const WINDOW_M = 10_000;
 const LABEL_STEP_M = 2_000;
 const CLIMB_THRESHOLD_PCT = 4;
 const DESCENT_THRESHOLD_PCT = -3;
+const GHOST_COLOR = "#E58B4A";
 
 type TerrainType = "climb" | "descent" | "flat";
 
@@ -136,22 +137,48 @@ export const ElevationProfile = memo(function ElevationProfile({ data, gradesPct
           {/* Ghost position marker */}
           {chart.ghostXPct !== null && (
             <>
+              <rect
+                x={Math.min(984, Math.max(0, chart.ghostXPct * 10 - 8))}
+                y={0}
+                width={16}
+                height={100}
+                fill={GHOST_COLOR}
+                fillOpacity="0.12"
+                vectorEffect="non-scaling-stroke"
+              />
               <line
                 x1={chart.ghostXPct * 10} y1={0}
                 x2={chart.ghostXPct * 10} y2={96}
-                stroke="#74AFCB"
-                strokeWidth="1"
-                strokeOpacity="0.55"
-                strokeDasharray="4 3"
+                stroke={GHOST_COLOR}
+                strokeWidth="2"
+                strokeOpacity="0.95"
+                strokeDasharray="5 3"
                 vectorEffect="non-scaling-stroke"
               />
               <circle
                 cx={chart.ghostXPct * 10} cy={50}
-                r={2.5}
-                fill="#74AFCB"
-                fillOpacity="0.45"
+                r={6}
+                fill={GHOST_COLOR}
+                fillOpacity="0.22"
                 vectorEffect="non-scaling-stroke"
               />
+              <circle
+                cx={chart.ghostXPct * 10} cy={50}
+                r={3.5}
+                fill={GHOST_COLOR}
+                stroke="#FFFFFF"
+                strokeWidth="1.5"
+                vectorEffect="non-scaling-stroke"
+              />
+              <text
+                x={Math.min(960, Math.max(40, chart.ghostXPct * 10))}
+                y={11}
+                textAnchor="middle"
+                className="text-[10px] font-medium"
+                fill={GHOST_COLOR}
+              >
+                GHOST
+              </text>
             </>
           )}
 

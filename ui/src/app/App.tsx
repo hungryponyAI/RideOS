@@ -80,7 +80,7 @@ function AppShell() {
   }, []);
 
   const handleStartRide = useCallback((routeId: string, routeName: string, config: RideConfig) => {
-    setRideStartCtx({ routeId, routeName, config, rideSessionId: createRideSessionId() });
+    setRideStartCtx({ routeId, routeName, config: { ...config, physicsMode: true }, rideSessionId: createRideSessionId() });
     setRideViewMode("chase");
     setView('preparing');
   }, []);

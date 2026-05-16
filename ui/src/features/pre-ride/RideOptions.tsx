@@ -113,7 +113,6 @@ export function RideOptions({ config, hasStravaOrBestTime, onChange }: Props) {
       }`}>
         <Toggle label="Rückwärts" checked={config.reverse} onChange={v => set({ reverse: v, ghost: v ? false : config.ghost })} />
         <Toggle label="ERG Mode" sublabel="Fixe Watt nach Profil + FTP" checked={config.ergMode} onChange={v => set({ ergMode: v, ghost: v ? false : config.ghost })} />
-        <Toggle label="Physics" sublabel="Power-basierter Fortschritt" checked={config.physicsMode} onChange={v => set({ physicsMode: v })} />
         <Toggle label="Trainer-Schwierigkeit" sublabel="Bald verfügbar" checked={false} disabled onChange={() => {}} />
         <Toggle label="Tempo-Ziel" sublabel="Bald verfügbar" checked={false} disabled onChange={() => {}} />
       </div>

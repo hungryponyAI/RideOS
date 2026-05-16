@@ -27,7 +27,21 @@ from engine.ws.server import RouteContext
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
 
-def _wire() -> tuple[RideService, AsyncioEventBus, GearEngine, RideStateProjection, dict[type, list]]:
+class FakeWakeLock:
+    def __init__(self) -> None:
+        self.started = 0
+        self.stopped = 0
+
+    def start(self) -> None:
+        self.started += 1
+
+    def stop(self) -> None:
+        self.stopped += 1
+
+
+def _wire(
+    wake_lock: FakeWakeLock | None = None,
+) -> tuple[RideService, AsyncioEventBus, GearEngine, RideStateProjection, dict[type, list]]:
     """Build a service with a fresh athlete profile, bus, projection, and per-type recording."""
     bus = AsyncioEventBus()
     gear_engine = GearEngine()
@@ -37,7 +51,15 @@ def _wire() -> tuple[RideService, AsyncioEventBus, GearEngine, RideStateProjecti
         captured[et] = []
         bus.subscribe(et, captured[et].append)
     bus.subscribe(RidePauseToggled, projection.apply)
-    svc = RideService(AthleteProfile(), gear_engine, bus, ErgDebouncer(bus), projection, clock=lambda: 42.0)
+    svc = RideService(
+        AthleteProfile(),
+        gear_engine,
+        bus,
+        ErgDebouncer(bus),
+        projection,
+        clock=lambda: 42.0,
+        wake_lock=wake_lock,
+    )
     return svc, bus, gear_engine, projection, captured
 
 
@@ -103,6 +125,17 @@ def test_set_paused_then_resume_publishes_two_events():
     svc.set_paused(True)
 
     assert [e.paused for e in captured[RidePauseToggled]] == [False, True]
+
+
+def test_wake_lock_runs_only_while_unpaused():
+    wake_lock = FakeWakeLock()
+    svc, _, _, _, _ = _wire(wake_lock=wake_lock)
+
+    svc.set_paused(False)
+    svc.set_paused(True)
+
+    assert wake_lock.started == 1
+    assert wake_lock.stopped == 1
 
 
 # ── start_ride / end_ride ─────────────────────────────────────────────────────
