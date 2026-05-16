@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect } from "react";
 import { useTheme } from "../../app/providers/ThemeProvider";
 import { useAthleteSettings, type AthleteSettings } from "./hooks/useAthleteSettings";
 import { useAppSettings } from "./hooks/useAppSettings";
-import { useDeviceStatus } from "./hooks/useDeviceStatus";
 import { useStravaStatus } from "../strava/hooks/useStravaStatus";
 import { StravaConnectModal, type StravaModalStep } from "../strava/StravaConnectModal";
 import { useWS } from "../../shared/ws/useWS";
@@ -153,7 +152,6 @@ export function SettingsScreen({ onReopenOnboarding }: Props) {
   const { isDark, toggleTheme } = useTheme();
   const { settings, updateSetting } = useAthleteSettings();
   const { prefs, updatePref } = useAppSettings();
-  const { kickrConnected, clickConnected } = useDeviceStatus();
   const { sendMessage } = useWS();
   const { stravaStatus, stravaAuthUrl, stravaError, clearStravaAuthUrl, clearStravaError } = useStravaStatus();
 

@@ -12,6 +12,7 @@ from engine.control.athlete import AthleteProfile
 from engine.control.erg_debouncer import ErgDebouncer
 from engine.domain.events import (
     GearShifted,
+    PositionAdvanced,
     RideEnded,
     RidePauseToggled,
     RidePhaseChanged,
@@ -138,7 +139,12 @@ async def test_start_ride_publishes_ride_started(route_ctx_factory):
     svc = RideService(AthleteProfile(), GearEngine(), bus, ErgDebouncer(bus), proj, clock=lambda: 7.0)
 
     await svc.start_ride(ctx, {
-        "route_id": route_id, "laps": 2, "warmup_s": 0, "cooldown_s": 0, "erg_mode": False,
+        "route_id": route_id,
+        "ride_session_id": "session-1",
+        "laps": 2,
+        "warmup_s": 0,
+        "cooldown_s": 0,
+        "erg_mode": False,
     })
 
     assert len(captured) == 1
@@ -149,6 +155,10 @@ async def test_start_ride_publishes_ride_started(route_ctx_factory):
     assert ev.erg_mode is False
     assert ev.t_mono == 7.0
     assert ctx.phase_task is not None
+    route_msg = await ctx.broadcast_queue.get()
+    assert route_msg["type"] == "route_data"
+    assert route_msg["route_id"] == route_id
+    assert route_msg["ride_session_id"] == "session-1"
 
     # cleanup so the spawned task doesn't leak
     ctx.stop_event.set()
@@ -175,6 +185,48 @@ async def test_start_ride_can_begin_paused_for_countdown(route_ctx_factory):
 
     svc.set_paused(False)
     assert proj.view.paused is False
+
+    ctx.stop_event.set()
+    if ctx.phase_task is not None:
+        await asyncio.wait_for(ctx.phase_task, timeout=2.0)
+
+
+async def test_start_ride_resets_projection_before_route_data_for_same_route(route_ctx_factory):
+    ctx, _, route_id = route_ctx_factory()
+    bus = AsyncioEventBus()
+    proj = RideStateProjection()
+    bus.subscribe(RideStarted, proj.apply)
+    bus.subscribe(PositionAdvanced, proj.apply)
+    svc = RideService(AthleteProfile(), GearEngine(), bus, ErgDebouncer(bus), proj, clock=lambda: 7.0)
+
+    proj.apply(RideStarted(
+        route_id=route_id,
+        laps=1,
+        warmup_s=0,
+        cooldown_s=0,
+        erg_mode=False,
+        t_mono=1.0,
+    ))
+    proj.apply(PositionAdvanced(
+        position_m=750.0,
+        grade_idx=0,
+        grade_pct=0.0,
+        lap_index=0,
+        t_mono=2.0,
+    ))
+
+    await svc.start_ride(ctx, {
+        "route_id": route_id,
+        "ride_session_id": "same-route-new-session",
+        "laps": 1,
+        "paused": True,
+    })
+    route_msg = await ctx.broadcast_queue.get()
+
+    assert route_msg["type"] == "route_data"
+    assert route_msg["ride_session_id"] == "same-route-new-session"
+    assert proj.view.position_m == pytest.approx(0.0)
+    assert proj.view.route_id == route_id
 
     ctx.stop_event.set()
     if ctx.phase_task is not None:

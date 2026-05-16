@@ -8,8 +8,6 @@ export function useWSSubscription<T>(
   const { subscribe } = useWS();
   useEffect(
     () => subscribe(type, onMessage as (payload: unknown) => void),
-    // onMessage is intentionally excluded — callers must memoize it or accept re-subscribe
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [subscribe, type],
+    [subscribe, type, onMessage],
   );
 }

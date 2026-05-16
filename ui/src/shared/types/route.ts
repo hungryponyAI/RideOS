@@ -6,12 +6,16 @@ import type { TelemetryState } from "./telemetry";
 
 export interface TelemetryMessage extends TelemetryState {
   type: "telemetry";
+  route_id?: string | null;
+  ride_session_id?: string | null;
   position_m: number | null;
   route_loaded: boolean;
 }
 
 export interface RouteDataMessage {
   type: "route_data";
+  route_id?: string | null;
+  ride_session_id?: string | null;
   lats: number[];
   lons: number[];
   elevations_m: number[];
@@ -22,6 +26,7 @@ export interface RouteDataMessage {
 
 export interface RouteErrorMessage {
   type: "route_error";
+  ride_session_id?: string | null;
   message: string;
 }
 
@@ -133,6 +138,7 @@ export interface AthleteSettingsMessage {
 export interface StartRideMessage {
   type: "start_ride";
   route_id: string;
+  ride_session_id?: string;
   reverse: boolean;
   cutout_start_m: number | null;
   cutout_end_m: number | null;
@@ -166,6 +172,8 @@ export interface ElevationChartDatum {
 }
 
 export interface StoredRoute {
+  routeId: string | null;
+  rideSessionId: string | null;
   coords: Array<[number, number]>;
   elevationChart: ElevationChartDatum[];
   cumDist: number[];

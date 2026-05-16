@@ -72,8 +72,11 @@ describe("RideStartRitual", () => {
       <Wrapper>
         <RideStartRitual
           routeId="r1"
+          rideSessionId="s1"
           routeName="Testroute"
           config={DEFAULT_CONFIG}
+          viewMode="chase"
+          onCycleCamera={vi.fn()}
           onReady={onReady}
           onCancel={onCancel}
         />
@@ -90,8 +93,11 @@ describe("RideStartRitual", () => {
       <Wrapper>
         <RideStartRitual
           routeId="r42"
+          rideSessionId="s42"
           routeName="Testroute"
           config={{ ...DEFAULT_CONFIG, ghost: true }}
+          viewMode="chase"
+          onCycleCamera={vi.fn()}
           onReady={vi.fn()}
           onCancel={vi.fn()}
         />
@@ -101,6 +107,7 @@ describe("RideStartRitual", () => {
     const startMsg = mockWs.sentMessages.find(m => JSON.parse(m).type === "start_ride");
     expect(startMsg).toBeTruthy();
     expect(JSON.parse(startMsg!).route_id).toBe("r42");
+    expect(JSON.parse(startMsg!).ride_session_id).toBe("s42");
     expect(JSON.parse(startMsg!).ghost).toBe(true);
     expect(JSON.parse(startMsg!).paused).toBe(true);
     const pausedMsg = mockWs.sentMessages.find(m => {
@@ -115,8 +122,11 @@ describe("RideStartRitual", () => {
       <Wrapper>
         <RideStartRitual
           routeId="r1"
+          rideSessionId="s1"
           routeName="Testroute"
           config={DEFAULT_CONFIG}
+          viewMode="chase"
+          onCycleCamera={vi.fn()}
           onReady={vi.fn()}
           onCancel={vi.fn()}
         />
@@ -125,10 +135,77 @@ describe("RideStartRitual", () => {
     openWs();
     simulateMessage({
       type: "route_data",
+      route_id: "r1",
+      ride_session_id: "s1",
       lats: [0], lons: [0], elevations_m: [0], cum_dist_m: [0], grades_pct: [0], total_dist_m: 0,
     });
     expect(screen.getByTestId("countdown-number")).toBeTruthy();
     expect(screen.getByTestId("cancel-countdown")).toBeTruthy();
+  });
+
+  it("allows camera mode switching during the startup overlay", () => {
+    const onCycleCamera = vi.fn();
+    render(
+      <Wrapper>
+        <RideStartRitual
+          routeId="r1"
+          rideSessionId="s1"
+          routeName="Testroute"
+          config={DEFAULT_CONFIG}
+          viewMode="follow"
+          onCycleCamera={onCycleCamera}
+          onReady={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </Wrapper>
+    );
+    openWs();
+
+    const cameraButton = screen.getByTestId("countdown-camera-mode-button");
+    expect(cameraButton.textContent).toBe("Follow");
+    fireEvent.click(cameraButton);
+    expect(onCycleCamera).toHaveBeenCalledOnce();
+  });
+
+  it("ignores stale route_data from another route", () => {
+    render(
+      <Wrapper>
+        <RideStartRitual
+          routeId="r1"
+          rideSessionId="s1"
+          routeName="Testroute"
+          config={DEFAULT_CONFIG}
+          viewMode="chase"
+          onCycleCamera={vi.fn()}
+          onReady={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </Wrapper>
+    );
+    openWs();
+    simulateMessage({
+      type: "route_data",
+      route_id: "old-route",
+      ride_session_id: "s1",
+      lats: [0], lons: [0], elevations_m: [0], cum_dist_m: [0], grades_pct: [0], total_dist_m: 0,
+    });
+    expect(screen.queryByTestId("countdown-number")).toBeNull();
+
+    simulateMessage({
+      type: "route_data",
+      route_id: "r1",
+      ride_session_id: "old-session",
+      lats: [0], lons: [0], elevations_m: [0], cum_dist_m: [0], grades_pct: [0], total_dist_m: 0,
+    });
+    expect(screen.queryByTestId("countdown-number")).toBeNull();
+
+    simulateMessage({
+      type: "route_data",
+      route_id: "r1",
+      ride_session_id: "s1",
+      lats: [0], lons: [0], elevations_m: [0], cum_dist_m: [0], grades_pct: [0], total_dist_m: 0,
+    });
+    expect(screen.getByTestId("countdown-number")).toBeTruthy();
   });
 
   it("countdown opens the ride screen without resuming the backend", () => {
@@ -137,8 +214,11 @@ describe("RideStartRitual", () => {
       <Wrapper>
         <RideStartRitual
           routeId="r1"
+          rideSessionId="s1"
           routeName="Testroute"
           config={DEFAULT_CONFIG}
+          viewMode="chase"
+          onCycleCamera={vi.fn()}
           onReady={onReady}
           onCancel={vi.fn()}
         />
@@ -147,6 +227,8 @@ describe("RideStartRitual", () => {
     openWs();
     simulateMessage({
       type: "route_data",
+      route_id: "r1",
+      ride_session_id: "s1",
       lats: [0], lons: [0], elevations_m: [0], cum_dist_m: [0], grades_pct: [0], total_dist_m: 0,
     });
     // Advance 3 seconds
@@ -165,8 +247,11 @@ describe("RideStartRitual", () => {
       <Wrapper>
         <RideStartRitual
           routeId="r1"
+          rideSessionId="s1"
           routeName="Testroute"
           config={DEFAULT_CONFIG}
+          viewMode="chase"
+          onCycleCamera={vi.fn()}
           onReady={vi.fn()}
           onCancel={onCancel}
         />
@@ -185,8 +270,11 @@ describe("RideStartRitual", () => {
       <Wrapper>
         <RideStartRitual
           routeId="r1"
+          rideSessionId="s1"
           routeName="Testroute"
           config={DEFAULT_CONFIG}
+          viewMode="chase"
+          onCycleCamera={vi.fn()}
           onReady={vi.fn()}
           onCancel={onCancel}
         />
@@ -195,6 +283,8 @@ describe("RideStartRitual", () => {
     openWs();
     simulateMessage({
       type: "route_data",
+      route_id: "r1",
+      ride_session_id: "s1",
       lats: [0], lons: [0], elevations_m: [0], cum_dist_m: [0], grades_pct: [0], total_dist_m: 0,
     });
     fireEvent.click(screen.getByTestId("cancel-countdown"));
@@ -208,8 +298,11 @@ describe("RideStartRitual", () => {
       <Wrapper>
         <RideStartRitual
           routeId="r1"
+          rideSessionId="s1"
           routeName="Testroute"
           config={DEFAULT_CONFIG}
+          viewMode="chase"
+          onCycleCamera={vi.fn()}
           onReady={vi.fn()}
           onCancel={vi.fn()}
         />

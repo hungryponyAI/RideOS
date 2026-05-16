@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional
 
 from engine.control.athlete import AthleteProfile
@@ -115,6 +116,8 @@ class RideService:
         ctx.tracker = None
         ctx.ghost_tracker = None
         ctx.current_route = None
+        ctx.current_route_id = None
+        ctx.current_ride_session_id = None
         self._erg.reset()
 
     async def start_ride(self, ctx: "RouteContext", msg: dict) -> None:
@@ -126,18 +129,31 @@ class RideService:
         route_id = msg.get("route_id")
         if not isinstance(route_id, str) or not route_id or ctx.library is None:
             return
+        ride_session_id = msg.get("ride_session_id")
+        if not isinstance(ride_session_id, str) or not ride_session_id:
+            ride_session_id = str(uuid.uuid4())
 
         gpx_path = ctx.library.get_gpx_path(route_id)
         if gpx_path is None or not gpx_path.exists():
-            _put(ctx.broadcast_queue, {"type": "route_error", "message": "Strecke nicht gefunden"})
+            _put(ctx.broadcast_queue, {
+                "type": "route_error",
+                "ride_session_id": ride_session_id,
+                "message": "Strecke nicht gefunden",
+            })
             return
 
         await self.cancel_active_ride(ctx)
+        ctx.current_ride_session_id = ride_session_id
 
         try:
             route = await asyncio.to_thread(load_gpx, str(gpx_path))
         except Exception as exc:
-            _put(ctx.broadcast_queue, {"type": "route_error", "message": f"{type(exc).__name__}: {exc}"})
+            ctx.current_ride_session_id = None
+            _put(ctx.broadcast_queue, {
+                "type": "route_error",
+                "ride_session_id": ride_session_id,
+                "message": f"{type(exc).__name__}: {exc}",
+            })
             return
 
         if msg.get("reverse", False):
@@ -153,14 +169,39 @@ class RideService:
                     float(cut_end or route.total_dist_m),
                 )
             except ValueError as exc:
-                _put(ctx.broadcast_queue, {"type": "route_error", "message": str(exc)})
+                ctx.current_ride_session_id = None
+                _put(ctx.broadcast_queue, {
+                    "type": "route_error",
+                    "ride_session_id": ride_session_id,
+                    "message": str(exc),
+                })
                 return
 
         ctx.current_route = route
         ctx.current_route_id = route_id
+        ctx.current_ride_session_id = ride_session_id
+
+        erg_mode = bool(msg.get("erg_mode", False))
+        laps = max(1, int(msg.get("laps", 1)))
+        warmup_s = max(0, int(msg.get("warmup_s", 0)))
+        cooldown_s = max(0, int(msg.get("cooldown_s", 0)))
+        use_physics = bool(msg.get("physics_mode", False))
+        initially_paused = bool(msg.get("paused", False))
+
+        self._bus.publish(RideStarted(
+            route_id=route_id,
+            laps=laps,
+            warmup_s=warmup_s,
+            cooldown_s=cooldown_s,
+            erg_mode=erg_mode,
+            t_mono=self._clock(),
+            paused=initially_paused,
+        ))
 
         _put(ctx.broadcast_queue, {
             "type": "route_data",
+            "route_id": route_id,
+            "ride_session_id": ride_session_id,
             "lats": list(route.lats),
             "lons": list(route.lons),
             "elevations_m": list(route.elevations_m),
@@ -169,7 +210,6 @@ class RideService:
             "total_dist_m": route.total_dist_m,
         })
 
-        erg_mode = bool(msg.get("erg_mode", False))
         if erg_mode:
             self._erg.configure(
                 power_table=compute_target_power_table(
@@ -185,11 +225,6 @@ class RideService:
         if use_ghost:
             self._setup_ghost(ctx, route_id, route, cut_start, cut_end)
 
-        laps = max(1, int(msg.get("laps", 1)))
-        warmup_s = max(0, int(msg.get("warmup_s", 0)))
-        cooldown_s = max(0, int(msg.get("cooldown_s", 0)))
-        use_physics = bool(msg.get("physics_mode", False))
-        initially_paused = bool(msg.get("paused", False))
         rid_snapshot = route_id
 
         def _on_complete(elapsed_s: int) -> None:
@@ -241,15 +276,6 @@ class RideService:
             ),
             name="ride_phases",
         )
-        self._bus.publish(RideStarted(
-            route_id=route_id,
-            laps=laps,
-            warmup_s=warmup_s,
-            cooldown_s=cooldown_s,
-            erg_mode=erg_mode,
-            t_mono=self._clock(),
-            paused=initially_paused,
-        ))
         _log.info(
             "start_ride: route=%s reverse=%s laps=%d warmup=%ds cooldown=%ds erg=%s ghost=%s physics=%s paused=%s",
             route_id, msg.get("reverse", False), laps, warmup_s, cooldown_s, erg_mode, use_ghost,

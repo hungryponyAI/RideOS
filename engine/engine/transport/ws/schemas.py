@@ -38,6 +38,7 @@ class ListRoutesMsg(BaseModel):
 class StartRideMsg(BaseModel):
     type: Literal["start_ride"]
     route_id: str
+    ride_session_id: Optional[str] = None
     reverse: bool = False
     cutout_start_m: Optional[float] = None
     cutout_end_m: Optional[float] = None

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { useState } from "react";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { RideControls } from "../features/ride/components/RideControls";
 import { WSProvider } from "../shared/ws/WSProvider";
@@ -164,6 +165,23 @@ function simulateTelemetry(partial: Record<string, unknown> = {}) {
   });
 }
 
+function simulateRouteData(partial: Record<string, unknown> = {}) {
+  act(() => {
+    mockWs.onmessage?.({
+      data: JSON.stringify({
+        type: "route_data",
+        lats: [47.0, 47.001],
+        lons: [11.0, 11.001],
+        elevations_m: [500, 510],
+        cum_dist_m: [0, 1000],
+        grades_pct: [1, 1],
+        total_dist_m: 1000,
+        ...partial,
+      }),
+    });
+  });
+}
+
 describe("RideScreen – ride controls integration", () => {
   it("pause button sends set_paused true", () => {
     render(
@@ -251,6 +269,81 @@ describe("RideScreen – ride controls integration", () => {
     simulateTelemetry({ ride_phase: "done", ended_reason: "completed" });
     const announcer = screen.getByTestId("ride-announcer");
     expect(announcer.textContent).toBe("Fahrt beendet");
+  });
+
+  it("allows camera mode switching before the ride is resumed", () => {
+    function Harness() {
+      const [viewMode, setViewMode] = useState<"chase" | "follow" | "birdseye">("chase");
+      return (
+        <WSProvider>
+          <RideScreen
+            isDark={true}
+            viewMode={viewMode}
+            onCycleCamera={() => setViewMode(m => m === "chase" ? "follow" : m === "follow" ? "birdseye" : "chase")}
+          />
+        </WSProvider>
+      );
+    }
+    render(
+      <Harness />
+    );
+    openWs();
+
+    expect(screen.getByLabelText("Kameraansicht: Chase")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("camera-mode-button"));
+    expect(screen.getByLabelText("Kameraansicht: Follow")).toBeTruthy();
+  });
+
+  it("shows distance remaining from route data before telemetry arrives", () => {
+    render(
+      <WSProvider>
+        <RideScreen isDark={true} />
+      </WSProvider>
+    );
+    openWs();
+    simulateRouteData();
+
+    expect(screen.getByText("Reststrecke")).toBeTruthy();
+    expect(screen.getByText("1.0 km")).toBeTruthy();
+  });
+
+  it("ignores stale telemetry from a different route at startup", () => {
+    render(
+      <WSProvider>
+        <RideScreen isDark={true} activeRouteId="current-route" activeRideSessionId="current-session" />
+      </WSProvider>
+    );
+    openWs();
+    simulateRouteData({ route_id: "current-route", ride_session_id: "current-session" });
+    simulateTelemetry({
+      route_id: "old-route",
+      ride_session_id: "current-session",
+      route_loaded: true,
+      position_m: 750,
+      dist_remaining_m: 250,
+    });
+
+    expect(screen.getByText("Reststrecke")).toBeTruthy();
+    expect(screen.getByText("1.0 km")).toBeTruthy();
+    expect(screen.queryByText("0.3 km")).toBeNull();
+
+    simulateTelemetry({
+      route_id: "current-route",
+      ride_session_id: "old-session",
+      route_loaded: true,
+      position_m: 750,
+      dist_remaining_m: 250,
+    });
+    expect(screen.queryByText("0.3 km")).toBeNull();
+
+    simulateTelemetry({
+      route_id: "current-route",
+      ride_session_id: "current-session",
+      route_loaded: true,
+      position_m: 100,
+      dist_remaining_m: 900,
+    });
+    expect(screen.getByText("0.9 km")).toBeTruthy();
   });
 
   it("renders labeled ride status metrics", () => {

@@ -1,4 +1,6 @@
 export interface TelemetryState {
+  route_id?: string | null;
+  ride_session_id?: string | null;
   speed_kmh: number;
   power_w: number;
   cadence_rpm: number;

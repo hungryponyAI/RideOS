@@ -16,11 +16,19 @@ import { useOnboarding } from "../features/onboarding/useOnboarding";
 import { AppNav } from "./AppNav";
 import type { AppView } from "./types";
 import type { RideConfig } from "../features/pre-ride/RideOptions";
+import type { MapViewMode } from "../features/ride/components/MiniMap";
 
 interface RideStartContext {
   routeId: string;
   routeName: string;
   config: RideConfig;
+  rideSessionId: string;
+}
+
+function createRideSessionId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `ride-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function ThemeToggle() {
@@ -52,6 +60,7 @@ function AppShell() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [rideSummary, setRideSummary] = useState<RideSummaryData | null>(null);
   const [rideStartCtx, setRideStartCtx] = useState<RideStartContext | null>(null);
+  const [rideViewMode, setRideViewMode] = useState<MapViewMode>("chase");
   const { done: onboardingDone, step, stepIndex, totalSteps, advance, complete, reopen } = useOnboarding();
 
   const handleReopenOnboarding = useCallback(() => {
@@ -91,14 +100,26 @@ function AppShell() {
   }, []);
 
   const handleStartRide = useCallback((routeId: string, routeName: string, config: RideConfig) => {
-    setRideStartCtx({ routeId, routeName, config });
+    setRideStartCtx({ routeId, routeName, config, rideSessionId: createRideSessionId() });
+    setRideViewMode("chase");
     setView('preparing');
+  }, []);
+
+  const cycleRideCamera = useCallback(() => {
+    setRideViewMode(m => m === "chase" ? "follow" : m === "follow" ? "birdseye" : "chase");
   }, []);
 
   if (isRiding) {
     return (
       <>
-        <RideScreen isDark={isDark} onRideEnded={handleRideEnded} />
+        <RideScreen
+          isDark={isDark}
+          onRideEnded={handleRideEnded}
+          activeRouteId={rideStartCtx?.routeId ?? null}
+          activeRideSessionId={rideStartCtx?.rideSessionId ?? null}
+          viewMode={rideViewMode}
+          onCycleCamera={cycleRideCamera}
+        />
         <ThemeToggle />
         <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
       </>
@@ -108,11 +129,21 @@ function AppShell() {
   if (isPreparing && rideStartCtx) {
     return (
       <>
-        <RideScreen isDark={isDark} onRideEnded={handleRideEnded} />
+        <RideScreen
+          isDark={isDark}
+          onRideEnded={handleRideEnded}
+          activeRouteId={rideStartCtx.routeId}
+          activeRideSessionId={rideStartCtx.rideSessionId}
+          viewMode={rideViewMode}
+          onCycleCamera={cycleRideCamera}
+        />
         <RideStartRitual
           routeId={rideStartCtx.routeId}
+          rideSessionId={rideStartCtx.rideSessionId}
           routeName={rideStartCtx.routeName}
           config={rideStartCtx.config}
+          viewMode={rideViewMode}
+          onCycleCamera={cycleRideCamera}
           onReady={() => { setView('ride'); }}
           onCancel={() => { setRideStartCtx(null); setView('routes'); }}
         />

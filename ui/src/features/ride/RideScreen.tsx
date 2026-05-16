@@ -129,21 +129,32 @@ function EndRideConfirmation({ onConfirm, onCancel }: { onConfirm: () => void; o
 interface Props {
   isDark: boolean;
   onRideEnded?: (data: RideSummaryData) => void;
+  activeRouteId?: string | null;
+  activeRideSessionId?: string | null;
+  viewMode?: MapViewMode;
+  onCycleCamera?: () => void;
 }
 
-export function RideScreen({ isDark, onRideEnded }: Props) {
+export function RideScreen({
+  isDark,
+  onRideEnded,
+  activeRouteId = null,
+  activeRideSessionId = null,
+  viewMode = "chase",
+  onCycleCamera = () => {},
+}: Props) {
   const { status, sendMessage } = useWS();
-  const t = useRideTelemetry();
-  const { routeRef, routeLoaded, routeError, clearRouteError } = useRouteData();
+  const t = useRideTelemetry(activeRouteId, activeRideSessionId);
+  const { routeRef, routeLoaded, routeError, clearRouteError } = useRouteData(activeRouteId, activeRideSessionId);
   const isClimbFocus = useClimbFocus(t?.real_grade_pct);
   const isDescending = useDescentState(t?.real_grade_pct);
 
   const [isPaused, setIsPaused] = useState(true);
+  const [rideStarted, setRideStarted] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [viewMode, setViewMode] = useState<MapViewMode>("chase");
   const prevStatusRef = useRef<typeof status>("connecting");
   const endedRef = useRef(false);
 
@@ -178,6 +189,7 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
   const togglePause = useCallback(() => {
     setIsPaused(p => {
       const next = !p;
+      if (!next) setRideStarted(true);
       sendMessage({ type: "set_paused", paused: next });
       return next;
     });
@@ -200,10 +212,6 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
   const shiftGear = useCallback((dir: "up" | "down") => {
     sendMessage({ type: "gear_shift", direction: dir });
   }, [sendMessage]);
-
-  const cycleCamera = useCallback(() => {
-    setViewMode(m => m === "chase" ? "follow" : m === "follow" ? "birdseye" : "chase");
-  }, []);
 
   // Pause announcement
   useEffect(() => {
@@ -252,17 +260,27 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "j" || e.key === "J") sendMessage({ type: "gear_shift", direction: "down" });
       else if (e.key === "k" || e.key === "K") sendMessage({ type: "gear_shift", direction: "up" });
-      else if (e.key === "m" || e.key === "M") cycleCamera();
+      else if (e.key === "m" || e.key === "M") onCycleCamera();
       else if (e.key === " ") { e.preventDefault(); togglePause(); }
       else if (e.key === "Escape" && showEndConfirm) setShowEndConfirm(false);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [sendMessage, togglePause, cycleCamera, showEndConfirm]);
+  }, [sendMessage, togglePause, onCycleCamera, showEndConfirm]);
 
   useEffect(() => {
     if (routeError) console.warn("[RideOS] route_error:", routeError);
   }, [routeError]);
+
+  useEffect(() => {
+    setRideStarted(false);
+  }, [activeRouteId, activeRideSessionId]);
+
+  useEffect(() => {
+    if ((t?.elapsed_s ?? 0) > 0) {
+      setRideStarted(true);
+    }
+  }, [t?.elapsed_s]);
 
   useEffect(() => {
     const onMove = () => {
@@ -279,10 +297,14 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
   }, []);
 
   const stored = routeLoaded ? routeRef.current : null;
-  const positionM = t?.position_m ?? null;
+  const telemetryPositionM = t?.route_loaded === true && t.position_m != null ? t.position_m : null;
+  const positionM = stored ? telemetryPositionM ?? 0 : null;
   const controlsVisible = (isPaused || showControls) && !isCompleted;
   const elapsedValue = t?.elapsed_s != null ? formatTime(t.elapsed_s) : "0:00";
-  const distanceRemainingValue = formatDistanceRemaining(t?.dist_remaining_m);
+  const distRemainingM = t?.dist_remaining_m ?? (
+    stored && positionM != null ? Math.max(0, stored.totalDistM - positionM) : null
+  );
+  const distanceRemainingValue = formatDistanceRemaining(distRemainingM);
 
   return (
     <div className="w-screen h-screen overflow-hidden relative bg-[var(--bg)]">
@@ -299,11 +321,13 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
       {/* Map fills full viewport */}
       <div className="absolute inset-0 z-0">
         <MiniMap
+          key={stored?.rideSessionId ?? activeRideSessionId ?? stored?.routeId ?? activeRouteId ?? "route"}
           coords={stored?.coords ?? null}
           cumDist={stored?.cumDist ?? null}
           positionM={positionM}
           isDark={isDark}
           viewMode={viewMode}
+          lockToRouteStart={!rideStarted}
           isDescending={isDescending}
           isClimbing={isClimbFocus}
           ghostLat={t?.ghost_lat ?? null}
@@ -471,7 +495,7 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
           onTogglePause={togglePause}
           onEndRide={() => setShowEndConfirm(true)}
           onShiftGear={shiftGear}
-          onCycleCamera={cycleCamera}
+          onCycleCamera={onCycleCamera}
           viewMode={viewMode}
         />
       )}

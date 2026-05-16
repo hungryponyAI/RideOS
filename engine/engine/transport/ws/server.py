@@ -45,6 +45,7 @@ class RouteContext:
     phase_task: "asyncio.Task | None" = None
     library: "RouteLibrary | None" = None
     current_route_id: "str | None" = None
+    current_ride_session_id: "str | None" = None
     current_route: "RouteData | None" = None
     strava_auth: "StravaAuth | None" = None
     strava_importer: "StravaImporter | None" = None

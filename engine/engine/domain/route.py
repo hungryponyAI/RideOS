@@ -163,23 +163,47 @@ def slice_route(route: RouteData, start_m: float, end_m: float) -> RouteData:
     start_m = max(0.0, start_m)
     if start_m >= end_m:
         raise ValueError(f"slice_route: start_m ({start_m:.1f}) >= end_m ({end_m:.1f})")
-    i_start = max(0, bisect.bisect_right(cum, start_m) - 1)
-    i_end = min(n, bisect.bisect_left(cum, end_m) + 1)
-    if i_end <= i_start + 1:
+
+    def interpolate_at(distance_m: float) -> tuple[float, float, float, float]:
+        idx = min(max(bisect.bisect_right(cum, distance_m) - 1, 0), n - 2)
+        d0 = cum[idx]
+        d1 = cum[idx + 1]
+        t = 0.0 if d1 == d0 else (distance_m - d0) / (d1 - d0)
+        lat = route.lats[idx] + (route.lats[idx + 1] - route.lats[idx]) * t
+        lon = route.lons[idx] + (route.lons[idx + 1] - route.lons[idx]) * t
+        ele = route.elevations_m[idx] + (route.elevations_m[idx + 1] - route.elevations_m[idx]) * t
+        grade = route.grades_pct[idx] + (route.grades_pct[idx + 1] - route.grades_pct[idx]) * t
+        return lat, lon, ele, grade
+
+    points: list[tuple[float, float, float, float, float]] = []
+    start_lat, start_lon, start_ele, start_grade = interpolate_at(start_m)
+    points.append((start_m, start_lat, start_lon, start_ele, start_grade))
+
+    i_first_inside = bisect.bisect_right(cum, start_m)
+    i_end_inside = bisect.bisect_left(cum, end_m)
+    for i in range(i_first_inside, i_end_inside):
+        points.append((
+            cum[i],
+            route.lats[i],
+            route.lons[i],
+            route.elevations_m[i],
+            route.grades_pct[i],
+        ))
+
+    end_lat, end_lon, end_ele, end_grade = interpolate_at(end_m)
+    if not points or end_m > points[-1][0]:
+        points.append((end_m, end_lat, end_lon, end_ele, end_grade))
+
+    if len(points) < 2:
         raise ValueError("slice_route: resulting route has fewer than 2 points")
-    lats = route.lats[i_start:i_end]
-    lons = route.lons[i_start:i_end]
-    eles = route.elevations_m[i_start:i_end]
-    orig_cum = route.cum_dist_m[i_start:i_end]
-    grades = route.grades_pct[i_start:i_end]
-    offset = orig_cum[0]
-    new_cum = tuple(c - offset for c in orig_cum)
+
+    new_cum = tuple(d - start_m for d, *_ in points)
     return RouteData(
-        lats=lats,
-        lons=lons,
-        elevations_m=eles,
+        lats=tuple(lat for _, lat, _, _, _ in points),
+        lons=tuple(lon for _, _, lon, _, _ in points),
+        elevations_m=tuple(ele for _, _, _, ele, _ in points),
         cum_dist_m=new_cum,
-        grades_pct=grades,
+        grades_pct=tuple(grade for _, _, _, _, grade in points),
         total_dist_m=new_cum[-1],
     )
 

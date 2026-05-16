@@ -4,11 +4,15 @@ import { useWSSubscription } from "../../shared/ws/useWSSubscription";
 import { useDeviceStatus } from "../settings/hooks/useDeviceStatus";
 import type { RideConfig } from "../pre-ride/RideOptions";
 import type { RouteDataMessage, RouteErrorMessage } from "../../shared/types/route";
+import type { MapViewMode } from "../ride/components/MiniMap";
 
 interface Props {
   routeId: string;
+  rideSessionId: string;
   routeName: string;
   config: RideConfig;
+  viewMode: MapViewMode;
+  onCycleCamera: () => void;
   onReady: () => void;
   onCancel: () => void;
 }
@@ -17,7 +21,16 @@ type Stage = "preparing" | "countdown" | "error";
 
 const COUNTDOWN_FROM = 3;
 
-export function RideStartRitual({ routeId, routeName, config, onReady, onCancel }: Props) {
+export function RideStartRitual({
+  routeId,
+  rideSessionId,
+  routeName,
+  config,
+  viewMode,
+  onCycleCamera,
+  onReady,
+  onCancel,
+}: Props) {
   const { sendMessage, status } = useWS();
   const { kickrConnected } = useDeviceStatus();
   const [stage, setStage] = useState<Stage>("preparing");
@@ -39,6 +52,7 @@ export function RideStartRitual({ routeId, routeName, config, onReady, onCancel 
     sendMessage({
       type: "start_ride",
       route_id: routeId,
+      ride_session_id: rideSessionId,
       reverse: config.reverse,
       cutout_start_m: config.cutoutStartM,
       cutout_end_m: config.cutoutEndM,
@@ -54,14 +68,17 @@ export function RideStartRitual({ routeId, routeName, config, onReady, onCancel 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
-  useWSSubscription<RouteDataMessage>("route_data", useCallback(() => {
+  useWSSubscription<RouteDataMessage>("route_data", useCallback((msg) => {
+    if (msg.ride_session_id !== rideSessionId) return;
+    if (msg.route_id !== routeId) return;
     setRouteReady(true);
-  }, []));
+  }, [routeId, rideSessionId]));
 
   useWSSubscription<RouteErrorMessage>("route_error", useCallback((msg) => {
+    if (msg.ride_session_id && msg.ride_session_id !== rideSessionId) return;
     setErrorMsg(msg.message);
     setStage("error");
-  }, []));
+  }, [rideSessionId]));
 
   // Advance to countdown once route data arrives (trainer status is informational)
   useEffect(() => {
@@ -101,6 +118,8 @@ export function RideStartRitual({ routeId, routeName, config, onReady, onCancel 
     sendMessage({ type: "end_ride" });
     onCancelRef.current();
   }, [sendMessage]);
+
+  const cameraLabel = viewMode === "chase" ? "Chase" : viewMode === "follow" ? "Follow" : "Übersicht";
 
   const prefersReducedMotion =
     typeof window !== "undefined" &&
@@ -204,6 +223,18 @@ export function RideStartRitual({ routeId, routeName, config, onReady, onCancel 
             Abbrechen
           </button>
         </div>
+      )}
+
+      {stage !== "error" && (
+        <button
+          type="button"
+          data-testid="countdown-camera-mode-button"
+          onClick={onCycleCamera}
+          aria-label={`Kameraansicht: ${cameraLabel}`}
+          className="fixed right-4 bottom-[calc(160px_+_env(safe-area-inset-bottom,0px))] z-[1810] min-w-[44px] min-h-[44px] rounded-xl bg-[var(--surface-soft)] border border-[var(--border)] text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--accent)] transition-colors duration-150 cursor-pointer shadow-soft px-3"
+        >
+          {cameraLabel}
+        </button>
       )}
     </div>
   );

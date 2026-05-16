@@ -112,6 +112,22 @@ def test_slice_route():
     assert sliced.total_dist_m < route.total_dist_m
 
 
+def test_slice_route_interpolates_exact_cut_start_and_end():
+    route = load_gpx_content(_SIMPLE_GPX)
+    start_m = route.cum_dist_m[0] + (route.cum_dist_m[1] - route.cum_dist_m[0]) / 2
+    end_m = route.cum_dist_m[1] + (route.cum_dist_m[2] - route.cum_dist_m[1]) / 2
+
+    sliced = slice_route(route, start_m, end_m)
+
+    assert sliced.cum_dist_m[0] == pytest.approx(0.0)
+    assert sliced.total_dist_m == pytest.approx(end_m - start_m)
+    assert sliced.lats[0] == pytest.approx((route.lats[0] + route.lats[1]) / 2)
+    assert sliced.lons[0] == pytest.approx((route.lons[0] + route.lons[1]) / 2)
+    assert sliced.elevations_m[0] == pytest.approx((route.elevations_m[0] + route.elevations_m[1]) / 2)
+    assert sliced.lats[-1] == pytest.approx((route.lats[1] + route.lats[2]) / 2)
+    assert sliced.lons[-1] == pytest.approx((route.lons[1] + route.lons[2]) / 2)
+
+
 def test_slice_route_start_ge_end_raises():
     route = load_gpx_content(_SIMPLE_GPX)
     with pytest.raises(ValueError, match="start_m"):

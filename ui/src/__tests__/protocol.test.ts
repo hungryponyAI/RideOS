@@ -17,6 +17,7 @@ describe("WS outbound message types", () => {
     const msg: StartRideMessage = {
       type: "start_ride",
       route_id: "abc-123",
+      ride_session_id: "session-123",
       reverse: false,
       cutout_start_m: null,
       cutout_end_m: null,
@@ -29,6 +30,7 @@ describe("WS outbound message types", () => {
       paused: true,
     };
     expect(msg.route_id).toBe("abc-123");
+    expect(msg.ride_session_id).toBe("session-123");
     expect(msg.laps).toBe(1);
     expect(msg.physics_mode).toBe(false);
     expect(msg.paused).toBe(true);
