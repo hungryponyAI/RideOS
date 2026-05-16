@@ -47,7 +47,7 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
       onClick={() => onChange(!checked)}
       className={`relative w-9 h-5 rounded-full transition-colors duration-150 cursor-pointer shrink-0 ${checked ? "bg-[var(--accent)]" : "bg-[var(--border)]"}`}
     >
-      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-150 ${checked ? "translate-x-4" : "translate-x-0.5"}`} />
+      <span className={`absolute left-0 top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-150 ${checked ? "translate-x-[18px]" : "translate-x-[2px]"}`} />
     </button>
   );
 }
