@@ -135,8 +135,8 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
   const { status, sendMessage } = useWS();
   const t = useRideTelemetry();
   const { routeRef, routeLoaded, routeError, clearRouteError } = useRouteData();
-  const isClimbFocus = useClimbFocus(t?.effective_grade_pct);
-  const isDescending = useDescentState(t?.effective_grade_pct);
+  const isClimbFocus = useClimbFocus(t?.real_grade_pct);
+  const isDescending = useDescentState(t?.real_grade_pct);
 
   const [isPaused, setIsPaused] = useState(true);
   const [showControls, setShowControls] = useState(true);
@@ -369,7 +369,7 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
           {!t?.erg_mode && (
             <div className="grid grid-cols-2 gap-4 border-t border-[var(--border)] pt-2.5">
               <GearStrip gear={t?.gear ?? null} />
-              <GradeBar effective={t?.effective_grade_pct ?? 0} highlight={isClimbFocus} />
+              <GradeBar gradePct={t?.real_grade_pct ?? 0} highlight={isClimbFocus} />
             </div>
           )}
 

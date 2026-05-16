@@ -276,4 +276,21 @@ describe("RideScreen – ride controls integration", () => {
     expect(screen.getByText("Bis Ziel")).toBeTruthy();
     expect(screen.getByText("12.5 km")).toBeTruthy();
   });
+
+  it("renders Steigung from the real route grade at the rider position", () => {
+    render(
+      <WSProvider>
+        <RideScreen isDark={true} />
+      </WSProvider>
+    );
+    openWs();
+    simulateTelemetry({
+      real_grade_pct: 4.2,
+      effective_grade_pct: 9.8,
+    });
+
+    expect(screen.getByText("Steigung")).toBeTruthy();
+    expect(screen.getByText("+4,2%")).toBeTruthy();
+    expect(screen.queryByText("+9,8%")).toBeNull();
+  });
 });
