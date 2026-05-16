@@ -67,7 +67,7 @@ describe("useRouteLibrary - offline cache", () => {
   });
 
   it("saves fresh data to localStorage when WS responds", () => {
-    const { result: _result } = renderHook(() => useRouteLibrary());
+    renderHook(() => useRouteLibrary());
     const cb = (globalThis as Record<string, unknown>).__wsSubCb as (msg: unknown) => void;
 
     const fresh = [{ id: "r2", name: "Schwarzwald", distance_m: 8000, elevation_gain_m: 400, gpx_filename: "b.gpx" }];
@@ -99,7 +99,7 @@ describe("useRideHistory - offline cache", () => {
   });
 
   it("persists fresh ride list to localStorage on WS response", () => {
-    const { result: _result } = renderHook(() => useRideHistory());
+    renderHook(() => useRideHistory());
     const cb = (globalThis as Record<string, unknown>).__wsSubCb as (msg: unknown) => void;
 
     const rides = [{ id: "ride2", route_id: "r1", route_name: "Tour", started_at: "2026-05-10T08:00:00Z", finished_at: "2026-05-10T09:00:00Z", duration_s: 3600, distance_m: 25000, avg_power_w: 200, completed: true }];

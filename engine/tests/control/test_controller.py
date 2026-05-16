@@ -1,9 +1,17 @@
 import asyncio
+
 import pytest
 
 from engine.adapters.eventbus.asyncio_bus import AsyncioEventBus
 from engine.control.athlete import AthleteProfile
-from engine.control.controller import FtmsController, FtmsControlError, run_control_loop
+from engine.control.controller import (
+    FtmsControlError,
+    FtmsController,
+    _estimate_cw,
+    _trainer_crr,
+    _trainer_grade,
+    run_control_loop,
+)
 from engine.control.erg_debouncer import ErgDebouncer
 from engine.domain.events import PositionAdvanced, RidePauseToggled
 from engine.domain.projection import RideStateProjection
@@ -61,6 +69,15 @@ async def test_set_simulation_grade_encodes_correctly(fake_bleak_client_factory)
     await ctrl.start()
     await ctrl.set_simulation_grade(5.0)
     assert client.writes[-1] == (FMCP_UUID, b"\x11\x00\x00\xf4\x01\x00\x00", True)
+
+
+def test_trainer_simulation_params_are_calibrated():
+    athlete = AthleteProfile(weight_kg=75.0, height_cm=180.0)
+    gears = GearEngine(current_gear=6)
+
+    assert _trainer_grade(4.0, gears) == pytest.approx((4.0 / 0.903) * 0.25)
+    assert _trainer_crr(athlete.weight_kg) == pytest.approx(0.0088, rel=0.01)
+    assert _estimate_cw(athlete.weight_kg, athlete.height_cm) == pytest.approx(0.49, rel=0.01)
 
 
 async def test_tick_coalescing(fake_bleak_client_factory):
@@ -148,6 +165,52 @@ async def test_tick_writes_on_grade_change(fake_bleak_client_factory):
     sim_writes = [w for w in client.writes[baseline:] if w[1][:1] == b"\x11"]
     # First tick + post-shift tick must both write (epsilon exceeded).
     assert len(sim_writes) >= 2
+
+
+async def test_control_loop_sends_calibrated_ftms_simulation_params(fake_bleak_client_factory):
+    client = fake_bleak_client_factory(
+        auto_success_for=(
+            OpCode.REQUEST_CONTROL,
+            OpCode.START_OR_RESUME,
+            OpCode.SET_INDOOR_BIKE_SIMULATION_PARAMETERS,
+        )
+    )
+    ctrl = FtmsController(client)
+    await ctrl.start()
+    baseline = len(client.writes)
+
+    athlete = AthleteProfile(weight_kg=75.0, height_cm=180.0)
+    gears = GearEngine(current_gear=6)
+    stop = asyncio.Event()
+
+    bus = AsyncioEventBus()
+    projection = RideStateProjection()
+    erg_debouncer = ErgDebouncer(bus)
+    projection.apply(RidePauseToggled(paused=False, t_mono=0.0))
+    projection.apply(PositionAdvanced(position_m=0.0, grade_idx=0, grade_pct=4.0, lap_index=0, t_mono=0.0))
+
+    async def fake_sleep(_d):
+        stop.set()
+
+    await run_control_loop(
+        ctrl,
+        athlete,
+        stop,
+        projection=projection,
+        erg_debouncer=erg_debouncer,
+        gear_engine=gears,
+        sleep=fake_sleep,
+        clock=lambda: 0.0,
+    )
+
+    payload = next(w[1] for w in client.writes[baseline:] if w[1][:1] == b"\x11")
+    grade_i = int.from_bytes(payload[3:5], "little", signed=True)
+    crr_u = payload[5]
+    cw_u = payload[6]
+
+    assert grade_i / 100.0 == pytest.approx((4.0 / 0.903) * 0.25, abs=0.01)
+    assert crr_u == 88
+    assert cw_u == 49
 
 
 async def test_no_write_before_handshake(fake_bleak_client_factory):
@@ -239,7 +302,6 @@ async def test_shutdown_on_crash(fake_bleak_client_factory):
     await ctrl.start()
 
     gears = GearEngine(current_gear=5)
-    stop = asyncio.Event()
 
     async def faulty_loop():
         # Perform one grade write then crash

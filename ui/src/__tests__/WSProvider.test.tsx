@@ -94,6 +94,55 @@ describe("WSProvider", () => {
     expect((received[0] as Record<string, unknown>).connected).toBe(true);
   });
 
+  it("isolates subscriber errors during live dispatch", () => {
+    const received: unknown[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    function Consumer() {
+      const { subscribe } = useWS();
+      const badCb = useCallback(() => { throw new Error("subscriber failed"); }, []);
+      const goodCb = useCallback((msg: unknown) => received.push(msg), []);
+      useEffect(() => {
+        const unsubscribeBad = subscribe("telemetry", badCb);
+        const unsubscribeGood = subscribe("telemetry", goodCb);
+        return () => {
+          unsubscribeBad();
+          unsubscribeGood();
+        };
+      }, [subscribe, badCb, goodCb]);
+      return null;
+    }
+
+    render(<WSProvider><Consumer /></WSProvider>);
+    act(() => {
+      mockWs.onopen?.();
+      mockWs.onmessage?.({ data: JSON.stringify({ type: "telemetry", speed_kmh: 30 }) });
+    });
+
+    expect(received).toHaveLength(1);
+    expect(spy).toHaveBeenCalledWith("[RideOS] WS subscriber failed", expect.any(Error));
+    spy.mockRestore();
+  });
+
+  it("isolates subscriber errors during replay", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    function Consumer() {
+      const { subscribe } = useWS();
+      const cb = useCallback(() => { throw new Error("replay subscriber failed"); }, []);
+      useEffect(() => subscribe("strava_status", cb), [subscribe, cb]);
+      return null;
+    }
+    const { rerender } = render(<WSProvider><div /></WSProvider>);
+    act(() => {
+      mockWs.onopen?.();
+      mockWs.onmessage?.({ data: JSON.stringify({ type: "strava_status", connected: true }) });
+    });
+
+    rerender(<WSProvider><Consumer /></WSProvider>);
+
+    expect(spy).toHaveBeenCalledWith("[RideOS] WS subscriber failed during replay", expect.any(Error));
+    spy.mockRestore();
+  });
+
   it("ignores malformed JSON messages", () => {
     const received: unknown[] = [];
     function Consumer() {

@@ -14,6 +14,7 @@ from bleak.backends.characteristic import BleakGATTCharacteristic
 
 from engine.control.athlete import AthleteProfile
 from engine.control.erg_debouncer import ErgDebouncer
+from engine.domain.physics import estimate_cda
 from engine.domain.projection import RideStateProjection
 from engine.ftms.control_point import (
     FMCP_UUID,
@@ -32,6 +33,14 @@ if TYPE_CHECKING:
     from engine.gears.engine import GearEngine
 
 _log = logging.getLogger(__name__)
+
+_TRAINER_GRADE_SCALE: float = 0.25
+_TRAINER_CDA_FLOOR_M2: float = 0.40
+_TRAINER_CRR: float = 0.004
+_TRAINER_BASELINE_RESISTANCE_N: float = 4.0
+_TRAINER_BIKE_MASS_KG: float = 10.0
+_AIR_DENSITY_KG_M3: float = 1.225
+_GRAVITY_MS2: float = 9.80665
 
 
 class FtmsControlError(RuntimeError):
@@ -122,10 +131,20 @@ def _estimate_cw(weight_kg: float, height_cm: float) -> float:
     Uses Bassett (1999) frontal-area estimate for a cyclist in hoods position.
     CdA ≈ frontal_area × Cd, Cd ≈ 1.15, ρ = 1.225 kg/m³.
     """
-    h_m = height_cm / 100.0
-    frontal_area = 0.0276 * (h_m ** 0.725) * (weight_kg ** 0.425)
-    cda = frontal_area * 1.15
-    return cda * 1.225
+    cda = max(_TRAINER_CDA_FLOOR_M2, estimate_cda(weight_kg, height_cm))
+    return cda * _AIR_DENSITY_KG_M3
+
+
+def _trainer_crr(weight_kg: float) -> float:
+    """Return FTMS Crr including a small baseline-load approximation."""
+    mass = weight_kg + _TRAINER_BIKE_MASS_KG
+    baseline_as_crr = _TRAINER_BASELINE_RESISTANCE_N / (mass * _GRAVITY_MS2)
+    return _TRAINER_CRR + baseline_as_crr
+
+
+def _trainer_grade(real_grade_pct: float, gear_engine: "GearEngine") -> float:
+    """Return the calibrated grade sent to FTMS simulation mode."""
+    return gear_engine.effective_grade(real_grade_pct) * _TRAINER_GRADE_SCALE
 
 
 async def run_control_loop(
@@ -143,8 +162,6 @@ async def run_control_loop(
     last_sent_grade: Optional[float] = None
     last_sent_power: Optional[float] = None
     last_write_t: float = 0.0
-    crr = 0.004
-
     while not stop_event.is_set():
         now = clock()
         stale = (now - last_write_t) >= FtmsController._KEEPALIVE_S
@@ -178,7 +195,8 @@ async def run_control_loop(
 
         else:
             # Normal grade-simulation path (also used when paused → grade=0).
-            grade = 0.0 if v.paused else gear_engine.effective_grade(v.real_grade_pct)
+            grade = 0.0 if v.paused else _trainer_grade(v.real_grade_pct, gear_engine)
+            crr = _trainer_crr(athlete.weight_kg)
             cw = _estimate_cw(athlete.weight_kg, athlete.height_cm)
             changed = last_sent_grade is None or abs(grade - last_sent_grade) >= FtmsController._EPSILON_PCT
             if changed or stale:

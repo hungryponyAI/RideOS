@@ -26,8 +26,6 @@ export function RideStartRitual({
   rideSessionId,
   routeName,
   config,
-  viewMode,
-  onCycleCamera,
   onReady,
   onCancel,
 }: Props) {
@@ -118,8 +116,6 @@ export function RideStartRitual({
     sendMessage({ type: "end_ride" });
     onCancelRef.current();
   }, [sendMessage]);
-
-  const cameraLabel = viewMode === "chase" ? "Chase" : viewMode === "follow" ? "Follow" : "Übersicht";
 
   const prefersReducedMotion =
     typeof window !== "undefined" &&

@@ -26,13 +26,13 @@ describe("WS outbound message types", () => {
       warmup_s: 0,
       cooldown_s: 0,
       erg_mode: false,
-      physics_mode: false,
+      physics_mode: true,
       paused: true,
     };
     expect(msg.route_id).toBe("abc-123");
     expect(msg.ride_session_id).toBe("session-123");
     expect(msg.laps).toBe(1);
-    expect(msg.physics_mode).toBe(false);
+    expect(msg.physics_mode).toBe(true);
     expect(msg.paused).toBe(true);
   });
 });

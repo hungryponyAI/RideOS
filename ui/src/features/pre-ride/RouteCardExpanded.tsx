@@ -67,7 +67,7 @@ export const RouteCardExpanded = memo(function RouteCardExpanded({
   const totalDistM = route.distance_km * 1000;
   const [config, setConfig] = useState<RideConfig>(() => ({
     ghost: loadAppPreferences().ghost_default,
-    reverse: false, cutoutStartM: null, cutoutEndM: null, laps: 1, warmup: false, cooldown: false, ergMode: false, physicsMode: false,
+    reverse: false, cutoutStartM: null, cutoutEndM: null, laps: 1, warmup: false, cooldown: false, ergMode: false, physicsMode: true,
   }));
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(totalDistM);

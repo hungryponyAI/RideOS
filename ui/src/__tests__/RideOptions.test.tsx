@@ -12,7 +12,7 @@ const defaultConfig: RideConfig = {
   warmup: false,
   cooldown: false,
   ergMode: false,
-  physicsMode: false,
+  physicsMode: true,
 };
 
 describe("RideOptions", () => {

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { WSProvider } from "../shared/ws/WSProvider";
 import { ThemeProvider, useTheme } from "./providers/ThemeProvider";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { HomeScreen } from "../features/home/HomeScreen";
 import { PreRideScreen } from "../features/pre-ride/PreRideScreen";
 import { RideScreen, type RideSummaryData } from "../features/ride/RideScreen";
@@ -187,7 +188,9 @@ export default function App() {
   return (
     <WSProvider>
       <ThemeProvider>
-        <AppShell />
+        <ErrorBoundary>
+          <AppShell />
+        </ErrorBoundary>
       </ThemeProvider>
     </WSProvider>
   );

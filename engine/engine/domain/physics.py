@@ -12,6 +12,8 @@ class PhysicsConfig:
     crr: float = 0.004
     air_density_kg_m3: float = 1.225
     cda_m2: float | None = None
+    grade_scale: float = 0.25
+    baseline_resistance_n: float = 4.0
     drivetrain_efficiency: float = 0.97
     gravity_ms2: float = 9.80665
 
@@ -35,7 +37,7 @@ def estimate_cda(weight_kg: float, height_cm: float) -> float:
 def resistive_force_n(speed_ms: float, grade_pct: float, config: PhysicsConfig) -> float:
     """Return gravity, rolling, and aerodynamic resistance in newtons."""
     speed = max(0.0, speed_ms)
-    slope = grade_pct / 100.0
+    slope = (grade_pct * config.grade_scale) / 100.0
     theta = atan(slope)
     mass = config.total_mass_kg
     cda = config.cda_m2 if config.cda_m2 is not None else estimate_cda(config.rider_mass_kg, 175.0)
@@ -43,7 +45,7 @@ def resistive_force_n(speed_ms: float, grade_pct: float, config: PhysicsConfig) 
     gravity_n = mass * config.gravity_ms2 * sin(theta)
     rolling_n = config.crr * mass * config.gravity_ms2 * cos(theta)
     aero_n = 0.5 * config.air_density_kg_m3 * cda * speed * speed
-    return gravity_n + rolling_n + aero_n
+    return gravity_n + rolling_n + aero_n + config.baseline_resistance_n
 
 
 def advance_physics(

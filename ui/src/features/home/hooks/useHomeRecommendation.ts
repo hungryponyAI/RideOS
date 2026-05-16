@@ -8,7 +8,9 @@ export function getLastRouteId(): string | null {
 }
 
 export function setLastRouteId(id: string): void {
-  try { localStorage.setItem(LAST_ROUTE_KEY, id); } catch {}
+  try { localStorage.setItem(LAST_ROUTE_KEY, id); } catch {
+    // Ignore local cache write failures; route selection still works in memory.
+  }
 }
 
 export type RecommendReason = "last_selected" | "recent" | "ridden" | "first";

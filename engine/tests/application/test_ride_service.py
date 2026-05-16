@@ -258,13 +258,30 @@ async def test_start_ride_paused_freezes_tracker_until_resume(route_ctx_factory)
         await asyncio.wait_for(ctx.phase_task, timeout=2.0)
 
 
-async def test_start_ride_without_physics_mode_keeps_default_tracker(route_ctx_factory):
+async def test_start_ride_without_physics_mode_uses_default_physics_tracker(route_ctx_factory):
     ctx, _, route_id = route_ctx_factory()
     bus = AsyncioEventBus()
     proj = RideStateProjection()
     svc = RideService(AthleteProfile(), GearEngine(), bus, ErgDebouncer(bus), proj)
 
     await svc.start_ride(ctx, {"route_id": route_id, "laps": 1})
+    await asyncio.sleep(0.05)
+
+    assert ctx.tracker is not None
+    assert ctx.tracker._physics_config is not None
+
+    ctx.stop_event.set()
+    if ctx.phase_task is not None:
+        await asyncio.wait_for(ctx.phase_task, timeout=2.0)
+
+
+async def test_start_ride_with_physics_mode_false_keeps_speed_tracker(route_ctx_factory):
+    ctx, _, route_id = route_ctx_factory()
+    bus = AsyncioEventBus()
+    proj = RideStateProjection()
+    svc = RideService(AthleteProfile(), GearEngine(), bus, ErgDebouncer(bus), proj)
+
+    await svc.start_ride(ctx, {"route_id": route_id, "laps": 1, "physics_mode": False})
     await asyncio.sleep(0.05)
 
     assert ctx.tracker is not None

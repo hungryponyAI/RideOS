@@ -254,7 +254,7 @@ async def test_start_ride_defaults_passed_to_service():
     assert msg_arg["route_id"] == "abc123"
     assert msg_arg["laps"] == 1
     assert msg_arg["erg_mode"] is False
-    assert msg_arg["physics_mode"] is False
+    assert msg_arg["physics_mode"] is True
     assert msg_arg["reverse"] is False
     assert msg_arg["paused"] is False
 

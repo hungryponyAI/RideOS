@@ -25,6 +25,36 @@ def test_resistive_force_is_lower_on_descent_than_flat():
     assert descent < flat
 
 
+def test_flat_force_keeps_baseline_load_at_low_speed():
+    config = PhysicsConfig(rider_mass_kg=75.0, cda_m2=0.42, baseline_resistance_n=4.0)
+
+    force = resistive_force_n(speed_ms=5.0 / 3.6, grade_pct=0.0, config=config)
+
+    assert force > 7.0
+
+
+def test_shallow_descent_keeps_positive_load_at_moderate_speed():
+    config = PhysicsConfig(rider_mass_kg=75.0, cda_m2=0.42)
+
+    force = resistive_force_n(speed_ms=25.0 / 3.6, grade_pct=-3.0, config=config)
+
+    assert force > 10.0
+
+
+def test_grade_scale_softens_climbs_and_descents():
+    full_grade = PhysicsConfig(rider_mass_kg=75.0, cda_m2=0.42, grade_scale=1.0)
+    scaled_grade = PhysicsConfig(rider_mass_kg=75.0, cda_m2=0.42, grade_scale=0.25)
+
+    flat = resistive_force_n(speed_ms=8.0, grade_pct=0.0, config=full_grade)
+    full_climb = resistive_force_n(speed_ms=8.0, grade_pct=2.0, config=full_grade)
+    scaled_climb = resistive_force_n(speed_ms=8.0, grade_pct=2.0, config=scaled_grade)
+    full_descent = resistive_force_n(speed_ms=8.0, grade_pct=-2.0, config=full_grade)
+    scaled_descent = resistive_force_n(speed_ms=8.0, grade_pct=-2.0, config=scaled_grade)
+
+    assert flat < scaled_climb < full_climb
+    assert full_descent < scaled_descent < flat
+
+
 def test_flat_road_accelerates_with_power():
     config = PhysicsConfig(rider_mass_kg=75.0, cda_m2=0.42)
     state = PhysicsState(speed_ms=5.0)

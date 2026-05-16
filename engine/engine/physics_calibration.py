@@ -17,6 +17,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--height-cm", type=float, default=180.0)
     parser.add_argument("--bike-kg", type=float, default=10.0)
     parser.add_argument("--crr", type=float, default=0.004)
+    parser.add_argument("--cda", type=float, default=None)
+    parser.add_argument("--grade-scale", type=float, default=0.25)
+    parser.add_argument("--baseline-resistance-n", type=float, default=4.0)
     parser.add_argument("--dt-s", type=float, default=0.25)
     args = parser.parse_args(argv)
 
@@ -24,7 +27,9 @@ def main(argv: list[str] | None = None) -> int:
         rider_mass_kg=args.weight_kg,
         bike_mass_kg=args.bike_kg,
         crr=args.crr,
-        cda_m2=estimate_cda(args.weight_kg, args.height_cm),
+        cda_m2=args.cda if args.cda is not None else max(0.40, estimate_cda(args.weight_kg, args.height_cm)),
+        grade_scale=args.grade_scale,
+        baseline_resistance_n=args.baseline_resistance_n,
     )
     route = load_gpx(args.gpx_path)
     comparison = compare_completion_times(
@@ -37,7 +42,11 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     print(f"Route distance: {route.total_dist_m / 1000.0:.2f} km")
-    print(f"Config: rider={args.weight_kg:.1f} kg bike={args.bike_kg:.1f} kg crr={args.crr:.4f} cda={config.cda_m2:.3f} m^2")
+    print(
+        f"Config: rider={args.weight_kg:.1f} kg bike={args.bike_kg:.1f} kg "
+        f"crr={args.crr:.4f} cda={config.cda_m2:.3f} m^2 "
+        f"grade_scale={args.grade_scale:.2f} baseline={args.baseline_resistance_n:.1f} N"
+    )
     print(f"Speed mode:   {_format_estimate(comparison.speed_mode)}")
     print(f"Physics mode: {_format_estimate(comparison.physics_mode)}")
     if comparison.delta_s is not None:

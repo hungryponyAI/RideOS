@@ -32,7 +32,9 @@ function readCache(): RideEntry[] | null {
 function writeCache(rides: RideEntry[]) {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify(rides));
-  } catch {}
+  } catch {
+    // Ignore local cache write failures; live ride data remains authoritative.
+  }
 }
 
 export function useRideHistory() {

@@ -47,7 +47,7 @@ class StartRideMsg(BaseModel):
     cooldown_s: int = 0
     erg_mode: bool = False
     ghost: bool = False
-    physics_mode: bool = False
+    physics_mode: bool = True
     paused: bool = False
 
 

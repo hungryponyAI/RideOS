@@ -9,6 +9,7 @@ const mapboxMock = vi.hoisted(() => {
 
   class MockMap {
     static instances: MockMap[] = [];
+    static failConstructor = false;
 
     options: unknown;
     easeToCalls: unknown[] = [];
@@ -18,6 +19,7 @@ const mapboxMock = vi.hoisted(() => {
     private handlers = new Map<string, Array<() => void>>();
 
     constructor(options: unknown) {
+      if (MockMap.failConstructor) throw new Error("mapbox constructor failed");
       this.options = options;
       MockMap.instances.push(this);
     }
@@ -93,6 +95,7 @@ vi.mock("mapbox-gl", () => ({
 describe("MiniMap", () => {
   beforeEach(() => {
     mapboxMock.MockMap.instances.length = 0;
+    mapboxMock.MockMap.failConstructor = false;
     vi.stubEnv("VITE_MAPBOX_TOKEN", "test-token");
     vi.stubGlobal(
       "ResizeObserver",
@@ -168,6 +171,39 @@ describe("MiniMap", () => {
     expect(mapboxMock.MockMap.instances[0].options).toMatchObject({
       center: [11, 47],
     });
+  });
+
+  it("shows a fallback instead of throwing when the token is missing", async () => {
+    vi.stubEnv("VITE_MAPBOX_TOKEN", "");
+    const { MiniMap } = await import("../features/ride/components/MiniMap");
+    const { getByText } = render(
+      <MiniMap
+        coords={[[47, 11], [47.001, 11.002]]}
+        cumDist={[0, 200]}
+        positionM={100}
+        isDark={false}
+        viewMode="chase"
+      />
+    );
+
+    expect(getByText("Mapbox Token fehlt")).toBeTruthy();
+    expect(mapboxMock.MockMap.instances).toHaveLength(0);
+  });
+
+  it("shows a fallback instead of throwing when map initialization fails", async () => {
+    mapboxMock.MockMap.failConstructor = true;
+    const { MiniMap } = await import("../features/ride/components/MiniMap");
+    const { getByText } = render(
+      <MiniMap
+        coords={[[47, 11], [47.001, 11.002]]}
+        cumDist={[0, 200]}
+        positionM={100}
+        isDark={false}
+        viewMode="chase"
+      />
+    );
+
+    await waitFor(() => expect(getByText("Karte nicht verfügbar")).toBeTruthy());
   });
 
   it("keeps the camera locked to the route start until the ride starts", async () => {

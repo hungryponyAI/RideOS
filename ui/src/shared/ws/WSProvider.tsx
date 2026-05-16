@@ -20,7 +20,13 @@ export function WSProvider({ children }: { children: ReactNode }) {
     listenersRef.current.get(type)!.add(cb);
     // Replay last known message so late-mounting components get current state
     const last = lastMsgRef.current.get(type);
-    if (last !== undefined) cb(last);
+    if (last !== undefined) {
+      try {
+        cb(last);
+      } catch (error) {
+        console.error("[RideOS] WS subscriber failed during replay", error);
+      }
+    }
     return () => {
       listenersRef.current.get(type)?.delete(cb);
     };
@@ -58,7 +64,13 @@ export function WSProvider({ children }: { children: ReactNode }) {
       lastMsgRef.current.set(msg.type, msg);
       const listeners = listenersRef.current.get(msg.type);
       if (listeners) {
-        listeners.forEach((cb) => cb(msg));
+        listeners.forEach((cb) => {
+          try {
+            cb(msg);
+          } catch (error) {
+            console.error("[RideOS] WS subscriber failed", error);
+          }
+        });
       }
     };
 

@@ -1,12 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
-mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN as string;
-if (!mapboxgl.accessToken) {
-  throw new Error("VITE_MAPBOX_TOKEN is not set");
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
+mapboxgl.accessToken = MAPBOX_TOKEN ?? "";
+if (MAPBOX_TOKEN) {
+  try {
+    mapboxgl.prewarm();
+  } catch (error) {
+    console.warn("[RideOS] Mapbox prewarm failed", error);
+  }
 }
-mapboxgl.prewarm();
 
 export type MapViewMode = "chase" | "follow" | "birdseye";
 
@@ -44,6 +48,29 @@ const CLIMB_FOLLOW_PITCH = 82, CLIMB_FOLLOW_ZOOM = 19;
 const BIRDSEYE_PITCH = 0, BIRDSEYE_ZOOM = 14, BIRDSEYE_OFFSET: [number, number] = [0, 0];
 const POS_TWEEN_MS = 80;
 const LINEAR = (t: number) => t;
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function validCoord(coord: [number, number] | number[]): coord is [number, number] {
+  const [lat, lng] = coord;
+  return finiteNumber(lat) && finiteNumber(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+}
+
+function validRoute(
+  coords: Array<[number, number]> | null,
+  cumDist: number[] | null,
+): { coords: Array<[number, number]>; cumDist: number[] | null } | null {
+  if (!coords || coords.length < 2) return null;
+  if (!coords.every(validCoord)) return null;
+  if (!cumDist) return { coords, cumDist: null };
+  if (cumDist.length !== coords.length || !cumDist.every(finiteNumber)) return null;
+  for (let i = 1; i < cumDist.length; i++) {
+    if (cumDist[i] < cumDist[i - 1]) return null;
+  }
+  return { coords, cumDist };
+}
 
 function bisectRight(arr: number[], x: number): number {
   let lo = 0, hi = arr.length;
@@ -86,30 +113,40 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [styleReady, setStyleReady] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const [mapFailed, setMapFailed] = useState(false);
   const lastViewModeRef = useRef<MapViewMode>(viewMode);
   const lastEgoRef = useRef<{ ego: [number, number]; bearing: number } | null>(null);
   const initialCameraSetRef = useRef(false);
   const cameraRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const route = useMemo(() => validRoute(coords, cumDist), [coords, cumDist]);
+  const safePositionM = finiteNumber(positionM) ? positionM : null;
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || !coords?.length) return;
+    if (!container || !route || !MAPBOX_TOKEN) return;
     let revealTimer: ReturnType<typeof setTimeout> | null = null;
     let disposed = false;
-    const routeStart = coords[0];
+    const routeStart = route.coords[0];
     const initialPitch = viewMode === "birdseye" ? BIRDSEYE_PITCH : viewMode === "follow" ? FOLLOW_PITCH : CHASE_PITCH;
     const initialZoom = viewMode === "birdseye" ? BIRDSEYE_ZOOM : viewMode === "follow" ? FOLLOW_ZOOM : CHASE_ZOOM;
-    const initialBearing = viewMode === "birdseye" ? 0 : routeStartBearing(coords, cumDist);
-    const map = new mapboxgl.Map({
-      container,
-      style: STYLE,
-      config: { basemap: BASEMAP_CONFIG },
-      center: [routeStart[1], routeStart[0]],
-      bearing: initialBearing,
-      zoom: initialZoom,
-      pitch: initialPitch,
-      attributionControl: false,
-    });
+    const initialBearing = viewMode === "birdseye" ? 0 : routeStartBearing(route.coords, route.cumDist);
+    let map: mapboxgl.Map;
+    try {
+      map = new mapboxgl.Map({
+        container,
+        style: STYLE,
+        config: { basemap: BASEMAP_CONFIG },
+        center: [routeStart[1], routeStart[0]],
+        bearing: initialBearing,
+        zoom: initialZoom,
+        pitch: initialPitch,
+        attributionControl: false,
+      });
+    } catch (error) {
+      console.error("[RideOS] Mapbox initialization failed", error);
+      setMapFailed(true);
+      return;
+    }
 
     const revealConfiguredMap = () => {
       if (disposed) return;
@@ -125,14 +162,17 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
         map.setConfigProperty("basemap", "lightPreset", LIGHT_PRESET);
         map.setConfigProperty("basemap", "theme", "monochrome");
         map.setConfigProperty("basemap", "show3dObjects", true);
-      } catch { /* non-Standard style */ }
-      if (!map.getSource(DEM_SOURCE_ID)) {
-        map.addSource(DEM_SOURCE_ID, { type: "raster-dem", url: DEM_URL, tileSize: 512, maxzoom: 14 });
+        if (!map.getSource(DEM_SOURCE_ID)) {
+          map.addSource(DEM_SOURCE_ID, { type: "raster-dem", url: DEM_URL, tileSize: 512, maxzoom: 14 });
+        }
+        map.setTerrain({ source: DEM_SOURCE_ID, exaggeration: TERRAIN_EXAGGERATION });
+        map.resize();
+        map.once("idle", revealConfiguredMap);
+        revealTimer = setTimeout(revealConfiguredMap, 1200);
+      } catch (error) {
+        console.warn("[RideOS] Map style setup failed", error);
+        revealConfiguredMap();
       }
-      map.setTerrain({ source: DEM_SOURCE_ID, exaggeration: TERRAIN_EXAGGERATION });
-      map.resize();
-      map.once("idle", revealConfiguredMap);
-      revealTimer = setTimeout(revealConfiguredMap, 1200);
     };
     map.once("load", markLoaded);
     const ro = new ResizeObserver(() => map.resize());
@@ -149,10 +189,14 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
       setStyleReady(false);
       setRevealed(false);
       initialCameraSetRef.current = false;
-      map.remove();
+      try {
+        map.remove();
+      } catch (error) {
+        console.warn("[RideOS] Map cleanup failed", error);
+      }
       mapRef.current = null;
     };
-  }, [coords, cumDist]);
+  }, [route, viewMode]);
 
   useEffect(() => {
     initialCameraSetRef.current = false;
@@ -162,40 +206,44 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
       clearTimeout(cameraRevealTimerRef.current);
       cameraRevealTimerRef.current = null;
     }
-  }, [coords, cumDist]);
+  }, [route]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !styleReady || !coords) return;
+    if (!map || !styleReady || !route) return;
     const geojson = {
       type: "Feature" as const,
-      geometry: { type: "LineString" as const, coordinates: coords.map(([lat, lng]) => [lng, lat]) },
+      geometry: { type: "LineString" as const, coordinates: route.coords.map(([lat, lng]) => [lng, lat]) },
       properties: {},
     };
-    const src = map.getSource("route") as mapboxgl.GeoJSONSource | undefined;
-    if (src) { src.setData(geojson); }
-    else {
-      map.addSource("route", { type: "geojson", data: geojson });
-      map.addLayer({ id: "route", type: "line", source: "route", paint: { "line-color": "#74AFCB", "line-width": 3 } });
+    try {
+      const src = map.getSource("route") as mapboxgl.GeoJSONSource | undefined;
+      if (src) { src.setData(geojson); }
+      else {
+        map.addSource("route", { type: "geojson", data: geojson });
+        map.addLayer({ id: "route", type: "line", source: "route", paint: { "line-color": "#74AFCB", "line-width": 3 } });
+      }
+      if (map.getLayer("route")) map.moveLayer("route");
+    } catch (error) {
+      console.warn("[RideOS] Route layer update failed", error);
     }
-    if (map.getLayer("route")) map.moveLayer("route");
-  }, [coords, styleReady]);
+  }, [route, styleReady]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReady) return;
     let ego: [number, number] | null = null, bearing = 0, liveUpdate = false;
-    if (coords?.length && (lockToRouteStart || !initialCameraSetRef.current)) {
-      ego = coords[0];
-      bearing = viewMode === "birdseye" ? 0 : routeStartBearing(coords, cumDist);
+    if (route?.coords.length && (lockToRouteStart || !initialCameraSetRef.current)) {
+      ego = route.coords[0];
+      bearing = viewMode === "birdseye" ? 0 : routeStartBearing(route.coords, route.cumDist);
       lastEgoRef.current = { ego, bearing };
       liveUpdate = true;
-    } else if (coords && cumDist && positionM != null) {
-      const fresh = interpolatePosition(coords, cumDist, positionM);
+    } else if (route?.cumDist && safePositionM != null) {
+      const fresh = interpolatePosition(route.coords, route.cumDist, safePositionM);
       if (fresh) {
         ego = fresh;
         if (viewMode === "chase" || viewMode === "follow") {
-          const ahead = interpolatePosition(coords, cumDist, positionM + BEARING_LOOKAHEAD_M);
+          const ahead = interpolatePosition(route.coords, route.cumDist, safePositionM + BEARING_LOOKAHEAD_M);
           bearing = ahead ? calcBearing(ego[0], ego[1], ahead[0], ahead[1]) : 0;
         }
         lastEgoRef.current = { ego, bearing };
@@ -219,53 +267,67 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const center: [number, number] = [ego[1], ego[0]];
     const posDur = prefersReducedMotion ? 0 : POS_TWEEN_MS;
-    if (!initialCameraSetRef.current) {
-      map.stop();
-      map.easeTo({ center, bearing, pitch, zoom, offset, duration: 0, essential: true });
-      initialCameraSetRef.current = true;
-      const revealCamera = () => {
-        if (cameraRevealTimerRef.current) {
-          clearTimeout(cameraRevealTimerRef.current);
-          cameraRevealTimerRef.current = null;
-        }
-        setRevealed(true);
-      };
-      map.once("idle", revealCamera);
-      cameraRevealTimerRef.current = setTimeout(revealCamera, 250);
-    } else if (viewChanged) {
-      map.stop();
-      map.easeTo({ center, bearing, pitch, zoom, offset, duration: 0, essential: true });
-    } else {
-      map.easeTo({ center, bearing, pitch, zoom, offset, duration: posDur, easing: LINEAR, essential: true });
+    try {
+      if (!initialCameraSetRef.current) {
+        map.stop();
+        map.easeTo({ center, bearing, pitch, zoom, offset, duration: 0, essential: true });
+        initialCameraSetRef.current = true;
+        const revealCamera = () => {
+          if (cameraRevealTimerRef.current) {
+            clearTimeout(cameraRevealTimerRef.current);
+            cameraRevealTimerRef.current = null;
+          }
+          setRevealed(true);
+        };
+        map.once("idle", revealCamera);
+        cameraRevealTimerRef.current = setTimeout(revealCamera, 250);
+      } else if (viewChanged) {
+        map.stop();
+        map.easeTo({ center, bearing, pitch, zoom, offset, duration: 0, essential: true });
+      } else {
+        map.easeTo({ center, bearing, pitch, zoom, offset, duration: posDur, easing: LINEAR, essential: true });
+      }
+      const egoGeo = { type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [ego[1], ego[0]] }, properties: {} };
+      const egoSrc = map.getSource("ego") as mapboxgl.GeoJSONSource | undefined;
+      if (egoSrc) { if (liveUpdate) egoSrc.setData(egoGeo); }
+      else {
+        map.addSource("ego", { type: "geojson", data: egoGeo });
+        map.addLayer({ id: "ego", type: "circle", source: "ego", paint: { "circle-radius": 8, "circle-color": "#FFFFFF", "circle-stroke-color": "#74AFCB", "circle-stroke-width": 2.5 } });
+        map.moveLayer("ego");
+      }
+      const layers = map.getStyle().layers;
+      if (layers && layers.length && layers[layers.length - 1].id !== "ego") map.moveLayer("ego");
+    } catch (error) {
+      console.warn("[RideOS] Map camera update failed", error);
+      setRevealed(true);
     }
-    const egoGeo = { type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [ego[1], ego[0]] }, properties: {} };
-    const egoSrc = map.getSource("ego") as mapboxgl.GeoJSONSource | undefined;
-    if (egoSrc) { if (liveUpdate) egoSrc.setData(egoGeo); }
-    else {
-      map.addSource("ego", { type: "geojson", data: egoGeo });
-      map.addLayer({ id: "ego", type: "circle", source: "ego", paint: { "circle-radius": 8, "circle-color": "#FFFFFF", "circle-stroke-color": "#74AFCB", "circle-stroke-width": 2.5 } });
-      map.moveLayer("ego");
-    }
-    const layers = map.getStyle().layers;
-    if (layers && layers.length && layers[layers.length - 1].id !== "ego") map.moveLayer("ego");
-  }, [coords, cumDist, positionM, styleReady, viewMode, lockToRouteStart, isDescending, isClimbing]);
+  }, [route, safePositionM, styleReady, viewMode, lockToRouteStart, isDescending, isClimbing]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReady) return;
     const hasGhost = ghostLat != null && ghostLng != null && Number.isFinite(ghostLat) && Number.isFinite(ghostLng);
-    const ghostSrc = map.getSource("ghost") as mapboxgl.GeoJSONSource | undefined;
-    if (!hasGhost) { if (ghostSrc) ghostSrc.setData({ type: "FeatureCollection", features: [] }); return; }
-    const ghostGeo = { type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [ghostLng, ghostLat] }, properties: {} };
-    if (ghostSrc) { ghostSrc.setData(ghostGeo); }
-    else {
-      map.addSource("ghost", { type: "geojson", data: ghostGeo });
-      map.addLayer({ id: "ghost", type: "circle", source: "ghost", paint: { "circle-radius": 6, "circle-color": "#74AFCB", "circle-stroke-color": "#B7C0CA", "circle-stroke-width": 1.5, "circle-opacity": 0.45 } }, map.getLayer("ego") ? "ego" : undefined);
+    try {
+      const ghostSrc = map.getSource("ghost") as mapboxgl.GeoJSONSource | undefined;
+      if (!hasGhost) { if (ghostSrc) ghostSrc.setData({ type: "FeatureCollection", features: [] }); return; }
+      const ghostGeo = { type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [ghostLng, ghostLat] }, properties: {} };
+      if (ghostSrc) { ghostSrc.setData(ghostGeo); }
+      else {
+        map.addSource("ghost", { type: "geojson", data: ghostGeo });
+        map.addLayer({ id: "ghost", type: "circle", source: "ghost", paint: { "circle-radius": 6, "circle-color": "#74AFCB", "circle-stroke-color": "#B7C0CA", "circle-stroke-width": 1.5, "circle-opacity": 0.45 } }, map.getLayer("ego") ? "ego" : undefined);
+      }
+    } catch (error) {
+      console.warn("[RideOS] Ghost layer update failed", error);
     }
   }, [ghostLat, ghostLng, styleReady]);
 
   return (
     <div className="relative w-full h-full min-h-[300px] bg-[var(--bg)]">
+      {(!MAPBOX_TOKEN || !route || mapFailed) && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[var(--bg)] text-[11px] font-medium text-[var(--text-muted)]">
+          {!MAPBOX_TOKEN ? "Mapbox Token fehlt" : mapFailed ? "Karte nicht verfügbar" : "Warte auf Strecke"}
+        </div>
+      )}
       <div
         ref={containerRef}
         className={`w-full h-full transition-opacity duration-200 motion-reduce:transition-none ${revealed ? "opacity-100" : "opacity-0"}`}

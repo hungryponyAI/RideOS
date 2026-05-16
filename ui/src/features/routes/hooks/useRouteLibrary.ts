@@ -16,7 +16,9 @@ function readCache(): RouteLibraryEntry[] {
 function writeCache(routes: RouteLibraryEntry[]) {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify(routes));
-  } catch {}
+  } catch {
+    // Ignore local cache write failures; route library updates still render.
+  }
 }
 
 export function useRouteLibrary(): RouteLibraryEntry[] {

@@ -185,7 +185,7 @@ class RideService:
         laps = max(1, int(msg.get("laps", 1)))
         warmup_s = max(0, int(msg.get("warmup_s", 0)))
         cooldown_s = max(0, int(msg.get("cooldown_s", 0)))
-        use_physics = bool(msg.get("physics_mode", False))
+        use_physics = bool(msg.get("physics_mode", True))
         initially_paused = bool(msg.get("paused", False))
 
         self._bus.publish(RideStarted(
@@ -252,7 +252,7 @@ class RideService:
         if use_physics:
             physics_config = PhysicsConfig(
                 rider_mass_kg=self._athlete.weight_kg,
-                cda_m2=estimate_cda(self._athlete.weight_kg, self._athlete.height_cm),
+                cda_m2=max(0.40, estimate_cda(self._athlete.weight_kg, self._athlete.height_cm)),
             )
 
             def power_fn() -> Optional[float]:
