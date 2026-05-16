@@ -13,7 +13,7 @@ export const ConnectionBanner = memo(function ConnectionBanner({ status }: Props
         role="status"
         aria-label="Verbindungsstatus: Verbunden"
       >
-        <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)] shrink-0 animate-pulse" />
+        <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)] shrink-0 animate-pulse motion-reduce:animate-none" />
         <span className="text-[10px] font-medium text-[var(--success)]">Trainer verbunden</span>
       </div>
     );
@@ -22,7 +22,7 @@ export const ConnectionBanner = memo(function ConnectionBanner({ status }: Props
   if (status === "connecting" || status === "reconnecting") {
     return (
       <div className="h-7 w-full flex items-center justify-center gap-2 bg-[var(--surface)] border-b border-[var(--border)]" role="status">
-        <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning)] animate-pulse shrink-0" />
+        <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning)] animate-pulse motion-reduce:animate-none shrink-0" />
         <span className="text-[10px] font-medium text-[var(--warning)]">
           {status === "reconnecting" ? "Verbindung wird wiederhergestellt" : "Verbindung wird aufgebaut"}
         </span>

@@ -58,7 +58,8 @@ export function RideControls({ isPaused, visible, onTogglePause, onEndRide, onSh
 
       <div
         data-testid="ride-control-strip"
-        className={`absolute bottom-[160px] right-4 z-20 flex flex-col gap-1.5 items-end transition-opacity duration-300 motion-reduce:transition-none ${show ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+        className={`absolute right-4 z-20 flex flex-col gap-1.5 items-end transition-opacity duration-300 motion-reduce:transition-none ${show ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+        style={{ bottom: 'calc(160px + env(safe-area-inset-bottom, 0px))' }}
       >
         <div className="flex gap-0.5 bg-[var(--surface-soft)] backdrop-blur-md border border-[var(--border)] rounded-xl px-1 py-1 shadow-soft">
           <button

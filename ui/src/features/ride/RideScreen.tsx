@@ -77,14 +77,33 @@ function RideStatusMetric({
 }
 
 function EndRideConfirmation({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    cancelRef.current?.focus();
+  }, []);
+
   return (
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center" role="dialog" aria-modal="true" aria-label="Fahrt beenden bestätigen">
+    <div
+      className="fixed inset-0 z-[2000] flex items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Fahrt beenden bestätigen"
+      onKeyDown={(e) => {
+        if (e.key !== 'Tab') return;
+        e.preventDefault();
+        if (document.activeElement === cancelRef.current) confirmRef.current?.focus();
+        else cancelRef.current?.focus();
+      }}
+    >
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel} />
       <div className="relative z-10 bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-elevated px-8 py-6 flex flex-col items-center gap-4 min-w-[240px]">
         <span className="text-[13px] font-medium text-[var(--text)]">Fahrt beenden?</span>
         <span className="text-[11px] text-[var(--text-muted)] text-center">Die Fahrt wird gestoppt und gespeichert.</span>
         <div className="flex gap-3 w-full">
           <button
+            ref={cancelRef}
             type="button"
             onClick={onCancel}
             className="flex-1 min-h-[44px] rounded-xl border border-[var(--border)] text-[12px] font-medium text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)] transition-colors duration-150 cursor-pointer"
@@ -92,6 +111,7 @@ function EndRideConfirmation({ onConfirm, onCancel }: { onConfirm: () => void; o
             Abbrechen
           </button>
           <button
+            ref={confirmRef}
             type="button"
             onClick={onConfirm}
             data-testid="end-ride-confirm"
@@ -353,8 +373,8 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
         </HudPanel>
       </div>
 
-      {/* Top-right: ride status HUD */}
-      <div className={`absolute top-[40px] right-4 z-10 w-[min(280px,calc(100vw-2rem))] transition-opacity duration-500 motion-reduce:transition-none ${isCompleted ? "opacity-40" : "opacity-100"}`}>
+      {/* Top-right: ride status HUD — width capped so it never overlaps the left HUD */}
+      <div className={`absolute top-[40px] right-4 z-10 w-[min(280px,calc(100vw-230px))] transition-opacity duration-500 motion-reduce:transition-none ${isCompleted ? "opacity-40" : "opacity-100"}`}>
         <HudPanel className="p-3 flex flex-col gap-2">
           <RideStatusMetric
             label="Ghost Gap"
@@ -408,8 +428,11 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
         )}
       </div>
 
-      {/* Bottom: elevation timeline */}
-      <div className={`absolute bottom-3 left-4 right-4 z-10 transition-[height] duration-500 ease-oudena motion-reduce:transition-none ${isClimbFocus ? "h-[200px]" : "h-[140px]"}`}>
+      {/* Bottom: elevation timeline — bottom offset accounts for safe-area on mobile */}
+      <div
+        className={`absolute left-4 right-4 z-10 transition-[height] duration-500 ease-oudena motion-reduce:transition-none ${isClimbFocus ? "h-[200px]" : "h-[140px]"}`}
+        style={{ bottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
+      >
         <HudPanel className="h-full overflow-hidden flex flex-col">
           <div className="h-7 shrink-0 px-3 flex items-center justify-between border-b border-[var(--border)]">
             <span className="text-[9px] font-sans font-medium uppercase tracking-[0.15em] text-[var(--text-subtle)]">

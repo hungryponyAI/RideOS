@@ -76,7 +76,7 @@ export function AppNav({ current, onNavigate }: Props) {
     <nav
       aria-label="Hauptnavigation"
       className="shrink-0 flex items-stretch border-t border-[var(--border)] bg-[var(--surface)]"
-      style={{ height: 56 }}
+      style={{ minHeight: 56, paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
       {NAV_ITEMS.map(({ view, label, icon }) => {
         const isActive = current === view;
@@ -87,9 +87,15 @@ export function AppNav({ current, onNavigate }: Props) {
             onClick={() => onNavigate(view)}
             aria-label={label}
             aria-current={isActive ? 'page' : undefined}
-            className={`flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-medium tracking-wider uppercase transition-colors duration-150 cursor-pointer min-h-[44px]
+            className={`relative flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-medium tracking-wider uppercase transition-colors duration-150 cursor-pointer min-h-[44px]
               ${isActive ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text)]'}`}
           >
+            {isActive && (
+              <span
+                aria-hidden="true"
+                className="absolute top-0 left-3 right-3 h-[2px] rounded-full bg-[var(--accent)]"
+              />
+            )}
             {icon}
             <span className="hidden sm:block">{label}</span>
           </button>

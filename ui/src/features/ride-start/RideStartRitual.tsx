@@ -161,7 +161,7 @@ export function RideStartRitual({ routeId, routeName, config, onReady, onCancel 
           <div className="flex items-center gap-2">
             <span
               className={`w-1.5 h-1.5 rounded-full ${
-                kickrConnected ? "bg-[var(--success)] animate-pulse" : "bg-[var(--warning)] animate-pulse"
+                kickrConnected ? "bg-[var(--success)] animate-pulse motion-reduce:animate-none" : "bg-[var(--warning)] animate-pulse motion-reduce:animate-none"
               }`}
             />
             <span className="text-[11px] text-[var(--text-muted)]">
@@ -228,9 +228,9 @@ function StatusRow({
             <polyline points="20 6 9 17 4 12" />
           </svg>
         ) : warn ? (
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning)] animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning)] animate-pulse motion-reduce:animate-none" />
         ) : loading ? (
-          <span className="w-3 h-3 rounded-full border-2 border-[var(--border)] border-t-[var(--accent)] animate-spin" />
+          <span className="w-3 h-3 rounded-full border-2 border-[var(--border)] border-t-[var(--accent)] animate-spin motion-reduce:animate-none" />
         ) : null}
       </div>
       <span className={`text-[12px] ${done ? "text-[var(--text)]" : "text-[var(--text-muted)]"}`}>
