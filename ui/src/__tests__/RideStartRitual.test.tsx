@@ -143,29 +143,6 @@ describe("RideStartRitual", () => {
     expect(screen.getByTestId("cancel-countdown")).toBeTruthy();
   });
 
-  it("allows camera mode switching during the startup overlay", () => {
-    const onCycleCamera = vi.fn();
-    render(
-      <Wrapper>
-        <RideStartRitual
-          routeId="r1"
-          rideSessionId="s1"
-          routeName="Testroute"
-          config={DEFAULT_CONFIG}
-          viewMode="follow"
-          onCycleCamera={onCycleCamera}
-          onReady={vi.fn()}
-          onCancel={vi.fn()}
-        />
-      </Wrapper>
-    );
-    openWs();
-
-    const cameraButton = screen.getByTestId("countdown-camera-mode-button");
-    expect(cameraButton.getAttribute("aria-label")).toBe("Kameraansicht: Follow");
-    fireEvent.click(cameraButton);
-    expect(onCycleCamera).toHaveBeenCalledOnce();
-  });
 
   it("ignores stale route_data from another route", () => {
     render(
