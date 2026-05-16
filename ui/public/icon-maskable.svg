@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Full-bleed background required for maskable icons -->
+  <rect width="512" height="512" fill="#111417"/>
+  <!-- Logo centered in 80% safe zone (51–461px) — scaled 8x from 32px original -->
+  <g transform="translate(256, 256) scale(8)" stroke="#74AFCB" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" fill="none">
+    <path d="M12 0A12 12 0 1 1 0 -12"/>
+    <path d="M-5.5 0.5 L6.75 -1" opacity="0.82"/>
+  </g>
+</svg>

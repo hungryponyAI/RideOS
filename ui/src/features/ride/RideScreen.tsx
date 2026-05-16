@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWS } from "../../shared/ws/useWS";
+import { useAppVisibility } from "../../shared/hooks/useAppVisibility";
 import { useRideTelemetry } from "./hooks/useRideTelemetry";
 import { useClimbFocus } from "./hooks/useClimbFocus";
 import { useDescentState } from "./hooks/useDescentState";
@@ -181,6 +182,15 @@ export function RideScreen({ isDark, onRideEnded }: Props) {
       return next;
     });
   }, [sendMessage]);
+
+  const handleHidden = useCallback(() => {
+    if (!isPaused) {
+      sendMessage({ type: "set_paused", paused: true });
+      setIsPaused(true);
+    }
+  }, [isPaused, sendMessage]);
+
+  useAppVisibility(handleHidden);
 
   const handleEndConfirmed = useCallback(() => {
     setShowEndConfirm(false);

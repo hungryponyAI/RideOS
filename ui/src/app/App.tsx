@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { WSProvider } from "../shared/ws/WSProvider";
 import { ThemeProvider, useTheme } from "./providers/ThemeProvider";
 import { HomeScreen } from "../features/home/HomeScreen";
@@ -61,6 +61,15 @@ function AppShell() {
 
   const isRiding = view === 'ride';
   const isPreparing = view === 'preparing';
+
+  useEffect(() => {
+    if (!isRiding) return;
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isRiding]);
 
   const handleRideEnded = (data: RideSummaryData) => {
     setRideSummary({

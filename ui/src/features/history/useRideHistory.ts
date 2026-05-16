@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useWS } from "../../shared/ws/useWS";
 import { useWSSubscription } from "../../shared/ws/useWSSubscription";
 
@@ -18,10 +18,28 @@ interface RideListMsg {
   rides: RideEntry[];
 }
 
+const CACHE_KEY = "rideos_ride_history";
+
+function readCache(): RideEntry[] | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? (JSON.parse(raw) as RideEntry[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(rides: RideEntry[]) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(rides));
+  } catch {}
+}
+
 export function useRideHistory() {
   const { sendMessage, status } = useWS();
-  const [rides, setRides] = useState<RideEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cached = useMemo(() => readCache(), []);
+  const [rides, setRides] = useState<RideEntry[]>(cached ?? []);
+  const [loading, setLoading] = useState(cached === null);
   const requestedRef = useRef(false);
 
   useEffect(() => {
@@ -34,6 +52,7 @@ export function useRideHistory() {
   const handleRideList = useCallback((msg: RideListMsg) => {
     setRides(msg.rides);
     setLoading(false);
+    writeCache(msg.rides);
   }, []);
 
   useWSSubscription<RideListMsg>("ride_list", handleRideList);
