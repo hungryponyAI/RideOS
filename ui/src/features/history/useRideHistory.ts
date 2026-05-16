@@ -59,5 +59,20 @@ export function useRideHistory() {
 
   useWSSubscription<RideListMsg>("ride_list", handleRideList);
 
-  return { rides, loading };
+  const deleteRide = useCallback((rideId: string) => {
+    setRides(current => {
+      const next = current.filter(ride => ride.id !== rideId);
+      writeCache(next);
+      return next;
+    });
+    sendMessage({ type: "delete_ride", ride_id: rideId });
+  }, [sendMessage]);
+
+  const deleteAllRides = useCallback(() => {
+    setRides([]);
+    writeCache([]);
+    sendMessage({ type: "delete_all_rides" });
+  }, [sendMessage]);
+
+  return { rides, loading, deleteRide, deleteAllRides };
 }

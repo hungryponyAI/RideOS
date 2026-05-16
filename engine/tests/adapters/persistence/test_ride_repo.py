@@ -80,6 +80,31 @@ def test_get_ride_events_filtered_by_type(repo):
     assert len(gear) == 1
 
 
+def test_delete_ride_removes_row_and_events(repo):
+    repo.start_ride("r1", "2026-01-01T00:00:00+00:00", None, 1, 0, 0, False)
+    repo.record_event("r1", 0, 0, "TelemetryReading", "{}")
+
+    assert repo.delete_ride("r1") is True
+
+    assert repo.get_ride("r1") is None
+    assert repo.get_ride_events("r1") == []
+
+
+def test_delete_ride_missing_returns_false(repo):
+    assert repo.delete_ride("missing") is False
+
+
+def test_delete_all_rides_removes_rows_and_events(repo):
+    repo.start_ride("r1", "2026-01-01T00:00:00+00:00", None, 1, 0, 0, False)
+    repo.record_event("r1", 0, 0, "TelemetryReading", "{}")
+    repo.start_ride("r2", "2026-01-02T00:00:00+00:00", None, 1, 0, 0, False)
+
+    assert repo.delete_all_rides() == 2
+
+    assert repo.list_rides() == []
+    assert repo.get_ride_events("r1") == []
+
+
 # ── RideRepoSink integration tests ───────────────────────────────────────────
 
 def _t(offset: float = 0.0) -> float:

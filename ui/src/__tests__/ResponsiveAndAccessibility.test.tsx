@@ -6,7 +6,7 @@ import { ConnectionBanner } from "../shared/ui/ConnectionBanner";
 import { RideScreen } from "../features/ride/RideScreen";
 import { WSProvider } from "../shared/ws/WSProvider";
 import { RideSummaryScreen } from "../features/summary/RideSummaryScreen";
-import { HistoryScreen } from "../features/history/HistoryScreen";
+import { RideHistorySection } from "../features/history/HistoryScreen";
 import { AnalyticsScreen } from "../features/analytics/AnalyticsScreen";
 
 vi.mock("../features/ride/components/MiniMap", () => ({
@@ -41,11 +41,11 @@ describe("AppNav - active indicator", () => {
     expect(nav?.getAttribute("aria-label")).toBe("Hauptnavigation");
   });
 
-  it("all 6 nav buttons have aria-labels", () => {
-    const { getByLabelText } = render(<AppNav current="home" onNavigate={vi.fn()} />);
+  it("all 5 nav buttons have aria-labels", () => {
+    const { getByLabelText, queryByLabelText } = render(<AppNav current="home" onNavigate={vi.fn()} />);
     expect(getByLabelText("Startseite")).toBeTruthy();
     expect(getByLabelText("Strecken")).toBeTruthy();
-    expect(getByLabelText("Verlauf")).toBeTruthy();
+    expect(queryByLabelText("Verlauf")).toBeNull();
     expect(getByLabelText("Analyse")).toBeTruthy();
     expect(getByLabelText("Gerät")).toBeTruthy();
     expect(getByLabelText("Einstellungen")).toBeTruthy();
@@ -55,7 +55,6 @@ describe("AppNav - active indicator", () => {
     const { getByLabelText } = render(<AppNav current="analytics" onNavigate={vi.fn()} />);
     expect(getByLabelText("Analyse").getAttribute("aria-current")).toBe("page");
     expect(getByLabelText("Startseite").getAttribute("aria-current")).toBeNull();
-    expect(getByLabelText("Verlauf").getAttribute("aria-current")).toBeNull();
   });
 });
 
@@ -260,9 +259,9 @@ describe("Screen render smoke tests", () => {
     expect(screen.getByTestId("ride-again-button")).toBeTruthy();
   });
 
-  it("HistoryScreen renders data-testid", () => {
-    render(<HistoryScreen />);
-    expect(screen.getByTestId("history-screen")).toBeTruthy();
+  it("RideHistorySection renders data-testid", () => {
+    render(<RideHistorySection />);
+    expect(screen.getByTestId("ride-history-section")).toBeTruthy();
   });
 
   it("AnalyticsScreen renders data-testid", () => {

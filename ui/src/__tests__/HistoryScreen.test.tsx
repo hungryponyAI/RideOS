@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
-import { HistoryScreen } from "../features/history/HistoryScreen";
+import { RideHistorySection } from "../features/history/HistoryScreen";
 import { WSProvider } from "../shared/ws/WSProvider";
 
 let mockWs: {
@@ -64,15 +64,16 @@ const SAMPLE_RIDE = {
 function renderHistory() {
   return render(
     <WSProvider>
-      <HistoryScreen />
+      <RideHistorySection />
     </WSProvider>
   );
 }
 
-describe("HistoryScreen", () => {
-  it("renders history screen", () => {
+describe("RideHistorySection", () => {
+  it("renders ride history section", () => {
     renderHistory();
-    expect(screen.getByTestId("history-screen")).toBeTruthy();
+    expect(screen.getByTestId("ride-history-section")).toBeTruthy();
+    expect(screen.getByText("Letzte Fahrten")).toBeTruthy();
   });
 
   it("sends list_rides when WS connects", () => {
@@ -176,5 +177,49 @@ describe("HistoryScreen", () => {
     fireEvent.click(screen.getByTestId("back-button"));
     expect(screen.queryByTestId("ride-detail")).toBeNull();
     expect(screen.getByTestId("ride-list")).toBeTruthy();
+  });
+
+  it("deletes a single ride after confirmation", () => {
+    renderHistory();
+    openWs();
+    simulateRideList([SAMPLE_RIDE]);
+
+    fireEvent.click(screen.getByTestId("delete-ride-button"));
+    expect(screen.getByTestId("delete-ride-dialog")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("delete-confirm-button"));
+
+    const msgs = mockWs.sentMessages.map(m => JSON.parse(m));
+    expect(msgs.find(m => m.type === "delete_ride" && m.ride_id === "r1")).toBeTruthy();
+    expect(screen.queryByTestId("ride-card")).toBeNull();
+  });
+
+  it("can cancel single ride deletion", () => {
+    renderHistory();
+    openWs();
+    simulateRideList([SAMPLE_RIDE]);
+
+    fireEvent.click(screen.getByTestId("delete-ride-button"));
+    fireEvent.click(screen.getByTestId("delete-cancel-button"));
+
+    const msgs = mockWs.sentMessages.map(m => JSON.parse(m));
+    expect(msgs.find(m => m.type === "delete_ride")).toBeFalsy();
+    expect(screen.getByTestId("ride-card")).toBeTruthy();
+  });
+
+  it("deletes all rides after confirmation", () => {
+    renderHistory();
+    openWs();
+    simulateRideList([
+      SAMPLE_RIDE,
+      { ...SAMPLE_RIDE, id: "r2", route_name: "Schwarzwald" },
+    ]);
+
+    fireEvent.click(screen.getByTestId("delete-all-rides-button"));
+    expect(screen.getByTestId("delete-all-rides-dialog")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("delete-confirm-button"));
+
+    const msgs = mockWs.sentMessages.map(m => JSON.parse(m));
+    expect(msgs.find(m => m.type === "delete_all_rides")).toBeTruthy();
+    expect(screen.queryByTestId("ride-card")).toBeNull();
   });
 });

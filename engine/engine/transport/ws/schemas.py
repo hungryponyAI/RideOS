@@ -56,6 +56,15 @@ class DeleteRouteMsg(BaseModel):
     route_id: str
 
 
+class DeleteRideMsg(BaseModel):
+    type: Literal["delete_ride"]
+    ride_id: str
+
+
+class DeleteAllRidesMsg(BaseModel):
+    type: Literal["delete_all_rides"]
+
+
 class RenameRouteMsg(BaseModel):
     type: Literal["rename_route"]
     route_id: str

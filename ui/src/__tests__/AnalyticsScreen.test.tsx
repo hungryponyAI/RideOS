@@ -64,6 +64,24 @@ function simulateOverview(overrides: object = {}) {
   });
 }
 
+function simulateRideList(rides: unknown[]) {
+  act(() => {
+    mockWs.onmessage?.({ data: JSON.stringify({ type: "ride_list", rides }) });
+  });
+}
+
+const SAMPLE_RIDE = {
+  id: "r1",
+  route_id: "route1",
+  route_name: "Alpenrunde",
+  started_at: "2026-05-15T10:00:00+00:00",
+  finished_at: "2026-05-15T11:00:00+00:00",
+  duration_s: 3600,
+  distance_m: 25000,
+  avg_power_w: 185,
+  completed: true,
+};
+
 function renderAnalytics() {
   return render(
     <WSProvider>
@@ -83,6 +101,14 @@ describe("AnalyticsScreen", () => {
     openWs();
     const msgs = mockWs.sentMessages.map(m => JSON.parse(m));
     expect(msgs.find(m => m.type === "get_analytics_overview")).toBeTruthy();
+  });
+
+  it("sends list_rides for the latest rides section when WS connects", () => {
+    renderAnalytics();
+    openWs();
+    simulateOverview();
+    const msgs = mockWs.sentMessages.map(m => JSON.parse(m));
+    expect(msgs.find(m => m.type === "list_rides")).toBeTruthy();
   });
 
   it("shows loading state before overview arrives", () => {
@@ -148,6 +174,25 @@ describe("AnalyticsScreen", () => {
     simulateOverview();
     fireEvent.click(screen.getByTestId("advanced-toggle"));
     expect(screen.getByTestId("advanced-content")).toBeTruthy();
+  });
+
+  it("renders latest rides below analytics sections", () => {
+    renderAnalytics();
+    openWs();
+    simulateOverview();
+    simulateRideList([SAMPLE_RIDE]);
+    expect(screen.getByText("Letzte Fahrten")).toBeTruthy();
+    expect(screen.getByTestId("ride-list")).toBeTruthy();
+    expect(screen.getByText("Alpenrunde")).toBeTruthy();
+  });
+
+  it("opens the existing ride detail from latest rides", () => {
+    renderAnalytics();
+    openWs();
+    simulateOverview();
+    simulateRideList([SAMPLE_RIDE]);
+    fireEvent.click(screen.getByTestId("ride-card"));
+    expect(screen.getByTestId("ride-detail")).toBeTruthy();
   });
 
   it("advanced section closes on second toggle click", () => {

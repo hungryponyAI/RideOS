@@ -15,6 +15,8 @@ from pydantic import ValidationError
 
 from engine.transport.ws.schemas import (
     AthleteSettingsMsg,
+    DeleteAllRidesMsg,
+    DeleteRideMsg,
     DeleteRouteMsg,
     EndRideMsg,
     GearShiftMsg,
@@ -251,6 +253,12 @@ class WSInbound:
         ctx = self._ctx
         if ctx.ride_repo is None:
             return
+        await self._send_ride_list(ws)
+
+    async def _send_ride_list(self, ws: "ServerConnection") -> None:
+        ctx = self._ctx
+        if ctx.ride_repo is None:
+            return
         rows = ctx.ride_repo.list_rides()
         rides = []
         for row in rows:
@@ -271,6 +279,46 @@ class WSInbound:
                 "completed": row["finished_at"] is not None,
             })
         await ws.send(json.dumps({"type": "ride_list", "rides": rides}))
+
+    async def _send_analytics_overview(self, ws: "ServerConnection") -> None:
+        ctx = self._ctx
+        if ctx.ride_repo is None:
+            return
+        from engine.application.analytics_service import AnalyticsService
+        await ws.send(json.dumps(AnalyticsService(ctx.ride_repo).get_overview()))
+
+    async def _delete_ride(self, ws: "ServerConnection", data: dict) -> None:
+        try:
+            msg = DeleteRideMsg.model_validate(data)
+        except ValidationError:
+            return
+        ctx = self._ctx
+        if ctx.ride_repo is None:
+            return
+        deleted = ctx.ride_repo.delete_ride(msg.ride_id)
+        await ws.send(json.dumps({
+            "type": "ride_deleted",
+            "ride_id": msg.ride_id,
+            "deleted": deleted,
+        }))
+        await self._send_ride_list(ws)
+        await self._send_analytics_overview(ws)
+
+    async def _delete_all_rides(self, ws: "ServerConnection", data: dict) -> None:
+        try:
+            DeleteAllRidesMsg.model_validate(data)
+        except ValidationError:
+            return
+        ctx = self._ctx
+        if ctx.ride_repo is None:
+            return
+        deleted_count = ctx.ride_repo.delete_all_rides()
+        await ws.send(json.dumps({
+            "type": "rides_deleted",
+            "deleted_count": deleted_count,
+        }))
+        await self._send_ride_list(ws)
+        await self._send_analytics_overview(ws)
 
     async def _get_ride(self, ws: "ServerConnection", data: dict) -> None:
         try:
@@ -375,6 +423,8 @@ _DISPATCH: dict[str, _Handler] = {
     "preview_route": WSInbound._preview_route,
     "get_ride_summary": WSInbound._get_ride_summary,
     "list_rides": WSInbound._list_rides,
+    "delete_ride": WSInbound._delete_ride,
+    "delete_all_rides": WSInbound._delete_all_rides,
     "get_ride": WSInbound._get_ride,
     "get_analytics_overview": WSInbound._get_analytics_overview,
     "get_ride_analytics": WSInbound._get_ride_analytics,

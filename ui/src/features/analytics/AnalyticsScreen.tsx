@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAnalyticsOverview, type PowerTrendPoint } from "./useAnalytics";
+import { RideHistorySection } from "../history/HistoryScreen";
 
 function formatDistance(m: number): string {
   return m >= 1000 ? `${(m / 1000).toFixed(0)} km` : `${Math.round(m)} m`;
@@ -19,8 +20,8 @@ interface StatTileProps {
 
 function StatTile({ value, label }: StatTileProps) {
   return (
-    <div className="flex flex-col gap-0.5 bg-[var(--surface)] border border-[var(--border)] rounded-xl px-4 py-3">
-      <span className="text-[20px] font-data font-bold tabular-nums text-[var(--text)]">{value}</span>
+    <div className="min-w-0 flex flex-col gap-0.5 bg-[var(--surface)] border border-[var(--border)] rounded-lg px-4 py-3">
+      <span className="truncate text-[20px] font-data font-bold tabular-nums text-[var(--text)]">{value}</span>
       <span className="text-[9px] uppercase tracking-wide text-[var(--text-muted)]">{label}</span>
     </div>
   );
@@ -122,10 +123,11 @@ export function AnalyticsScreen() {
         {!loading && overview?.total_rides === 0 && <EmptyState />}
 
         {!loading && overview && overview.total_rides > 0 && (
-          <div className="flex flex-col gap-6 px-4 py-6 max-w-[440px] mx-auto">
+          <div className="grid w-full gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_minmax(380px,520px)] xl:grid-cols-[minmax(0,1fr)_minmax(460px,620px)]">
+            <div className="flex min-w-0 flex-col gap-6">
 
             {/* Stat tiles */}
-            <div data-testid="overview-stats" className="grid grid-cols-2 gap-3">
+            <div data-testid="overview-stats" className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <StatTile value={String(overview.total_rides)} label="Fahrten" />
               <StatTile value={formatDistance(overview.total_distance_m)} label="Gesamt" />
               <StatTile value={formatDuration(overview.total_duration_s)} label="Fahrzeit" />
@@ -137,14 +139,14 @@ export function AnalyticsScreen() {
             {/* Consistency */}
             <div data-testid="consistency-section" className="flex flex-col gap-2">
               <span className="text-[9px] uppercase tracking-wide text-[var(--text-muted)]">Regelmäßigkeit</span>
-              <div className="flex gap-4">
-                <div className="flex flex-col gap-0.5">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
                   <span className="text-[18px] font-data font-bold tabular-nums text-[var(--text)]">
                     {overview.rides_last_7_days}
                   </span>
                   <span className="text-[9px] uppercase tracking-wide text-[var(--text-muted)]">Diese Woche</span>
                 </div>
-                <div className="flex flex-col gap-0.5">
+                <div className="flex flex-col gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
                   <span className="text-[18px] font-data font-bold tabular-nums text-[var(--text)]">
                     {overview.rides_last_30_days}
                   </span>
@@ -188,14 +190,17 @@ export function AnalyticsScreen() {
 
               {advancedOpen && (
                 <div data-testid="advanced-content" className="flex flex-col gap-3 pt-1">
-                  <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl px-4 py-3 flex flex-col gap-1">
+                  <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg px-4 py-3 flex flex-col gap-1">
                     <span className="text-xs text-[var(--text-subtle)]">
-                      Detaillierte Analyse pro Fahrt öffnest du im Verlauf.
+                      Detaillierte Analyse pro Fahrt folgt hier später.
                     </span>
                   </div>
                 </div>
               )}
             </div>
+            </div>
+
+            <RideHistorySection title="Letzte Fahrten" />
 
           </div>
         )}

@@ -97,3 +97,23 @@ class SqliteRideRepo:
         return self._conn.execute(
             "SELECT * FROM rides ORDER BY started_at DESC"
         ).fetchall()
+
+    def delete_ride(self, ride_id: str) -> bool:
+        """Delete one ride and its event log."""
+        with self._conn:
+            self._conn.execute("DELETE FROM ride_events WHERE ride_id = ?", (ride_id,))
+            cur = self._conn.execute("DELETE FROM rides WHERE id = ?", (ride_id,))
+        deleted = cur.rowcount > 0
+        if deleted:
+            _log.info("SqliteRideRepo: deleted ride %s", ride_id)
+        return deleted
+
+    def delete_all_rides(self) -> int:
+        """Delete all rides and event logs, returning the number of ride rows removed."""
+        with self._conn:
+            count = self._conn.execute("SELECT COUNT(*) FROM rides").fetchone()[0]
+            self._conn.execute("DELETE FROM ride_events")
+            self._conn.execute("DELETE FROM rides")
+        if count:
+            _log.info("SqliteRideRepo: deleted all rides count=%d", count)
+        return int(count)

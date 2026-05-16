@@ -37,7 +37,7 @@ def test_dispatch_table_keys():
         "list_routes", "start_ride", "delete_route", "rename_route",
         "strava_get_auth_url", "strava_submit_code", "strava_sync",
         "set_paused", "strava_disconnect", "end_ride", "preview_route",
-        "get_ride_summary", "list_rides", "get_ride",
+        "get_ride_summary", "list_rides", "delete_ride", "delete_all_rides", "get_ride",
         "get_analytics_overview", "get_ride_analytics",
     }
     assert set(_DISPATCH.keys()) == expected
@@ -479,6 +479,43 @@ async def test_list_rides_completed_flag():
     data = json.loads(ws.send.call_args.args[0])
     assert data["rides"][0]["completed"] is True
     assert data["rides"][1]["completed"] is False
+
+
+@pytest.mark.asyncio
+async def test_delete_ride_deletes_and_refreshes_list_and_analytics():
+    ride_repo = MagicMock()
+    ride_repo.delete_ride = MagicMock(return_value=True)
+    ride_repo.list_rides = MagicMock(return_value=[])
+    ctx = _ctx(ride_repo=ride_repo)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "delete_ride", "ride_id": "r1"}))
+
+    ride_repo.delete_ride.assert_called_once_with("r1")
+    payloads = [json.loads(c.args[0]) for c in ws.send.call_args_list]
+    assert payloads[0] == {"type": "ride_deleted", "ride_id": "r1", "deleted": True}
+    assert payloads[1] == {"type": "ride_list", "rides": []}
+    assert payloads[2]["type"] == "analytics_overview"
+    assert payloads[2]["total_rides"] == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_all_rides_deletes_and_refreshes_list_and_analytics():
+    ride_repo = MagicMock()
+    ride_repo.delete_all_rides = MagicMock(return_value=2)
+    ride_repo.list_rides = MagicMock(return_value=[])
+    ctx = _ctx(ride_repo=ride_repo)
+    inbound = WSInbound(ctx)
+    ws = _fake_ws()
+
+    await inbound.handle(ws, json.dumps({"type": "delete_all_rides"}))
+
+    ride_repo.delete_all_rides.assert_called_once()
+    payloads = [json.loads(c.args[0]) for c in ws.send.call_args_list]
+    assert payloads[0] == {"type": "rides_deleted", "deleted_count": 2}
+    assert payloads[1] == {"type": "ride_list", "rides": []}
+    assert payloads[2]["type"] == "analytics_overview"
 
 
 # ---------------------------------------------------------------------------

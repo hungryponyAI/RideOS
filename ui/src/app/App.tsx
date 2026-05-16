@@ -6,7 +6,6 @@ import { HomeScreen } from "../features/home/HomeScreen";
 import { PreRideScreen } from "../features/pre-ride/PreRideScreen";
 import { RideScreen, type RideSummaryData } from "../features/ride/RideScreen";
 import { RideStartRitual } from "../features/ride-start/RideStartRitual";
-import { HistoryScreen } from "../features/history/HistoryScreen";
 import { AnalyticsScreen } from "../features/analytics/AnalyticsScreen";
 import { DevicesScreen } from "../features/devices/DevicesScreen";
 import { RideSummaryScreen } from "../features/summary/RideSummaryScreen";
@@ -157,7 +156,6 @@ function AppShell() {
             }
           />
         )}
-        {view === 'history' && <HistoryScreen />}
         {view === 'analytics' && <AnalyticsScreen />}
         {view === 'devices' && <DevicesScreen />}
         {view === 'settings' && <SettingsScreen onReopenOnboarding={handleReopenOnboarding} />}
