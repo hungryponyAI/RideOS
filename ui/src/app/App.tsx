@@ -10,6 +10,7 @@ import { AnalyticsScreen } from "../features/analytics/AnalyticsScreen";
 import { DevicesScreen } from "../features/devices/DevicesScreen";
 import { RideSummaryScreen } from "../features/summary/RideSummaryScreen";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
+import { SettingsScreen } from "../features/settings/SettingsScreen";
 import { OnboardingFlow } from "../features/onboarding/OnboardingFlow";
 import { useOnboarding } from "../features/onboarding/useOnboarding";
 import { AppNav } from "./AppNav";
@@ -52,6 +53,11 @@ function AppShell() {
   const [rideSummary, setRideSummary] = useState<RideSummaryData | null>(null);
   const [rideStartCtx, setRideStartCtx] = useState<RideStartContext | null>(null);
   const { done: onboardingDone, step, stepIndex, totalSteps, advance, complete, reopen } = useOnboarding();
+
+  const handleReopenOnboarding = useCallback(() => {
+    reopen();
+    setView('home');
+  }, [reopen]);
 
   const isRiding = view === 'ride';
   const isPreparing = view === 'preparing';
@@ -135,13 +141,10 @@ function AppShell() {
         {view === 'history' && <HistoryScreen />}
         {view === 'analytics' && <AnalyticsScreen />}
         {view === 'devices' && <DevicesScreen />}
+        {view === 'settings' && <SettingsScreen onReopenOnboarding={handleReopenOnboarding} />}
       </div>
 
-      <AppNav
-        current={view}
-        onNavigate={handleNavigate}
-        onSettingsOpen={() => setIsSettingsOpen(o => !o)}
-      />
+      <AppNav current={view} onNavigate={handleNavigate} />
 
       <ThemeToggle />
       <SettingsPanel

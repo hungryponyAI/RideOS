@@ -21,7 +21,7 @@ vi.mock("../features/settings/hooks/useDeviceStatus", () => ({
 describe("AppNav", () => {
   it("renders all navigation items", () => {
     const { getByLabelText } = render(
-      <AppNav current="home" onNavigate={vi.fn()} onSettingsOpen={vi.fn()} />
+      <AppNav current="home" onNavigate={vi.fn()} />
     );
     expect(getByLabelText("Startseite")).toBeTruthy();
     expect(getByLabelText("Strecken")).toBeTruthy();
@@ -33,7 +33,7 @@ describe("AppNav", () => {
 
   it("marks Home as current when view is home", () => {
     const { getByLabelText } = render(
-      <AppNav current="home" onNavigate={vi.fn()} onSettingsOpen={vi.fn()} />
+      <AppNav current="home" onNavigate={vi.fn()} />
     );
     expect(getByLabelText("Startseite").getAttribute("aria-current")).toBe("page");
     expect(getByLabelText("Verlauf").getAttribute("aria-current")).toBeNull();
@@ -41,7 +41,7 @@ describe("AppNav", () => {
 
   it("marks Strecken as current when view is routes", () => {
     const { getByLabelText } = render(
-      <AppNav current="routes" onNavigate={vi.fn()} onSettingsOpen={vi.fn()} />
+      <AppNav current="routes" onNavigate={vi.fn()} />
     );
     expect(getByLabelText("Strecken").getAttribute("aria-current")).toBe("page");
     expect(getByLabelText("Startseite").getAttribute("aria-current")).toBeNull();
@@ -49,7 +49,7 @@ describe("AppNav", () => {
 
   it("marks History as current when view is history", () => {
     const { getByLabelText } = render(
-      <AppNav current="history" onNavigate={vi.fn()} onSettingsOpen={vi.fn()} />
+      <AppNav current="history" onNavigate={vi.fn()} />
     );
     expect(getByLabelText("Verlauf").getAttribute("aria-current")).toBe("page");
   });
@@ -57,7 +57,7 @@ describe("AppNav", () => {
   it("calls onNavigate with routes when clicking Strecken", () => {
     const onNavigate = vi.fn();
     const { getByLabelText } = render(
-      <AppNav current="home" onNavigate={onNavigate} onSettingsOpen={vi.fn()} />
+      <AppNav current="home" onNavigate={onNavigate} />
     );
     fireEvent.click(getByLabelText("Strecken"));
     expect(onNavigate).toHaveBeenCalledWith("routes");
@@ -66,7 +66,7 @@ describe("AppNav", () => {
   it("calls onNavigate with history when clicking Verlauf", () => {
     const onNavigate = vi.fn();
     const { getByLabelText } = render(
-      <AppNav current="home" onNavigate={onNavigate} onSettingsOpen={vi.fn()} />
+      <AppNav current="home" onNavigate={onNavigate} />
     );
     fireEvent.click(getByLabelText("Verlauf"));
     expect(onNavigate).toHaveBeenCalledWith("history");
@@ -75,7 +75,7 @@ describe("AppNav", () => {
   it("calls onNavigate with analytics when clicking Analyse", () => {
     const onNavigate = vi.fn();
     const { getByLabelText } = render(
-      <AppNav current="home" onNavigate={onNavigate} onSettingsOpen={vi.fn()} />
+      <AppNav current="home" onNavigate={onNavigate} />
     );
     fireEvent.click(getByLabelText("Analyse"));
     expect(onNavigate).toHaveBeenCalledWith("analytics");
@@ -84,19 +84,26 @@ describe("AppNav", () => {
   it("calls onNavigate with devices when clicking Gerät", () => {
     const onNavigate = vi.fn();
     const { getByLabelText } = render(
-      <AppNav current="home" onNavigate={onNavigate} onSettingsOpen={vi.fn()} />
+      <AppNav current="home" onNavigate={onNavigate} />
     );
     fireEvent.click(getByLabelText("Gerät"));
     expect(onNavigate).toHaveBeenCalledWith("devices");
   });
 
-  it("calls onSettingsOpen when clicking Einstellungen", () => {
-    const onSettingsOpen = vi.fn();
+  it("calls onNavigate with settings when clicking Einstellungen", () => {
+    const onNavigate = vi.fn();
     const { getByLabelText } = render(
-      <AppNav current="home" onNavigate={vi.fn()} onSettingsOpen={onSettingsOpen} />
+      <AppNav current="home" onNavigate={onNavigate} />
     );
     fireEvent.click(getByLabelText("Einstellungen"));
-    expect(onSettingsOpen).toHaveBeenCalled();
+    expect(onNavigate).toHaveBeenCalledWith("settings");
+  });
+
+  it("marks Einstellungen as current when view is settings", () => {
+    const { getByLabelText } = render(
+      <AppNav current="settings" onNavigate={vi.fn()} />
+    );
+    expect(getByLabelText("Einstellungen").getAttribute("aria-current")).toBe("page");
   });
 });
 
