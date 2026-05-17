@@ -5,19 +5,19 @@ from engine.gears.engine import GearEngine, _FACTORS
 def test_default_is_middle_gear():
     g = GearEngine()
     assert g.current_gear == 6
-    assert g.factor == pytest.approx(0.903)
+    assert g.factor == pytest.approx(1.807)
 
 
 def test_factor_table_anchors():
-    # 12 gears spanning 0.4 → 2.4 (geometric)
-    assert _FACTORS[0] == 0.400
-    assert _FACTORS[11] == 2.400
+    # 12 gears spanning 0.8 → 4.8 (geometric)
+    assert _FACTORS[0] == 0.800
+    assert _FACTORS[11] == 4.800
     assert len(_FACTORS) == 12
 
 
 def test_effective_grade_formula():
     g = GearEngine(current_gear=6)
-    assert g.effective_grade(6.0) == pytest.approx(6.0 / 0.903)
+    assert g.effective_grade(6.0) == pytest.approx(6.0 / 1.807)
 
 
 @pytest.mark.parametrize("gear", list(range(1, 13)))
@@ -59,7 +59,7 @@ def test_high_gear_dampens_grade():
 
 def test_negative_grade_passes_through():
     g = GearEngine(current_gear=6)
-    assert g.effective_grade(-3.0) == pytest.approx(-3.0 / 0.903)
+    assert g.effective_grade(-3.0) == pytest.approx(-3.0 / 1.807)
     assert g.effective_grade(-3.0) < 0
 
 

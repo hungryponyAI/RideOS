@@ -75,7 +75,7 @@ def test_trainer_simulation_params_are_calibrated():
     athlete = AthleteProfile(weight_kg=75.0, height_cm=180.0)
     gears = GearEngine(current_gear=6)
 
-    assert _trainer_grade(4.0, gears) == pytest.approx((4.0 / 0.903) * 0.25)
+    assert _trainer_grade(4.0, gears) == pytest.approx((4.0 / 1.807) * 0.25)
     assert _trainer_crr(athlete.weight_kg) == pytest.approx(0.0088, rel=0.01)
     assert _estimate_cw(athlete.weight_kg, athlete.height_cm) == pytest.approx(0.49, rel=0.01)
 
@@ -208,7 +208,7 @@ async def test_control_loop_sends_calibrated_ftms_simulation_params(fake_bleak_c
     crr_u = payload[5]
     cw_u = payload[6]
 
-    assert grade_i / 100.0 == pytest.approx((4.0 / 0.903) * 0.25, abs=0.01)
+    assert grade_i / 100.0 == pytest.approx((4.0 / 1.807) * 0.25, abs=0.01)
     assert crr_u == 88
     assert cw_u == 49
 

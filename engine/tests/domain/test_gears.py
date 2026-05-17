@@ -6,18 +6,18 @@ from engine.domain.gears import GearEngine, _FACTORS
 def test_default_gear():
     g = GearEngine()
     assert g.current_gear == 6
-    assert g.factor == pytest.approx(0.903)
+    assert g.factor == pytest.approx(1.807)
 
 
 def test_factor_table_anchors():
-    assert _FACTORS[0] == 0.400
-    assert _FACTORS[11] == 2.400
+    assert _FACTORS[0] == 0.800
+    assert _FACTORS[11] == 4.800
     assert len(_FACTORS) == 12
 
 
 def test_effective_grade():
     g = GearEngine(current_gear=6)
-    assert g.effective_grade(6.0) == pytest.approx(6.0 / 0.903)
+    assert g.effective_grade(6.0) == pytest.approx(6.0 / 1.807)
 
 
 def test_shift_up_clamps():

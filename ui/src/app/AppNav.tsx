@@ -43,9 +43,10 @@ const NAV_ITEMS = [
     label: 'Gerät',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <polyline points="6.5 6.5 17.5 17.5"/>
-        <path d="M12 2L8.5 5.5 12 9l7-7-3 0 0-3"/>
-        <path d="M12 22l-3.5-3.5L12 15l7 7-3 0 0-3"/>
+        <path d="M4.5 9.5C8.7 5.8 15.3 5.8 19.5 9.5"/>
+        <path d="M7.5 13c2.6-2.2 6.4-2.2 9 0"/>
+        <path d="M10.5 16.5c0.9-0.8 2.1-0.8 3 0"/>
+        <path d="M12 20h.01"/>
       </svg>
     ),
   },

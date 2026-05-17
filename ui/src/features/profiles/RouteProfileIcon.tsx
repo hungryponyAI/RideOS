@@ -1,22 +1,5 @@
-const ROUTE_PATTERNS = [
-  "M24 66 L38 54 L50 60 L66 42 L80 48",
-  "M24 60 L40 60 L40 45 L56 45 L56 30 L78 30",
-  "M24 68 L40 50 L54 56 L70 36 L82 36",
-  "M24 58 C35 44 45 44 54 54 S72 65 82 46",
-  "M24 64 L38 48 L52 48 L66 32 L82 32",
-  "M24 62 C38 62 38 42 52 42 C66 42 66 24 82 24",
-] as const;
-
-function hashSeed(seed: string): number {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  }
-  return hash;
-}
-
 export function RouteProfileIcon({
-  seed,
+  seed: _seed,
   selected = false,
   size = 112,
 }: {
@@ -24,16 +7,13 @@ export function RouteProfileIcon({
   selected?: boolean;
   size?: number;
 }) {
-  const hash = hashSeed(seed);
-  const path = ROUTE_PATTERNS[hash % ROUTE_PATTERNS.length];
-
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 104 104"
       role="img"
-      aria-label="Routenprofil"
+      aria-label="Fahrradprofil"
       className="block"
     >
       <rect
@@ -46,23 +26,39 @@ export function RouteProfileIcon({
         stroke={selected ? "var(--accent)" : "var(--border)"}
         strokeWidth={selected ? 2 : 1.25}
       />
-      <path
-        d="M22 74 H82"
+      <circle
+        cx="33"
+        cy="64"
+        r="13"
         fill="none"
-        stroke="var(--border)"
-        strokeWidth="2"
-        strokeLinecap="round"
+        stroke="var(--text)"
+        strokeWidth="3.5"
       />
-      <path
-        d={path}
+      <circle
+        cx="71"
+        cy="64"
+        r="13"
         fill="none"
-        stroke="var(--accent)"
-        strokeWidth="4.5"
+        stroke="var(--text)"
+        strokeWidth="3.5"
+      />
+      <g
+        fill="none"
+        stroke="var(--text)"
+        strokeWidth="3.5"
         strokeLinecap="round"
         strokeLinejoin="round"
-      />
-      <circle cx="24" cy="66" r="2.75" fill="var(--accent)" />
-      <circle cx="82" cy="48" r="2.75" fill="var(--accent)" opacity="0.72" />
+      >
+        <path d="M33 64 H52 L45 43 L33 64" />
+        <path d="M52 64 L61 43 H45" />
+        <path d="M61 43 L71 64" />
+        <path d="M45 43 L42 35" />
+        <path d="M38 35 H49" />
+        <path d="M61 43 L67 35 H73" />
+        <path d="M73 35 C78 35 81 39 79 44 C78 47 74 48 72 47" />
+      </g>
+      <circle cx="33" cy="64" r="3" fill="var(--text)" />
+      <circle cx="71" cy="64" r="3" fill="var(--text)" />
     </svg>
   );
 }
