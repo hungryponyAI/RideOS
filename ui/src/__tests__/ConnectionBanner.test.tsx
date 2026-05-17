@@ -13,6 +13,12 @@ describe("ConnectionBanner", () => {
     expect(getByText("Trainer verbunden")).toBeTruthy();
   });
 
+  it("does not claim trainer connected when websocket is connected but trainer is not", () => {
+    const { getByText, queryByText } = render(<ConnectionBanner status="connected" trainerConnected={false} />);
+    expect(getByText("Trainer nicht verbunden")).toBeTruthy();
+    expect(queryByText("Trainer verbunden")).toBeNull();
+  });
+
   it("shows connecting banner", () => {
     const { getByText } = render(<ConnectionBanner status="connecting" />);
     expect(getByText("Verbindung wird aufgebaut")).toBeTruthy();

@@ -7,6 +7,7 @@ import { useClimbFocus } from "./hooks/useClimbFocus";
 import { useDescentState } from "./hooks/useDescentState";
 import { useRouteData } from "./hooks/useRouteData";
 import { loadAthleteSettings } from "../settings/hooks/useAthleteSettings";
+import { useDeviceStatus } from "../settings/hooks/useDeviceStatus";
 import { ConnectionBanner } from "../../shared/ui/ConnectionBanner";
 import { HudPanel } from "../../shared/ui/HudPanel";
 import { MetricTile } from "../../shared/ui/MetricTile";
@@ -145,6 +146,7 @@ export function RideScreen({
   onCycleCamera = () => {},
 }: Props) {
   const { status, sendMessage } = useWS();
+  const { kickrConnected } = useDeviceStatus();
   const t = useRideTelemetry(activeRouteId, activeRideSessionId);
   const { routeRef, routeLoaded, routeError, clearRouteError } = useRouteData(activeRouteId, activeRideSessionId);
   const isClimbFocus = useClimbFocus(t?.real_grade_pct);
@@ -153,9 +155,11 @@ export function RideScreen({
   const [isPaused, setIsPaused] = useState(true);
   const [rideStarted, setRideStarted] = useState(false);
   const [showControls, setShowControls] = useState(true);
+  const [cursorVisible, setCursorVisible] = useState(true);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cursorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevStatusRef = useRef<typeof status>("connecting");
   const endedRef = useRef(false);
 
@@ -287,14 +291,19 @@ export function RideScreen({
   useEffect(() => {
     const onMove = () => {
       setShowControls(true);
+      setCursorVisible(true);
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      if (cursorTimerRef.current) clearTimeout(cursorTimerRef.current);
       hideTimerRef.current = setTimeout(() => setShowControls(false), 2000);
+      cursorTimerRef.current = setTimeout(() => setCursorVisible(false), 2000);
     };
     window.addEventListener("mousemove", onMove, true);
     hideTimerRef.current = setTimeout(() => setShowControls(false), 2000);
+    cursorTimerRef.current = setTimeout(() => setCursorVisible(false), 2000);
     return () => {
       window.removeEventListener("mousemove", onMove, true);
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      if (cursorTimerRef.current) clearTimeout(cursorTimerRef.current);
     };
   }, []);
 
@@ -309,7 +318,10 @@ export function RideScreen({
   const distanceRemainingValue = formatDistanceRemaining(distRemainingM);
 
   return (
-    <div className="w-screen h-screen overflow-hidden relative bg-[var(--bg)]">
+    <div
+      data-testid="ride-screen"
+      className={`w-screen h-screen overflow-hidden relative bg-[var(--bg)] ${cursorVisible ? "" : "ride-cursor-hidden cursor-none"}`}
+    >
       {/* Screen reader live region */}
       <div
         data-testid="ride-announcer"
@@ -356,7 +368,7 @@ export function RideScreen({
 
       {/* Connection status — docked at top */}
       <div className="absolute top-0 left-0 right-0 z-30">
-        <ConnectionBanner status={status} />
+        <ConnectionBanner status={status} trainerConnected={kickrConnected} />
       </div>
 
       {wakeLock.warning && (

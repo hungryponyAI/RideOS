@@ -386,4 +386,33 @@ describe("RideScreen – ride controls integration", () => {
     expect(screen.getByText("+4,2%")).toBeTruthy();
     expect(screen.queryByText("+9,8%")).toBeNull();
   });
+
+  it("shows trainer not connected when websocket is connected but KICKR status is absent", () => {
+    render(
+      <WSProvider>
+        <RideScreen isDark={true} />
+      </WSProvider>
+    );
+    openWs();
+
+    expect(screen.getByText("Trainer nicht verbunden")).toBeTruthy();
+    expect(screen.queryByText("Trainer verbunden")).toBeNull();
+  });
+
+  it("hides the mouse cursor after idle and restores it on movement", () => {
+    render(
+      <WSProvider>
+        <RideScreen isDark={true} />
+      </WSProvider>
+    );
+    openWs();
+    const rideScreen = screen.getByTestId("ride-screen");
+
+    expect(rideScreen.className).not.toContain("cursor-none");
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(rideScreen.className).toContain("cursor-none");
+
+    fireEvent.mouseMove(window);
+    expect(rideScreen.className).not.toContain("cursor-none");
+  });
 });

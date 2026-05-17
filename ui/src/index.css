@@ -53,6 +53,11 @@
   outline-offset: 2px;
 }
 
+.ride-cursor-hidden,
+.ride-cursor-hidden * {
+  cursor: none !important;
+}
+
 @keyframes oudena-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
