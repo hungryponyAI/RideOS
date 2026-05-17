@@ -24,7 +24,7 @@ export function AppEntryGate({
     return (
       <StartupIntro
         showWelcomeText={!hasExistingProfiles}
-        onComplete={() => setStage("profiles")}
+        onComplete={() => setStage(hasExistingProfiles ? "app" : "profiles")}
       />
     );
   }

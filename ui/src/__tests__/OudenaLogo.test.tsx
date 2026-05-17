@@ -17,7 +17,7 @@ describe("OudenaLogo", () => {
     const { getByRole } = render(<OudenaLogo height={32} />);
     const svg = getByRole("img");
     expect(svg.getAttribute("height")).toBe("32");
-    expect(svg.getAttribute("width")).toBe("128");
+    expect(svg.getAttribute("width")).toBe("103");
   });
 
   it("mark respects height prop", () => {

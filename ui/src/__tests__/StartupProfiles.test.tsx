@@ -112,7 +112,7 @@ describe("AppEntryGate", () => {
     expect(screen.getByTestId("startup-intro")).toBeTruthy();
   });
 
-  it("shows the logo entry without welcome text when a profile already exists", () => {
+  it("goes directly to the app after the logo when a profile already exists", () => {
     vi.useFakeTimers();
     localStorage.setItem("oudena_profiles", JSON.stringify([profiles[0]]));
 
@@ -129,8 +129,9 @@ describe("AppEntryGate", () => {
       vi.advanceTimersByTime(1050);
     });
 
-    expect(screen.getByTestId("profile-selection-screen")).toBeTruthy();
-    expect(screen.getByText("Alex")).toBeTruthy();
+    expect(screen.queryByTestId("profile-selection-screen")).toBeNull();
+    expect(screen.getByText("Home")).toBeTruthy();
+    expect(localStorage.getItem("oudena_active_profile_id")).toBe("p1");
   });
 });
 

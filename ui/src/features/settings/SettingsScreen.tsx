@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { ScreenHeader } from "../../shared/ui/ScreenHeader";
 import { useTheme } from "../../app/providers/ThemeProvider";
 import { useAthleteSettings, type AthleteSettings } from "./hooks/useAthleteSettings";
 import { useAppSettings } from "./hooks/useAppSettings";
@@ -194,7 +195,9 @@ export function SettingsScreen({ onReopenOnboarding, onSwitchProfile }: Props) {
   const isStravaSyncing = stravaStatus?.syncing ?? false;
 
   return (
-    <div className="h-full overflow-y-auto bg-[var(--bg)]">
+    <div className="h-full flex flex-col bg-[var(--bg)]">
+      <ScreenHeader />
+      <div className="flex-1 overflow-y-auto">
       <div className="max-w-xl mx-auto px-4 py-6 flex flex-col gap-6">
 
         {/* Athlet */}
@@ -336,6 +339,7 @@ export function SettingsScreen({ onReopenOnboarding, onSwitchProfile }: Props) {
           </div>
         </CollapsibleSection>
 
+      </div>
       </div>
 
       {showStravaModal && (

@@ -120,7 +120,10 @@ export function useProfiles() {
   const [profiles, setProfiles] = useState<OudenaProfile[]>(initialProfiles);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(() => {
     const stored = readActiveProfileId();
-    return initialProfiles.some(profile => profile.id === stored) ? stored : null;
+    if (initialProfiles.some(profile => profile.id === stored)) return stored;
+    const fallbackId = initialProfiles[0]?.id ?? null;
+    if (fallbackId) writeActiveProfileId(fallbackId);
+    return fallbackId;
   });
 
   const activeProfile = useMemo(

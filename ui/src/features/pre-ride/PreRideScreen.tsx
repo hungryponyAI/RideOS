@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { OudenaLogo } from "../../shared/ui/OudenaLogo";
+import { ScreenHeader } from "../../shared/ui/ScreenHeader";
 import { useWS } from "../../shared/ws/useWS";
 import { useRouteLibrary } from "../routes/hooks/useRouteLibrary";
 import { useAthleteSettings } from "../settings/hooks/useAthleteSettings";
@@ -102,25 +102,22 @@ export function PreRideScreen({ onStarted, onStartRide, initialRouteId }: Props)
 
   return (
     <div className="w-full h-full bg-[var(--bg)] flex flex-col overflow-hidden">
-      <header className="shrink-0 flex items-center px-4 sm:px-8 py-5 border-b border-[var(--border)]">
-        <div className="flex flex-col items-start">
-          <OudenaLogo height={40} />
-          <div className="flex items-center gap-1.5 mt-1">
-            <span
-              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                kickrConnected
-                  ? "bg-[var(--success)] animate-pulse"
-                  : trainerSearching
-                  ? "bg-[var(--warning)] animate-pulse"
-                  : "bg-[var(--critical)]"
-              }`}
-            />
-            <p className={`text-xs ${kickrConnected ? "text-[var(--success)]" : "text-[var(--text-subtle)]"}`}>
-              {kickrConnected ? "Trainer verbunden" : trainerSearching ? "Trainer wird gesucht" : "Trainer nicht verbunden"}
-            </p>
-          </div>
-        </div>
-      </header>
+      <ScreenHeader right={
+        <>
+          <span
+            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+              kickrConnected
+                ? "bg-[var(--success)] animate-pulse"
+                : trainerSearching
+                ? "bg-[var(--warning)] animate-pulse"
+                : "bg-[var(--border)]"
+            }`}
+          />
+          <p className={`text-xs ${kickrConnected ? "text-[var(--success)]" : "text-[var(--text-subtle)]"}`}>
+            {kickrConnected ? "Trainer verbunden" : trainerSearching ? "Trainer wird gesucht" : "Trainer nicht verbunden"}
+          </p>
+        </>
+      } />
 
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden px-4 sm:px-8 pb-8 pt-6 gap-5">
         {selectedRoute ? (

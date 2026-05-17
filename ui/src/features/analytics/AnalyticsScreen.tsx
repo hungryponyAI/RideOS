@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ScreenHeader } from "../../shared/ui/ScreenHeader";
 import { useAnalyticsOverview, type PowerTrendPoint } from "./useAnalytics";
 import { RideHistorySection } from "../history/HistoryScreen";
 
@@ -109,9 +110,7 @@ export function AnalyticsScreen() {
 
   return (
     <div data-testid="analytics-screen" className="w-full h-full flex flex-col bg-[var(--bg)]">
-      <div className="shrink-0 px-4 py-3 border-b border-[var(--border)]">
-        <span className="text-xs font-medium text-[var(--text-muted)] tracking-wider uppercase">Analyse</span>
-      </div>
+      <ScreenHeader />
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         {loading && (

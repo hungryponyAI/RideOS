@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { OudenaLogo } from "../../shared/ui/OudenaLogo";
+import { ScreenHeader } from "../../shared/ui/ScreenHeader";
 import { useOptionalProfileContext } from "../profiles/useProfileContext";
 import { useRouteLibrary } from "../routes/hooks/useRouteLibrary";
 import { useDeviceStatus } from "../settings/hooks/useDeviceStatus";
@@ -231,15 +231,7 @@ export function HomeScreen({ onOpenRoutes, onOpenDevices }: Props) {
 
   return (
     <div data-testid="home-screen" className="w-full h-full bg-[var(--bg)] flex flex-col overflow-hidden">
-      <header className="shrink-0 flex items-center px-4 sm:px-8 py-5 border-b border-[var(--border)]">
-        <OudenaLogo height={40} />
-        <div className="ml-auto flex items-center gap-1.5">
-          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${kickrConnected ? "bg-[var(--success)] animate-pulse motion-reduce:animate-none" : "bg-[var(--border)]"}`} />
-          <p className={`text-xs ${kickrConnected ? "text-[var(--success)]" : "text-[var(--text-subtle)]"}`}>
-            {kickrConnected ? "Trainer verbunden" : "Trainer nicht verbunden"}
-          </p>
-        </div>
-      </header>
+      <ScreenHeader />
 
       {recommendation === null ? (
         <EmptyState onOpenRoutes={() => onOpenRoutes()} onOpenDevices={onOpenDevices} kickrConnected={kickrConnected} />

@@ -16,9 +16,9 @@ export function OudenaLogo({ variant = "wordmark", height = 48, className }: Pro
     );
   }
 
-  const width = height * 4;
+  const width = Math.round(height * 580 / 180);
   return (
-    <svg width={width} height={height} viewBox="0 0 720 180" fill="none" role="img" aria-label="OUDENA" className={className}>
+    <svg width={width} height={height} viewBox="0 0 580 180" fill="none" role="img" aria-label="OUDENA" className={className}>
       <g transform="translate(52 42)" stroke="#74AFCB" strokeLinecap="round" strokeLinejoin="round">
         <path d="M96 48A48 48 0 1 1 48 0" strokeWidth="7" />
         <path d="M26 50 L75 44" strokeWidth="7" opacity="0.82" />

@@ -1,5 +1,6 @@
 import { useDeviceStatus } from "../settings/hooks/useDeviceStatus";
 import { useWS } from "../../shared/ws/useWS";
+import { ScreenHeader } from "../../shared/ui/ScreenHeader";
 
 type StatusVariant = "connected" | "searching" | "disconnected";
 
@@ -63,32 +64,30 @@ export function DevicesScreen() {
   const allConnected = kickrConnected && clickConnected;
 
   return (
-    <div data-testid="devices-screen" className="w-full h-full bg-[var(--bg)] flex flex-col px-6 py-8 gap-6 overflow-y-auto">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-base font-medium text-[var(--text)]">Geräte</h1>
-        <p className="text-xs text-[var(--text-muted)]">Verbindungsstatus deiner Trainingsgeräte</p>
-      </div>
+    <div data-testid="devices-screen" className="w-full h-full bg-[var(--bg)] flex flex-col overflow-hidden">
+      <ScreenHeader />
+      <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 flex flex-col gap-6">
+        <div className="flex flex-col gap-3">
+          <DeviceCard
+            name="Wahoo KICKR Core"
+            description="Trainer · FTMS · BLE"
+            status={kickrStatus}
+          />
+          <DeviceCard
+            name="Zwift Click"
+            description="Schaltsteuerung · BLE"
+            status={clickStatus}
+          />
+        </div>
 
-      <div className="flex flex-col gap-3">
-        <DeviceCard
-          name="Wahoo KICKR Core"
-          description="Trainer · FTMS · BLE"
-          status={kickrStatus}
-        />
-        <DeviceCard
-          name="Zwift Click"
-          description="Schaltsteuerung · BLE"
-          status={clickStatus}
-        />
+        {!allConnected && (
+          <p className="text-xs text-[var(--text-subtle)] leading-relaxed">
+            {status === "disconnected"
+              ? "Starte die Engine, um Geräte zu verbinden."
+              : "Geräte werden automatisch verbunden, sobald sie in Reichweite sind."}
+          </p>
+        )}
       </div>
-
-      {!allConnected && (
-        <p className="text-xs text-[var(--text-subtle)] leading-relaxed">
-          {status === "disconnected"
-            ? "Starte die Engine, um Geräte zu verbinden."
-            : "Geräte werden automatisch verbunden, sobald sie in Reichweite sind."}
-        </p>
-      )}
     </div>
   );
 }
