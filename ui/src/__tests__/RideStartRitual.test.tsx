@@ -142,6 +142,38 @@ describe("RideStartRitual", () => {
     });
     expect(screen.getByTestId("countdown-number")).toBeTruthy();
     expect(screen.getByTestId("cancel-countdown")).toBeTruthy();
+    expect(screen.getByTestId("countdown-logo-pulse")).toBeTruthy();
+  });
+
+  it("keeps the logo pulse during countdown when elevation data is available", () => {
+    render(
+      <Wrapper>
+        <RideStartRitual
+          routeId="r1"
+          rideSessionId="s1"
+          routeName="Testroute"
+          config={DEFAULT_CONFIG}
+          viewMode="chase"
+          onCycleCamera={vi.fn()}
+          onReady={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </Wrapper>
+    );
+    openWs();
+    simulateMessage({
+      type: "route_data",
+      route_id: "r1",
+      ride_session_id: "s1",
+      lats: [0, 0, 0, 0, 0],
+      lons: [0, 0, 0, 0, 0],
+      elevations_m: [100, 114, 108, 132, 126],
+      cum_dist_m: [0, 100, 200, 300, 400],
+      grades_pct: [0, 1, -1, 2, 0],
+      total_dist_m: 400,
+    });
+    expect(screen.getByTestId("countdown-logo-pulse")).toBeTruthy();
+    expect(screen.queryByTestId("countdown-ecg-profile")).toBeNull();
   });
 
 

@@ -62,16 +62,16 @@ function RideStatusMetric({
   valueClassName?: string;
 }) {
   return (
-    <div className="min-w-0 flex items-baseline justify-between gap-3 border-b border-[var(--border)] pb-2 last:border-b-0 last:pb-0">
+    <div className="min-w-0 flex items-center justify-between gap-3 border-b border-[var(--border)] pb-2 last:border-b-0 last:pb-0">
       <div className="min-w-0 flex flex-col gap-0.5">
-        <span className="text-[9px] font-sans font-medium uppercase tracking-[0.15em] text-[var(--text-subtle)]">
+        <span className="text-[10px] font-sans font-medium uppercase tracking-[0.15em] text-[var(--text-subtle)]">
           {label}
         </span>
         <span className="text-[10px] font-medium text-[var(--text-muted)] truncate">
           {caption}
         </span>
       </div>
-      <span className={`shrink-0 font-data text-[18px] font-bold tabular-nums leading-none ${valueClassName}`}>
+      <span className={`shrink-0 font-data text-[22px] font-bold tabular-nums leading-none ${valueClassName}`}>
         {value}
       </span>
     </div>
@@ -475,23 +475,13 @@ export function RideScreen({
         className={`absolute left-4 right-4 z-10 transition-[height] duration-500 ease-oudena motion-reduce:transition-none ${isClimbFocus ? "h-[200px]" : "h-[140px]"}`}
         style={{ bottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
       >
-        <HudPanel className="h-full overflow-hidden flex flex-col">
-          <div className="h-7 shrink-0 px-3 flex items-center justify-between border-b border-[var(--border)]">
-            <span className="text-[9px] font-sans font-medium uppercase tracking-[0.15em] text-[var(--text-subtle)]">
-              Höhenprofil
-            </span>
-            <span className="text-[10px] font-medium text-[var(--text-muted)]">
-              Nächste 10 km
-            </span>
-          </div>
-          <div className="min-h-0 flex-1">
-            <ElevationProfile
-              data={stored?.elevationChart ?? null}
-              gradesPct={stored?.gradesPct ?? null}
-              positionM={positionM}
-              ghostDistM={t?.ghost_dist_m ?? null}
-            />
-          </div>
+        <HudPanel className="h-full overflow-hidden">
+          <ElevationProfile
+            data={stored?.elevationChart ?? null}
+            gradesPct={stored?.gradesPct ?? null}
+            positionM={positionM}
+            ghostDistM={t?.ghost_dist_m ?? null}
+          />
         </HudPanel>
       </div>
 

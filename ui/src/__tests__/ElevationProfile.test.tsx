@@ -37,7 +37,7 @@ describe("ElevationProfile", () => {
       el => el.getAttribute("stroke-dasharray") != null,
     );
     expect(dashed.length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("GHOST")).toBeTruthy();
+    expect(screen.queryByText("GHOST")).toBeNull();
   });
 
   it("does not render ghost marker when ghostDistM is null", () => {

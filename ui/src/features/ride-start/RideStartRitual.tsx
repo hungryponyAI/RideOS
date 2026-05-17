@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWS } from "../../shared/ws/useWS";
 import { useWSSubscription } from "../../shared/ws/useWSSubscription";
+import { OudenaLogo } from "../../shared/ui/OudenaLogo";
 import { useDeviceStatus } from "../settings/hooks/useDeviceStatus";
 import type { RideConfig } from "../pre-ride/RideOptions";
 import type { RouteDataMessage, RouteErrorMessage } from "../../shared/types/route";
@@ -159,13 +160,17 @@ export function RideStartRitual({
           </button>
         </div>
       ) : stage === "countdown" ? (
-        <div className="flex flex-col items-center gap-8">
-          {/* Big countdown number */}
+        <div className="w-full max-w-3xl px-6 flex flex-col items-center gap-8">
+          <CountdownVisual
+            prefersReducedMotion={prefersReducedMotion}
+          />
+
           <div
             data-testid="countdown-number"
-            className={`text-[120px] font-data font-bold tabular-nums leading-none text-[var(--text)] select-none ${
-              prefersReducedMotion ? "" : "transition-all duration-700"
+            className={`text-[clamp(96px,18vw,168px)] font-data font-bold tabular-nums leading-none text-[var(--text)] select-none -mt-2 ${
+              prefersReducedMotion ? "" : "animate-[oudena-countdown-pop_820ms_var(--ease-oudena)_both]"
             }`}
+            key={countdown}
             aria-live="assertive"
             aria-atomic="true"
           >
@@ -221,6 +226,24 @@ export function RideStartRitual({
         </div>
       )}
 
+    </div>
+  );
+}
+
+function CountdownVisual({
+  prefersReducedMotion,
+}: {
+  prefersReducedMotion: boolean;
+}) {
+  return (
+    <div
+      data-testid="countdown-logo-pulse"
+      className={`h-[180px] flex items-center justify-center text-[var(--text)] ${
+        prefersReducedMotion ? "opacity-85" : "animate-[oudena-logo-pulse_1200ms_var(--ease-oudena)_infinite]"
+      }`}
+      aria-hidden="true"
+    >
+      <OudenaLogo variant="mark" height={132} />
     </div>
   );
 }

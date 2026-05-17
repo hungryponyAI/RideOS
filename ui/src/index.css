@@ -4,7 +4,7 @@
   --bg: #F4F6F5;
   --bg-secondary: #EBEFEE;
   --surface: #FFFFFF;
-  --surface-soft: rgba(255,255,255,0.74);
+  --surface-soft: rgba(255,255,255,0.87);
   --text: #1D242D;
   --text-muted: #5F6874;
   --text-subtle: #8D97A3;
@@ -27,7 +27,7 @@
   --bg: #111417;
   --bg-secondary: #1B2127;
   --surface: #1B2127;
-  --surface-soft: rgba(27,33,39,0.76);
+  --surface-soft: rgba(27,33,39,0.88);
   --text: #F3F5F7;
   --text-muted: #B7C0CA;
   --text-subtle: #798694;
@@ -99,6 +99,32 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes oudena-countdown-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes oudena-logo-pulse {
+  0%, 100% {
+    opacity: 0.62;
+    transform: scale(0.96);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1.04);
   }
 }
 

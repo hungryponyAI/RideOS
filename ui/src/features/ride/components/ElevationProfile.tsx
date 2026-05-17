@@ -125,11 +125,11 @@ export const ElevationProfile = memo(function ElevationProfile({ data, gradesPct
             <rect
               key={i}
               x={r.x}
-              y={96}
+              y={93}
               width={r.w}
-              height={4}
+              height={7}
               fill={r.type === "climb" ? "#E58B4A" : "#74AFCB"}
-              fillOpacity={r.type === "climb" ? 0.7 : 0.5}
+              fillOpacity={r.type === "climb" ? 0.8 : 0.6}
               vectorEffect="non-scaling-stroke"
             />
           ))}
@@ -157,28 +157,19 @@ export const ElevationProfile = memo(function ElevationProfile({ data, gradesPct
               />
               <circle
                 cx={chart.ghostXPct * 10} cy={50}
-                r={6}
+                r={9}
                 fill={GHOST_COLOR}
                 fillOpacity="0.22"
                 vectorEffect="non-scaling-stroke"
               />
               <circle
                 cx={chart.ghostXPct * 10} cy={50}
-                r={3.5}
+                r={4.5}
                 fill={GHOST_COLOR}
                 stroke="#FFFFFF"
-                strokeWidth="1.5"
+                strokeWidth="2"
                 vectorEffect="non-scaling-stroke"
               />
-              <text
-                x={Math.min(960, Math.max(40, chart.ghostXPct * 10))}
-                y={11}
-                textAnchor="middle"
-                className="text-[10px] font-medium"
-                fill={GHOST_COLOR}
-              >
-                GHOST
-              </text>
             </>
           )}
 
@@ -204,10 +195,10 @@ export const ElevationProfile = memo(function ElevationProfile({ data, gradesPct
         </svg>
         {chart.hasRoute && chart.elevMax !== null && (
           <>
-            <span className="absolute top-1 left-2 text-[10px] font-medium text-[var(--text-muted)] select-none leading-none pointer-events-none tabular-nums">
+            <span className="absolute top-1 left-2 text-[11px] font-medium text-[var(--text-muted)] select-none leading-none pointer-events-none tabular-nums">
               {chart.elevMax} m
             </span>
-            <span className="absolute bottom-1 left-2 text-[10px] font-medium text-[var(--text-muted)] select-none leading-none pointer-events-none tabular-nums">
+            <span className="absolute bottom-1 left-2 text-[11px] font-medium text-[var(--text-muted)] select-none leading-none pointer-events-none tabular-nums">
               {chart.elevMin} m
             </span>
           </>
