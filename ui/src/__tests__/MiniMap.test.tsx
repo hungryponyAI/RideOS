@@ -14,6 +14,7 @@ const mapboxMock = vi.hoisted(() => {
     options: unknown;
     easeToCalls: unknown[] = [];
     fitBoundsCalls: unknown[] = [];
+    moveLayerCalls: Array<{ id: string; beforeId?: string }> = [];
     sources = new Map<string, Source>();
     layers: Array<{ id: string }> = [];
     private handlers = new Map<string, Array<() => void>>();
@@ -61,18 +62,40 @@ const mapboxMock = vi.hoisted(() => {
       return this.sources.get(id);
     }
 
-    addLayer(layer: { id: string }) {
-      this.layers.push({ id: layer.id });
+    addLayer(layer: { id: string }, beforeId?: string) {
+      const nextLayer = { id: layer.id };
+      if (!beforeId) {
+        this.layers.push(nextLayer);
+        return;
+      }
+      const beforeIndex = this.layers.findIndex((candidate) => candidate.id === beforeId);
+      if (beforeIndex === -1) {
+        this.layers.push(nextLayer);
+        return;
+      }
+      this.layers.splice(beforeIndex, 0, nextLayer);
     }
 
     getLayer(id: string) {
       return this.layers.find((layer) => layer.id === id);
     }
 
-    moveLayer(id: string) {
+    moveLayer(id: string, beforeId?: string) {
+      this.moveLayerCalls.push({ id, beforeId });
       const layer = this.getLayer(id);
       if (!layer) return;
-      this.layers = [...this.layers.filter((candidate) => candidate.id !== id), layer];
+      const withoutLayer = this.layers.filter((candidate) => candidate.id !== id);
+      if (!beforeId) {
+        this.layers = [...withoutLayer, layer];
+        return;
+      }
+      const beforeIndex = withoutLayer.findIndex((candidate) => candidate.id === beforeId);
+      if (beforeIndex === -1) {
+        this.layers = [...withoutLayer, layer];
+        return;
+      }
+      withoutLayer.splice(beforeIndex, 0, layer);
+      this.layers = withoutLayer;
     }
 
     getStyle() {
@@ -259,5 +282,45 @@ describe("MiniMap", () => {
     expect(map.getSource("ghost")?.data).toMatchObject({
       geometry: { coordinates: [11.001, 47.0005] },
     });
+  });
+
+  it("updates ghost coordinates without reordering layers on every tick", async () => {
+    const { MiniMap } = await import("../features/ride/components/MiniMap");
+    const routeProps = {
+      coords: [[47, 11], [47.001, 11.002]] as Array<[number, number]>,
+      cumDist: [0, 200],
+      positionM: 100,
+      isDark: false,
+      viewMode: "chase" as const,
+    };
+    const { rerender } = render(
+      <MiniMap
+        {...routeProps}
+        ghostLat={47.0005}
+        ghostLng={11.001}
+      />
+    );
+
+    const map = mapboxMock.MockMap.instances[0];
+    map.trigger("load");
+    map.trigger("idle");
+
+    await waitFor(() => expect(map.getLayer("ghost-halo")).toBeTruthy());
+    const moveLayerCountAfterCreate = map.moveLayerCalls.length;
+
+    rerender(
+      <MiniMap
+        {...routeProps}
+        ghostLat={47.0007}
+        ghostLng={11.0014}
+      />
+    );
+
+    await waitFor(() => {
+      expect(map.getSource("ghost")?.data).toMatchObject({
+        geometry: { coordinates: [11.0014, 47.0007] },
+      });
+    });
+    expect(map.moveLayerCalls).toHaveLength(moveLayerCountAfterCreate);
   });
 });

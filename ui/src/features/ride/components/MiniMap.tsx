@@ -340,8 +340,6 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
           },
         }, map.getLayer("ego") ? "ego" : undefined);
       }
-      if (map.getLayer("ghost-halo")) map.moveLayer("ghost-halo", map.getLayer("ego") ? "ego" : undefined);
-      if (map.getLayer("ghost")) map.moveLayer("ghost", map.getLayer("ego") ? "ego" : undefined);
     } catch (error) {
       console.warn("[RideOS] Ghost layer update failed", error);
     }
