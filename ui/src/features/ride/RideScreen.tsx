@@ -339,6 +339,7 @@ export function RideScreen({
           coords={stored?.coords ?? null}
           cumDist={stored?.cumDist ?? null}
           positionM={positionM}
+          speedKmh={t?.speed_kmh ?? null}
           isDark={isDark}
           viewMode={viewMode}
           lockToRouteStart={!rideStarted}

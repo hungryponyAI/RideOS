@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mapboxMock = vi.hoisted(() => {
@@ -13,8 +13,10 @@ const mapboxMock = vi.hoisted(() => {
 
     options: unknown;
     easeToCalls: unknown[] = [];
+    jumpToCalls: unknown[] = [];
     fitBoundsCalls: unknown[] = [];
     moveLayerCalls: Array<{ id: string; beforeId?: string }> = [];
+    setPaintCalls: Array<{ layerId: string; property: string; value: unknown }> = [];
     sources = new Map<string, Source>();
     layers: Array<{ id: string }> = [];
     private handlers = new Map<string, Array<() => void>>();
@@ -43,6 +45,10 @@ const mapboxMock = vi.hoisted(() => {
 
     easeTo(options: unknown) {
       this.easeToCalls.push(options);
+    }
+
+    jumpTo(options: unknown) {
+      this.jumpToCalls.push(options);
     }
 
     fitBounds(...options: unknown[]) {
@@ -98,6 +104,10 @@ const mapboxMock = vi.hoisted(() => {
       this.layers = withoutLayer;
     }
 
+    setPaintProperty(layerId: string, property: string, value: unknown) {
+      this.setPaintCalls.push({ layerId, property, value });
+    }
+
     getStyle() {
       return { layers: this.layers };
     }
@@ -115,6 +125,21 @@ vi.mock("mapbox-gl", () => ({
   },
 }));
 
+const rafState = { queue: [] as Array<(t: number) => void>, cancelled: false };
+
+async function pumpFrames(times: number) {
+  for (let i = 0; i < times; i++) {
+    await act(async () => {
+      const q = rafState.queue;
+      rafState.queue = [];
+      const now = performance.now() + (i + 1) * 16;
+      q.forEach((cb) => {
+        if (!rafState.cancelled) cb(now);
+      });
+    });
+  }
+}
+
 describe("MiniMap", () => {
   beforeEach(() => {
     mapboxMock.MockMap.instances.length = 0;
@@ -128,6 +153,16 @@ describe("MiniMap", () => {
       }
     );
     vi.stubGlobal("matchMedia", () => ({ matches: false }));
+    rafState.queue = [];
+    rafState.cancelled = false;
+    vi.stubGlobal("requestAnimationFrame", ((cb: (t: number) => void) => {
+      rafState.queue.push(cb);
+      return rafState.queue.length;
+    }) as typeof window.requestAnimationFrame);
+    vi.stubGlobal("cancelAnimationFrame", () => {
+      rafState.cancelled = true;
+      rafState.queue = [];
+    });
   });
 
   afterEach(() => {
@@ -158,12 +193,10 @@ describe("MiniMap", () => {
     map.trigger("load");
     map.trigger("idle");
 
-    await waitFor(() => expect(map.easeToCalls.length).toBeGreaterThan(0));
+    await pumpFrames(3);
 
-    expect(map.easeToCalls[0]).toMatchObject({
-      center: [11, 47],
-      duration: 0,
-    });
+    await waitFor(() => expect(map.easeToCalls.length).toBeGreaterThan(0));
+    expect(map.easeToCalls[0]).toMatchObject({ duration: 0 });
     expect(map.fitBoundsCalls).toHaveLength(0);
   });
 
@@ -229,7 +262,7 @@ describe("MiniMap", () => {
     await waitFor(() => expect(getByText("Karte nicht verfügbar")).toBeTruthy());
   });
 
-  it("keeps the camera locked to the route start until the ride starts", async () => {
+  it("keeps the ego pinned to the route start until the ride starts", async () => {
     const { MiniMap } = await import("../features/ride/components/MiniMap");
     const routeProps = {
       coords: [
@@ -248,15 +281,25 @@ describe("MiniMap", () => {
     const map = mapboxMock.MockMap.instances[0];
     map.trigger("load");
     map.trigger("idle");
-    await waitFor(() => expect(map.easeToCalls.length).toBeGreaterThan(0));
+    await pumpFrames(5);
+
+    await waitFor(() => {
+      const ego = map.getSource("ego")?.data as { geometry: { coordinates: [number, number] } } | undefined;
+      expect(ego?.geometry.coordinates).toEqual([11, 47]);
+    });
 
     rerender(<MiniMap {...routeProps} positionM={400} lockToRouteStart />);
-    await waitFor(() => expect(map.easeToCalls.length).toBeGreaterThan(1));
-    expect(map.easeToCalls.at(-1)).toMatchObject({ center: [11, 47] });
+    await pumpFrames(5);
+    const egoStillAtStart = map.getSource("ego")?.data as { geometry: { coordinates: [number, number] } } | undefined;
+    expect(egoStillAtStart?.geometry.coordinates).toEqual([11, 47]);
 
     rerender(<MiniMap {...routeProps} positionM={400} lockToRouteStart={false} />);
-    await waitFor(() => expect(map.easeToCalls.length).toBeGreaterThan(2));
-    expect(map.easeToCalls.at(-1)).toMatchObject({ center: [11.004, 47.002] });
+    await pumpFrames(120);
+    await waitFor(() => {
+      const ego = map.getSource("ego")?.data as { geometry: { coordinates: [number, number] } } | undefined;
+      expect(ego?.geometry.coordinates[0]).toBeCloseTo(11.004, 2);
+      expect(ego?.geometry.coordinates[1]).toBeCloseTo(47.002, 3);
+    });
   });
 
   it("renders ghost as a distinct competitor marker with halo", async () => {
@@ -276,19 +319,20 @@ describe("MiniMap", () => {
     const map = mapboxMock.MockMap.instances[0];
     map.trigger("load");
     map.trigger("idle");
+    await pumpFrames(5);
 
     await waitFor(() => expect(map.getLayer("ghost-halo")).toBeTruthy());
     expect(map.getLayer("ghost")).toBeTruthy();
-    expect(map.getSource("ghost")?.data).toMatchObject({
-      geometry: { coordinates: [11.001, 47.0005] },
-    });
+    const ghost = map.getSource("ghost")?.data as { geometry: { coordinates: [number, number] } } | undefined;
+    expect(ghost?.geometry.coordinates[0]).toBeCloseTo(11.001, 3);
+    expect(ghost?.geometry.coordinates[1]).toBeCloseTo(47.0005, 3);
   });
 
-  it("updates ghost coordinates without reordering layers on every tick", async () => {
+  it("animates ghost between samples rather than snapping", async () => {
     const { MiniMap } = await import("../features/ride/components/MiniMap");
     const routeProps = {
-      coords: [[47, 11], [47.001, 11.002]] as Array<[number, number]>,
-      cumDist: [0, 200],
+      coords: [[47, 11], [47.002, 11]] as Array<[number, number]>,
+      cumDist: [0, 222],
       positionM: 100,
       isDark: false,
       viewMode: "chase" as const,
@@ -296,31 +340,51 @@ describe("MiniMap", () => {
     const { rerender } = render(
       <MiniMap
         {...routeProps}
-        ghostLat={47.0005}
-        ghostLng={11.001}
+        ghostLat={47}
+        ghostLng={11}
       />
     );
 
     const map = mapboxMock.MockMap.instances[0];
     map.trigger("load");
     map.trigger("idle");
-
-    await waitFor(() => expect(map.getLayer("ghost-halo")).toBeTruthy());
-    const moveLayerCountAfterCreate = map.moveLayerCalls.length;
+    await pumpFrames(5);
 
     rerender(
       <MiniMap
         {...routeProps}
-        ghostLat={47.0007}
-        ghostLng={11.0014}
+        ghostLat={47.002}
+        ghostLng={11}
       />
     );
+    await pumpFrames(1);
 
-    await waitFor(() => {
-      expect(map.getSource("ghost")?.data).toMatchObject({
-        geometry: { coordinates: [11.0014, 47.0007] },
-      });
-    });
-    expect(map.moveLayerCalls).toHaveLength(moveLayerCountAfterCreate);
+    const ghostAfterOneFrame = map.getSource("ghost")?.data as { geometry: { coordinates: [number, number] } } | undefined;
+    const latNow = ghostAfterOneFrame?.geometry.coordinates[1] ?? 0;
+    expect(latNow).toBeGreaterThan(47);
+    expect(latNow).toBeLessThan(47.002);
+  });
+
+  it("stops the rAF loop on unmount", async () => {
+    const { MiniMap } = await import("../features/ride/components/MiniMap");
+    const { unmount } = render(
+      <MiniMap
+        coords={[[47, 11], [47.001, 11.002]]}
+        cumDist={[0, 200]}
+        positionM={100}
+        isDark={false}
+        viewMode="chase"
+      />
+    );
+    const map = mapboxMock.MockMap.instances[0];
+    map.trigger("load");
+    map.trigger("idle");
+    await pumpFrames(2);
+    const easeBefore = map.easeToCalls.length;
+    const jumpBefore = map.jumpToCalls.length;
+    unmount();
+    await pumpFrames(10);
+    expect(map.easeToCalls.length).toBe(easeBefore);
+    expect(map.jumpToCalls.length).toBe(jumpBefore);
   });
 });

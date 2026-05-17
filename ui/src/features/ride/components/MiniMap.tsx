@@ -1,6 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
+import {
+  EXTRAPOLATION_HORIZON_MS,
+  RECONNECT_SNAP_MS,
+  STALE_FADE_MS,
+  STALE_FREEZE_MS,
+  TAU_CAMERA_BEARING_MS,
+  TAU_CAMERA_CENTER_MS,
+  TAU_CAMERA_PITCH_ZOOM_MS,
+  TAU_GHOST_MS,
+  TAU_POSITION_MS,
+  clampExtrapolationM,
+  lerp,
+  lerpAngleDeg,
+  projectOntoRoute,
+  springAlpha,
+} from "./MiniMap.motion";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
 mapboxgl.accessToken = MAPBOX_TOKEN ?? "";
@@ -18,6 +34,7 @@ interface MiniMapProps {
   coords: Array<[number, number]> | null;
   cumDist: number[] | null;
   positionM: number | null;
+  speedKmh?: number | null;
   ghostLat?: number | null;
   ghostLng?: number | null;
   ghostBearingDeg?: number | null;
@@ -46,8 +63,7 @@ const DESCENT_FOLLOW_PITCH = 60, DESCENT_FOLLOW_ZOOM = 17.5;
 const CLIMB_CHASE_PITCH = 70, CLIMB_CHASE_ZOOM = 17.5;
 const CLIMB_FOLLOW_PITCH = 82, CLIMB_FOLLOW_ZOOM = 19;
 const BIRDSEYE_PITCH = 0, BIRDSEYE_ZOOM = 14, BIRDSEYE_OFFSET: [number, number] = [0, 0];
-const POS_TWEEN_MS = 80;
-const LINEAR = (t: number) => t;
+const VIEWMODE_EASE_MS = 450;
 const GHOST_COLOR = "#E58B4A";
 const GHOST_STROKE = "#FFFFFF";
 
@@ -110,19 +126,106 @@ function routeStartBearing(coords: Array<[number, number]>, cumDist: number[] | 
   return ahead ? calcBearing(start[0], start[1], ahead[0], ahead[1]) : 0;
 }
 
-export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMode, lockToRouteStart = false, isDescending, isClimbing }: MiniMapProps) {
+interface CameraTarget {
+  pitch: number;
+  zoom: number;
+  offset: [number, number];
+  bearing: number;
+  center: [number, number];
+}
+
+interface EgoTarget {
+  posM: number;
+  receivedAt: number;
+  speedMPerS: number;
+}
+
+interface GhostTarget {
+  lat: number;
+  lng: number;
+  bearing: number;
+  receivedAt: number;
+  posM: number | null;
+  speedMPerS: number;
+}
+
+interface DebugMetrics {
+  wsDeltaMs: number;
+  egoErrM: number;
+  ghostErrM: number;
+  frameMs: number;
+  frames: number;
+}
+
+function isDebugMotionEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  if (!import.meta.env.DEV) return false;
+  try {
+    return new URLSearchParams(window.location.search).has("debugMotion");
+  } catch {
+    return false;
+  }
+}
+
+export function MiniMap({
+  coords,
+  cumDist,
+  positionM,
+  speedKmh,
+  ghostLat,
+  ghostLng,
+  ghostBearingDeg,
+  viewMode,
+  lockToRouteStart = false,
+  isDescending,
+  isClimbing,
+}: MiniMapProps) {
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [styleReady, setStyleReady] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [mapFailed, setMapFailed] = useState(false);
+
+  const rafRef = useRef<number | null>(null);
+  const lastFrameRef = useRef<number>(0);
+  const debugEnabledRef = useRef<boolean>(isDebugMotionEnabled());
+  const reducedMotionRef = useRef<boolean>(false);
+
+  const egoTargetRef = useRef<EgoTarget | null>(null);
+  const egoCurrentRef = useRef<{ posM: number; lat: number; lng: number; bearing: number } | null>(null);
+
+  const ghostTargetRef = useRef<GhostTarget | null>(null);
+  const ghostCurrentRef = useRef<{ lat: number; lng: number; bearing: number } | null>(null);
+  const prevGhostSampleRef = useRef<{ lat: number; lng: number; receivedAt: number } | null>(null);
+
+  const cameraTargetRef = useRef<CameraTarget | null>(null);
+  const cameraCurrentRef = useRef<CameraTarget | null>(null);
+
   const lastViewModeRef = useRef<MapViewMode>(viewMode);
-  const lastEgoRef = useRef<{ ego: [number, number]; bearing: number } | null>(null);
   const initialCameraSetRef = useRef(false);
   const cameraRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const wsSampleClockRef = useRef<number>(0);
+  const lastEgoSampleAtRef = useRef<number>(0);
+  const lastGhostSampleAtRef = useRef<number>(0);
+  const [debugMetrics, setDebugMetrics] = useState<DebugMetrics | null>(null);
+  const debugTickRef = useRef<number>(0);
+
   const route = useMemo(() => validRoute(coords, cumDist), [coords, cumDist]);
   const safePositionM = finiteNumber(positionM) ? positionM : null;
+  const speedMPerS = finiteNumber(speedKmh) ? Math.max(0, speedKmh) / 3.6 : 0;
 
+  // Determine reduced-motion preference once on mount.
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    try {
+      reducedMotionRef.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch {
+      reducedMotionRef.current = false;
+    }
+  }, []);
+
+  // Mount Mapbox instance once per route.
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !route || !MAPBOX_TOKEN) return;
@@ -187,10 +290,21 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
         clearTimeout(cameraRevealTimerRef.current);
         cameraRevealTimerRef.current = null;
       }
+      if (rafRef.current != null) {
+        if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
       ro.disconnect();
       setStyleReady(false);
       setRevealed(false);
       initialCameraSetRef.current = false;
+      egoTargetRef.current = null;
+      egoCurrentRef.current = null;
+      ghostTargetRef.current = null;
+      ghostCurrentRef.current = null;
+      prevGhostSampleRef.current = null;
+      cameraTargetRef.current = null;
+      cameraCurrentRef.current = null;
       try {
         map.remove();
       } catch (error) {
@@ -200,16 +314,24 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
     };
   }, [route, viewMode]);
 
+  // Reset transient state when the route changes.
   useEffect(() => {
     initialCameraSetRef.current = false;
-    lastEgoRef.current = null;
     setRevealed(false);
+    egoCurrentRef.current = null;
+    egoTargetRef.current = null;
+    ghostCurrentRef.current = null;
+    ghostTargetRef.current = null;
+    prevGhostSampleRef.current = null;
+    cameraCurrentRef.current = null;
+    cameraTargetRef.current = null;
     if (cameraRevealTimerRef.current) {
       clearTimeout(cameraRevealTimerRef.current);
       cameraRevealTimerRef.current = null;
     }
   }, [route]);
 
+  // Route polyline as GeoJSON.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReady || !route) return;
@@ -231,48 +353,230 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
     }
   }, [route, styleReady]);
 
+  // Update ego target whenever positionM / speed changes.
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !styleReady) return;
-    let ego: [number, number] | null = null, bearing = 0, liveUpdate = false;
-    if (route?.coords.length && (lockToRouteStart || !initialCameraSetRef.current)) {
-      ego = route.coords[0];
-      bearing = viewMode === "birdseye" ? 0 : routeStartBearing(route.coords, route.cumDist);
-      lastEgoRef.current = { ego, bearing };
-      liveUpdate = true;
-    } else if (route?.cumDist && safePositionM != null) {
-      const fresh = interpolatePosition(route.coords, route.cumDist, safePositionM);
-      if (fresh) {
-        ego = fresh;
-        if (viewMode === "chase" || viewMode === "follow") {
-          const ahead = interpolatePosition(route.coords, route.cumDist, safePositionM + BEARING_LOOKAHEAD_M);
-          bearing = ahead ? calcBearing(ego[0], ego[1], ahead[0], ahead[1]) : 0;
-        }
-        lastEgoRef.current = { ego, bearing };
-        liveUpdate = true;
+    if (!route) return;
+    const now = (typeof performance !== "undefined" ? performance.now() : Date.now());
+    const prevSampleAt = lastEgoSampleAtRef.current;
+    lastEgoSampleAtRef.current = now;
+    if (prevSampleAt > 0) wsSampleClockRef.current = now - prevSampleAt;
+
+    if (lockToRouteStart || !initialCameraSetRef.current) {
+      egoTargetRef.current = { posM: 0, receivedAt: now, speedMPerS: 0 };
+      if (!egoCurrentRef.current) {
+        const [lat, lng] = route.coords[0];
+        const bearing = viewMode === "birdseye" ? 0 : routeStartBearing(route.coords, route.cumDist);
+        egoCurrentRef.current = { posM: 0, lat, lng, bearing };
+      }
+      return;
+    }
+    if (!route.cumDist || safePositionM == null) return;
+    const gapSinceLast = prevSampleAt > 0 ? now - prevSampleAt : 0;
+    egoTargetRef.current = { posM: safePositionM, receivedAt: now, speedMPerS };
+    if (egoCurrentRef.current == null) {
+      const interp = interpolatePosition(route.coords, route.cumDist, safePositionM);
+      const bearing = viewMode === "birdseye" ? 0 : (() => {
+        const ahead = interpolatePosition(route.coords, route.cumDist, safePositionM + BEARING_LOOKAHEAD_M);
+        return interp && ahead ? calcBearing(interp[0], interp[1], ahead[0], ahead[1]) : 0;
+      })();
+      if (interp) egoCurrentRef.current = { posM: safePositionM, lat: interp[0], lng: interp[1], bearing };
+    } else if (gapSinceLast > RECONNECT_SNAP_MS && route.cumDist) {
+      const interp = interpolatePosition(route.coords, route.cumDist, safePositionM);
+      if (interp) {
+        egoCurrentRef.current.posM = safePositionM;
+        egoCurrentRef.current.lat = interp[0];
+        egoCurrentRef.current.lng = interp[1];
       }
     }
-    if (!ego && lastEgoRef.current) { ego = lastEgoRef.current.ego; bearing = viewMode === "birdseye" ? 0 : lastEgoRef.current.bearing; }
-    let pitch = BIRDSEYE_PITCH, zoom = BIRDSEYE_ZOOM, offset: [number, number] = BIRDSEYE_OFFSET;
-    if (viewMode === "chase") {
-      pitch = isDescending ? DESCENT_CHASE_PITCH : isClimbing ? CLIMB_CHASE_PITCH : CHASE_PITCH;
-      zoom = isDescending ? DESCENT_CHASE_ZOOM : isClimbing ? CLIMB_CHASE_ZOOM : CHASE_ZOOM;
-      offset = CHASE_OFFSET;
-    } else if (viewMode === "follow") {
-      pitch = isDescending ? DESCENT_FOLLOW_PITCH : isClimbing ? CLIMB_FOLLOW_PITCH : FOLLOW_PITCH;
-      zoom = isDescending ? DESCENT_FOLLOW_ZOOM : isClimbing ? CLIMB_FOLLOW_ZOOM : FOLLOW_ZOOM;
-      offset = FOLLOW_OFFSET;
+  }, [route, safePositionM, lockToRouteStart, viewMode, speedMPerS]);
+
+  // Update ghost target whenever ghost coords change.
+  useEffect(() => {
+    if (!route) return;
+    const hasGhost = finiteNumber(ghostLat) && finiteNumber(ghostLng);
+    if (!hasGhost) {
+      ghostTargetRef.current = null;
+      ghostCurrentRef.current = null;
+      prevGhostSampleRef.current = null;
+      return;
     }
-    const viewChanged = lastViewModeRef.current !== viewMode;
-    if (!ego) return;
+    const now = (typeof performance !== "undefined" ? performance.now() : Date.now());
+    const prevSampleAt = lastGhostSampleAtRef.current;
+    lastGhostSampleAtRef.current = now;
+
+    const prev = prevGhostSampleRef.current;
+    let derivedSpeedMPerS = 0;
+    if (prev && route.cumDist) {
+      const distFromPrev = (() => {
+        const r = 6_371_000;
+        const dLat = ((ghostLat! - prev.lat) * Math.PI) / 180;
+        const dLng = ((ghostLng! - prev.lng) * Math.PI) / 180;
+        const a = Math.sin(dLat / 2) ** 2 +
+          Math.cos((prev.lat * Math.PI) / 180) * Math.cos((ghostLat! * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+        return 2 * r * Math.asin(Math.min(1, Math.sqrt(a)));
+      })();
+      const dtS = (now - prev.receivedAt) / 1000;
+      if (dtS > 0 && dtS < 2) derivedSpeedMPerS = distFromPrev / dtS;
+    }
+    prevGhostSampleRef.current = { lat: ghostLat!, lng: ghostLng!, receivedAt: now };
+
+    let posM: number | null = null;
+    let lat = ghostLat!;
+    let lng = ghostLng!;
+    if (route.cumDist) {
+      const projected = projectOntoRoute(ghostLat!, ghostLng!, route.coords, route.cumDist);
+      if (projected) {
+        posM = projected.distM;
+        lat = projected.lat;
+        lng = projected.lng;
+      }
+    }
+    const bearing = finiteNumber(ghostBearingDeg)
+      ? ghostBearingDeg!
+      : (ghostCurrentRef.current?.bearing ?? 0);
+    const gapSinceLast = prevSampleAt > 0 ? now - prevSampleAt : 0;
+    ghostTargetRef.current = { lat, lng, bearing, receivedAt: now, posM, speedMPerS: derivedSpeedMPerS };
+    if (!ghostCurrentRef.current || gapSinceLast > RECONNECT_SNAP_MS) {
+      ghostCurrentRef.current = { lat, lng, bearing };
+    }
+  }, [route, ghostLat, ghostLng, ghostBearingDeg]);
+
+  // View-mode change: a single short ease so the perspective swap feels deliberate.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleReady || !initialCameraSetRef.current) {
+      lastViewModeRef.current = viewMode;
+      return;
+    }
+    if (lastViewModeRef.current === viewMode) return;
     lastViewModeRef.current = viewMode;
-    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const center: [number, number] = [ego[1], ego[0]];
-    const posDur = prefersReducedMotion ? 0 : POS_TWEEN_MS;
+    const target = cameraTargetRef.current;
+    if (!target) return;
     try {
-      if (!initialCameraSetRef.current) {
+      map.easeTo({
+        center: target.center,
+        bearing: target.bearing,
+        pitch: target.pitch,
+        zoom: target.zoom,
+        offset: target.offset,
+        duration: reducedMotionRef.current ? 0 : VIEWMODE_EASE_MS,
+        essential: true,
+      });
+      if (cameraCurrentRef.current) {
+        cameraCurrentRef.current = { ...target };
+      }
+    } catch (error) {
+      console.warn("[RideOS] View-mode ease failed", error);
+    }
+  }, [viewMode, styleReady]);
+
+  // The rAF render loop — single source of truth for marker + camera motion.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleReady || !route) return;
+
+    const ensureEgoLayer = (lat: number, lng: number) => {
+      const egoGeo = { type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [lng, lat] }, properties: {} };
+      const egoSrc = map.getSource("ego") as mapboxgl.GeoJSONSource | undefined;
+      if (egoSrc) { egoSrc.setData(egoGeo); return; }
+      try {
+        map.addSource("ego", { type: "geojson", data: egoGeo });
+        map.addLayer({
+          id: "ego",
+          type: "circle",
+          source: "ego",
+          paint: {
+            "circle-radius": 8,
+            "circle-color": "#FFFFFF",
+            "circle-stroke-color": "#74AFCB",
+            "circle-stroke-width": 2.5,
+          },
+        });
+      } catch (error) {
+        console.warn("[RideOS] Ego layer create failed", error);
+      }
+    };
+
+    const ensureGhostLayer = (lat: number, lng: number, opacity: number) => {
+      const ghostGeo = { type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [lng, lat] }, properties: {} };
+      const ghostSrc = map.getSource("ghost") as mapboxgl.GeoJSONSource | undefined;
+      if (ghostSrc) {
+        ghostSrc.setData(ghostGeo);
+        try {
+          if (map.getLayer("ghost")) map.setPaintProperty("ghost", "circle-opacity", 0.95 * opacity);
+          if (map.getLayer("ghost-halo")) map.setPaintProperty("ghost-halo", "circle-opacity", 0.24 * opacity);
+        } catch { /* paint property not yet available */ }
+        return;
+      }
+      try {
+        map.addSource("ghost", { type: "geojson", data: ghostGeo });
+        const beforeId = map.getLayer("ego") ? "ego" : undefined;
+        map.addLayer({
+          id: "ghost-halo",
+          type: "circle",
+          source: "ghost",
+          paint: {
+            "circle-radius": 18,
+            "circle-color": GHOST_COLOR,
+            "circle-opacity": 0.24 * opacity,
+            "circle-blur": 0.35,
+          },
+        }, beforeId);
+        map.addLayer({
+          id: "ghost",
+          type: "circle",
+          source: "ghost",
+          paint: {
+            "circle-radius": 7.5,
+            "circle-color": GHOST_COLOR,
+            "circle-stroke-color": GHOST_STROKE,
+            "circle-stroke-width": 2.5,
+            "circle-opacity": 0.95 * opacity,
+          },
+        }, beforeId);
+      } catch (error) {
+        console.warn("[RideOS] Ghost layer create failed", error);
+      }
+    };
+
+    const clearGhost = () => {
+      const ghostSrc = map.getSource("ghost") as mapboxgl.GeoJSONSource | undefined;
+      if (ghostSrc) ghostSrc.setData({ type: "FeatureCollection", features: [] });
+    };
+
+    const computeCameraTarget = (egoLat: number, egoLng: number, bearing: number): CameraTarget => {
+      let pitch = BIRDSEYE_PITCH, zoom = BIRDSEYE_ZOOM, offset: [number, number] = BIRDSEYE_OFFSET;
+      if (viewMode === "chase") {
+        pitch = isDescending ? DESCENT_CHASE_PITCH : isClimbing ? CLIMB_CHASE_PITCH : CHASE_PITCH;
+        zoom = isDescending ? DESCENT_CHASE_ZOOM : isClimbing ? CLIMB_CHASE_ZOOM : CHASE_ZOOM;
+        offset = CHASE_OFFSET;
+      } else if (viewMode === "follow") {
+        pitch = isDescending ? DESCENT_FOLLOW_PITCH : isClimbing ? CLIMB_FOLLOW_PITCH : FOLLOW_PITCH;
+        zoom = isDescending ? DESCENT_FOLLOW_ZOOM : isClimbing ? CLIMB_FOLLOW_ZOOM : FOLLOW_ZOOM;
+        offset = FOLLOW_OFFSET;
+      }
+      const cameraBearing = viewMode === "birdseye" ? 0 : bearing;
+      return { center: [egoLng, egoLat], bearing: cameraBearing, pitch, zoom, offset };
+    };
+
+    const applyInitialCamera = () => {
+      if (initialCameraSetRef.current) return;
+      const cur = egoCurrentRef.current;
+      if (!cur) return;
+      const target = computeCameraTarget(cur.lat, cur.lng, cur.bearing);
+      cameraTargetRef.current = target;
+      cameraCurrentRef.current = { ...target };
+      try {
         map.stop();
-        map.easeTo({ center, bearing, pitch, zoom, offset, duration: 0, essential: true });
+        map.easeTo({
+          center: target.center,
+          bearing: target.bearing,
+          pitch: target.pitch,
+          zoom: target.zoom,
+          offset: target.offset,
+          duration: 0,
+          essential: true,
+        });
         initialCameraSetRef.current = true;
         const revealCamera = () => {
           if (cameraRevealTimerRef.current) {
@@ -283,67 +587,149 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
         };
         map.once("idle", revealCamera);
         cameraRevealTimerRef.current = setTimeout(revealCamera, 250);
-      } else if (viewChanged) {
-        map.stop();
-        map.easeTo({ center, bearing, pitch, zoom, offset, duration: 0, essential: true });
-      } else {
-        map.easeTo({ center, bearing, pitch, zoom, offset, duration: posDur, easing: LINEAR, essential: true });
+      } catch (error) {
+        console.warn("[RideOS] Initial camera apply failed", error);
+        setRevealed(true);
       }
-      const egoGeo = { type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [ego[1], ego[0]] }, properties: {} };
-      const egoSrc = map.getSource("ego") as mapboxgl.GeoJSONSource | undefined;
-      if (egoSrc) { if (liveUpdate) egoSrc.setData(egoGeo); }
-      else {
-        map.addSource("ego", { type: "geojson", data: egoGeo });
-        map.addLayer({ id: "ego", type: "circle", source: "ego", paint: { "circle-radius": 8, "circle-color": "#FFFFFF", "circle-stroke-color": "#74AFCB", "circle-stroke-width": 2.5 } });
-        map.moveLayer("ego");
-      }
-      const layers = map.getStyle().layers;
-      if (layers && layers.length && layers[layers.length - 1].id !== "ego") map.moveLayer("ego");
-    } catch (error) {
-      console.warn("[RideOS] Map camera update failed", error);
-      setRevealed(true);
-    }
-  }, [route, safePositionM, styleReady, viewMode, lockToRouteStart, isDescending, isClimbing]);
+    };
 
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !styleReady) return;
-    const hasGhost = ghostLat != null && ghostLng != null && Number.isFinite(ghostLat) && Number.isFinite(ghostLng);
-    try {
-      const ghostSrc = map.getSource("ghost") as mapboxgl.GeoJSONSource | undefined;
-      if (!hasGhost) { if (ghostSrc) ghostSrc.setData({ type: "FeatureCollection", features: [] }); return; }
-      const ghostGeo = { type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [ghostLng, ghostLat] }, properties: {} };
-      if (ghostSrc) { ghostSrc.setData(ghostGeo); }
-      else {
-        map.addSource("ghost", { type: "geojson", data: ghostGeo });
-        map.addLayer({
-          id: "ghost-halo",
-          type: "circle",
-          source: "ghost",
-          paint: {
-            "circle-radius": 18,
-            "circle-color": GHOST_COLOR,
-            "circle-opacity": 0.24,
-            "circle-blur": 0.35,
-          },
-        }, map.getLayer("ego") ? "ego" : undefined);
-        map.addLayer({
-          id: "ghost",
-          type: "circle",
-          source: "ghost",
-          paint: {
-            "circle-radius": 7.5,
-            "circle-color": GHOST_COLOR,
-            "circle-stroke-color": GHOST_STROKE,
-            "circle-stroke-width": 2.5,
-            "circle-opacity": 0.95,
-          },
-        }, map.getLayer("ego") ? "ego" : undefined);
+    const step = (now: number) => {
+      const last = lastFrameRef.current;
+      const dt = last > 0 ? Math.max(1, Math.min(100, now - last)) : 16;
+      lastFrameRef.current = now;
+
+      if (egoTargetRef.current && !egoCurrentRef.current) {
+        const target = egoTargetRef.current;
+        const r = route;
+        if (r && r.cumDist) {
+          const interp = interpolatePosition(r.coords, r.cumDist, target.posM);
+          if (interp) {
+            const ahead = interpolatePosition(r.coords, r.cumDist, target.posM + BEARING_LOOKAHEAD_M);
+            const bearing = ahead ? calcBearing(interp[0], interp[1], ahead[0], ahead[1]) : 0;
+            egoCurrentRef.current = { posM: target.posM, lat: interp[0], lng: interp[1], bearing };
+          }
+        }
       }
-    } catch (error) {
-      console.warn("[RideOS] Ghost layer update failed", error);
-    }
-  }, [ghostLat, ghostLng, styleReady]);
+
+      if (egoTargetRef.current && egoCurrentRef.current && route && route.cumDist) {
+        const target = egoTargetRef.current;
+        const current = egoCurrentRef.current;
+        const sampleAge = now - target.receivedAt;
+        let goalM = target.posM;
+        if (sampleAge < STALE_FREEZE_MS && target.speedMPerS > 0) {
+          goalM = target.posM + clampExtrapolationM(target.speedMPerS, sampleAge, EXTRAPOLATION_HORIZON_MS);
+        }
+        const alpha = reducedMotionRef.current ? 1 : springAlpha(dt, TAU_POSITION_MS);
+        const nextPosM = lerp(current.posM, goalM, alpha);
+        const interp = interpolatePosition(route.coords, route.cumDist, nextPosM);
+        if (interp) {
+          const ahead = interpolatePosition(route.coords, route.cumDist, nextPosM + BEARING_LOOKAHEAD_M);
+          const targetBearing = ahead ? calcBearing(interp[0], interp[1], ahead[0], ahead[1]) : current.bearing;
+          current.posM = nextPosM;
+          current.lat = interp[0];
+          current.lng = interp[1];
+          current.bearing = lerpAngleDeg(current.bearing, targetBearing, alpha);
+        }
+      }
+
+      if (ghostTargetRef.current) {
+        const target = ghostTargetRef.current;
+        if (!ghostCurrentRef.current) {
+          ghostCurrentRef.current = { lat: target.lat, lng: target.lng, bearing: target.bearing };
+        }
+        const current = ghostCurrentRef.current;
+        const sampleAge = now - target.receivedAt;
+        let goalLat = target.lat;
+        let goalLng = target.lng;
+        if (
+          sampleAge < STALE_FREEZE_MS &&
+          target.speedMPerS > 0 &&
+          target.posM != null &&
+          route &&
+          route.cumDist
+        ) {
+          const stepM = clampExtrapolationM(target.speedMPerS, sampleAge, EXTRAPOLATION_HORIZON_MS);
+          const ahead = interpolatePosition(route.coords, route.cumDist, target.posM + stepM);
+          if (ahead) { goalLat = ahead[0]; goalLng = ahead[1]; }
+        }
+        const alpha = reducedMotionRef.current ? 1 : springAlpha(dt, TAU_GHOST_MS);
+        current.lat = lerp(current.lat, goalLat, alpha);
+        current.lng = lerp(current.lng, goalLng, alpha);
+        current.bearing = lerpAngleDeg(current.bearing, target.bearing, alpha);
+      }
+
+      const egoCur = egoCurrentRef.current;
+      if (egoCur) {
+        const desired = computeCameraTarget(egoCur.lat, egoCur.lng, egoCur.bearing);
+        cameraTargetRef.current = desired;
+
+        if (!initialCameraSetRef.current) {
+          applyInitialCamera();
+        } else if (cameraCurrentRef.current) {
+          const cam = cameraCurrentRef.current;
+          const centerAlpha = reducedMotionRef.current ? 1 : springAlpha(dt, TAU_CAMERA_CENTER_MS);
+          const bearingAlpha = reducedMotionRef.current ? 1 : springAlpha(dt, TAU_CAMERA_BEARING_MS);
+          const pzAlpha = reducedMotionRef.current ? 1 : springAlpha(dt, TAU_CAMERA_PITCH_ZOOM_MS);
+          cam.center = [lerp(cam.center[0], desired.center[0], centerAlpha), lerp(cam.center[1], desired.center[1], centerAlpha)];
+          cam.bearing = lerpAngleDeg(cam.bearing, desired.bearing, bearingAlpha);
+          cam.pitch = lerp(cam.pitch, desired.pitch, pzAlpha);
+          cam.zoom = lerp(cam.zoom, desired.zoom, pzAlpha);
+          cam.offset = [lerp(cam.offset[0], desired.offset[0], pzAlpha), lerp(cam.offset[1], desired.offset[1], pzAlpha)];
+          try {
+            map.jumpTo({ center: cam.center, bearing: cam.bearing, pitch: cam.pitch, zoom: cam.zoom });
+          } catch (error) {
+            console.warn("[RideOS] Camera jumpTo failed", error);
+          }
+        }
+
+        ensureEgoLayer(egoCur.lat, egoCur.lng);
+      }
+
+      if (ghostCurrentRef.current && ghostTargetRef.current) {
+        const sampleAge = now - ghostTargetRef.current.receivedAt;
+        const fadeStart = STALE_FADE_MS;
+        const fadeEnd = STALE_FADE_MS + 1000;
+        const opacity = sampleAge < fadeStart
+          ? 1
+          : sampleAge > fadeEnd
+            ? 0.5
+            : 1 - 0.5 * ((sampleAge - fadeStart) / (fadeEnd - fadeStart));
+        ensureGhostLayer(ghostCurrentRef.current.lat, ghostCurrentRef.current.lng, opacity);
+      } else if (!ghostTargetRef.current) {
+        clearGhost();
+      }
+
+      if (debugEnabledRef.current) {
+        debugTickRef.current++;
+        if (debugTickRef.current % 6 === 0) {
+          const target = egoTargetRef.current;
+          const current = egoCurrentRef.current;
+          const ghostTarget = ghostTargetRef.current;
+          const ghostCurrent = ghostCurrentRef.current;
+          setDebugMetrics({
+            wsDeltaMs: Math.round(wsSampleClockRef.current),
+            egoErrM: target && current ? Math.round(Math.abs(target.posM - current.posM)) : 0,
+            ghostErrM: ghostTarget && ghostCurrent
+              ? Math.round(Math.hypot((ghostTarget.lat - ghostCurrent.lat) * 111_000, (ghostTarget.lng - ghostCurrent.lng) * 80_000))
+              : 0,
+            frameMs: Math.round(dt),
+            frames: debugTickRef.current,
+          });
+        }
+      }
+
+      rafRef.current = requestAnimationFrame(step);
+    };
+
+    lastFrameRef.current = 0;
+    rafRef.current = requestAnimationFrame(step);
+    return () => {
+      if (rafRef.current != null) {
+        if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+  }, [route, styleReady, viewMode, isDescending, isClimbing]);
 
   return (
     <div className="relative w-full h-full min-h-[300px] bg-[var(--bg)]">
@@ -356,6 +742,17 @@ export function MiniMap({ coords, cumDist, positionM, ghostLat, ghostLng, viewMo
         ref={containerRef}
         className={`w-full h-full transition-opacity duration-200 motion-reduce:transition-none ${revealed ? "opacity-100" : "opacity-0"}`}
       />
+      {debugEnabledRef.current && debugMetrics && (
+        <div
+          data-testid="motion-debug-overlay"
+          className="absolute bottom-2 left-2 z-50 rounded-md bg-black/70 px-2 py-1 font-mono text-[10px] leading-tight text-white pointer-events-none"
+          aria-hidden="true"
+        >
+          <div>ws Δ {debugMetrics.wsDeltaMs}ms</div>
+          <div>ego err {debugMetrics.egoErrM}m · ghost err {debugMetrics.ghostErrM}m</div>
+          <div>frame {debugMetrics.frameMs}ms · #{debugMetrics.frames}</div>
+        </div>
+      )}
     </div>
   );
 }
