@@ -7,7 +7,7 @@ interface Props {
 export function OudenaLogo({ variant = "wordmark", height = 48, className }: Props) {
   if (variant === "mark") {
     return (
-      <svg width={height} height={height} viewBox="0 0 96 96" fill="none" role="img" aria-label="OUDENA" className={className}>
+      <svg width={height} height={height} viewBox="-6 -6 108 108" fill="none" role="img" aria-label="OUDENA" className={className}>
         <g stroke="#74AFCB" strokeLinecap="round" strokeLinejoin="round" strokeWidth="7">
           <path d="M96 48A48 48 0 1 1 48 0" />
           <path d="M26 50 L75 44" opacity="0.82" />

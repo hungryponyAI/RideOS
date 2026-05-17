@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useOptionalProfileContext } from "../profiles/useProfileContext";
 
 const KEY = "oudena_onboarding_done";
 
@@ -6,9 +7,17 @@ export type OnboardingStep = "welcome" | "trainer" | "strava" | "route";
 
 const STEPS: OnboardingStep[] = ["welcome", "trainer", "strava", "route"];
 
-export function useOnboarding() {
+function storageKey(profileId?: string | null): string {
+  return profileId ? `${KEY}:${profileId}` : KEY;
+}
+
+export function useOnboarding(profileId?: string | null) {
+  const profileContext = useOptionalProfileContext();
+  const resolvedProfileId = profileId ?? profileContext?.activeProfile?.id ?? null;
+  const key = storageKey(resolvedProfileId);
+
   const [state, setState] = useState(() => ({
-    done: localStorage.getItem(KEY) === "1",
+    done: localStorage.getItem(key) === "1",
     idx: 0,
   }));
 
@@ -16,22 +25,22 @@ export function useOnboarding() {
     setState(s => {
       const next = s.idx + 1;
       if (next >= STEPS.length) {
-        localStorage.setItem(KEY, "1");
+        localStorage.setItem(key, "1");
         return { ...s, done: true };
       }
       return { ...s, idx: next };
     });
-  }, []);
+  }, [key]);
 
   const complete = useCallback(() => {
-    localStorage.setItem(KEY, "1");
+    localStorage.setItem(key, "1");
     setState(s => ({ ...s, done: true }));
-  }, []);
+  }, [key]);
 
   const reopen = useCallback(() => {
-    localStorage.removeItem(KEY);
+    localStorage.removeItem(key);
     setState({ done: false, idx: 0 });
-  }, []);
+  }, [key]);
 
   return {
     done: state.done,

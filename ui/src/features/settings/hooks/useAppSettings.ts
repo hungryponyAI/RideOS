@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { useOptionalProfileContext } from "../../profiles/useProfileContext";
 
 export interface AppPreferences {
   ghost_default: boolean;
@@ -8,6 +9,7 @@ export interface AppPreferences {
 }
 
 const STORAGE_KEY = "rideos-prefs";
+const PROFILE_STORAGE_PREFIX = "oudena_profile_prefs";
 const DEFAULTS: AppPreferences = {
   ghost_default: true,
   warmup_enabled: false,
@@ -15,9 +17,13 @@ const DEFAULTS: AppPreferences = {
   camera_default: "follow",
 };
 
-export function loadAppPreferences(): AppPreferences {
+function storageKey(profileId?: string | null): string {
+  return profileId ? `${PROFILE_STORAGE_PREFIX}:${profileId}` : STORAGE_KEY;
+}
+
+export function loadAppPreferences(profileId?: string | null): AppPreferences {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey(profileId));
     if (raw) {
       const p = JSON.parse(raw) as Partial<AppPreferences>;
       return {
@@ -32,15 +38,17 @@ export function loadAppPreferences(): AppPreferences {
 }
 
 export function useAppSettings() {
-  const [prefs, setPrefs] = useState<AppPreferences>(loadAppPreferences);
+  const profileContext = useOptionalProfileContext();
+  const profileId = profileContext?.activeProfile?.id ?? null;
+  const [prefs, setPrefs] = useState<AppPreferences>(() => loadAppPreferences(profileId));
 
   const updatePref = useCallback(<K extends keyof AppPreferences>(key: K, value: AppPreferences[K]) => {
     setPrefs(prev => {
       const next = { ...prev, [key]: value };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      localStorage.setItem(storageKey(profileId), JSON.stringify(next));
       return next;
     });
-  }, []);
+  }, [profileId]);
 
   return { prefs, updatePref };
 }

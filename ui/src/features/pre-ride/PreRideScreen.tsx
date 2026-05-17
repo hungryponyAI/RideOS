@@ -3,10 +3,8 @@ import { OudenaLogo } from "../../shared/ui/OudenaLogo";
 import { useWS } from "../../shared/ws/useWS";
 import { useRouteLibrary } from "../routes/hooks/useRouteLibrary";
 import { useAthleteSettings } from "../settings/hooks/useAthleteSettings";
-import { useStravaStatus } from "../strava/hooks/useStravaStatus";
 import { useDeviceStatus } from "../settings/hooks/useDeviceStatus";
 import { useRouteFavorites } from "../routes/hooks/useRouteFavorites";
-import { StravaConnectModal, type StravaModalStep } from "../strava/StravaConnectModal";
 import { setLastRouteId } from "../home/hooks/useHomeRecommendation";
 import type { RouteLibraryEntry } from "../../shared/types/route";
 import { RouteCard } from "./RouteCard";
@@ -20,19 +18,10 @@ interface Props {
   initialRouteId?: string | null;
 }
 
-function StravaIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
-    </svg>
-  );
-}
-
 export function PreRideScreen({ onStarted, onStartRide, initialRouteId }: Props) {
   const { sendMessage, status: wsStatus } = useWS();
   const routeLibrary = useRouteLibrary();
   const { settings: athleteSettings } = useAthleteSettings();
-  const { stravaStatus, stravaAuthUrl, stravaError, clearStravaAuthUrl, clearStravaError } = useStravaStatus();
   const { kickrConnected } = useDeviceStatus();
   const { isFavorite, toggle: toggleFavorite, favorites } = useRouteFavorites();
 
@@ -50,41 +39,6 @@ export function PreRideScreen({ onStarted, onStartRide, initialRouteId }: Props)
       if (route) { setSelectedRoute(route); hasAppliedInitial.current = true; }
     }
   }, [initialRouteId, routeLibrary]);
-
-  const [showStravaModal, setShowStravaModal] = useState(false);
-  const [modalStep, setModalStep] = useState<StravaModalStep>("idle");
-  const [modalError, setModalError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (stravaAuthUrl && showStravaModal) {
-      setModalStep("enter_code");
-      window.open(stravaAuthUrl, "_blank");
-      clearStravaAuthUrl();
-    }
-  }, [stravaAuthUrl, showStravaModal, clearStravaAuthUrl]);
-
-  useEffect(() => {
-    if (stravaStatus?.connected && modalStep === "connecting") {
-      setShowStravaModal(false);
-      setModalStep("idle");
-      setModalError(null);
-    }
-  }, [stravaStatus, modalStep]);
-
-  useEffect(() => {
-    if (stravaError && showStravaModal) {
-      setModalError(stravaError);
-      setModalStep("enter_code");
-      clearStravaError();
-    }
-  }, [stravaError, showStravaModal, clearStravaError]);
-
-  const handleOpenStravaModal = () => { setShowStravaModal(true); setModalStep("idle"); setModalError(null); };
-  const handleCloseStravaModal = () => { setShowStravaModal(false); setModalStep("idle"); setModalError(null); };
-  const handleRequestAuthUrl = () => { setModalStep("waiting_url"); sendMessage({ type: "strava_get_auth_url" }); };
-  const handleSubmitCode = (code: string) => { setModalStep("connecting"); setModalError(null); sendMessage({ type: "strava_submit_code", code }); };
-  const handleStravaSync = () => sendMessage({ type: "strava_sync" });
-  const handleStravaDisconnect = () => sendMessage({ type: "strava_disconnect" });
 
   const loadFile = useCallback((file: File) => {
     if (!file.name.toLowerCase().endsWith(".gpx")) { setFileError("Keine .gpx-Datei ausgewählt"); return; }
@@ -138,8 +92,6 @@ export function PreRideScreen({ onStarted, onStartRide, initialRouteId }: Props)
     sendMessage({ type: "rename_route", route_id: routeId, name });
   }, [sendMessage]);
 
-  const isStravaConnected = stravaStatus?.connected ?? false;
-  const isStravaSyncing = stravaStatus?.syncing ?? false;
   const selectedRouteId = selectedRoute?.id ?? null;
 
   const filteredLibrary = applyRouteFilters(routeLibrary, activeFilters, favorites);
@@ -167,21 +119,6 @@ export function PreRideScreen({ onStarted, onStartRide, initialRouteId }: Props)
               {kickrConnected ? "Trainer verbunden" : trainerSearching ? "Trainer wird gesucht" : "Trainer nicht verbunden"}
             </p>
           </div>
-        </div>
-        <div className="ml-auto flex items-center gap-3">
-          {!isStravaConnected ? (
-            <button type="button" onClick={handleOpenStravaModal} className="flex items-center gap-1.5 text-xs text-[var(--text-subtle)] border border-[var(--border)] rounded-lg px-3 py-2 hover:border-[#FC4C02] hover:text-[#FC4C02] transition-colors duration-150">
-              <StravaIcon size={12} /> Mit Strava verbinden
-            </button>
-          ) : (
-            <div className="flex items-center gap-2">
-              <StravaIcon size={12} />
-              <span className="text-xs text-[#FC4C02]">{stravaStatus?.athleteName ?? "Strava"}</span>
-              {isStravaSyncing && <span className="text-xs text-[var(--text-subtle)]">Synchronisiert…</span>}
-              <button type="button" onClick={handleStravaSync} disabled={isStravaSyncing} className="text-xs border border-[#FC4C02] text-[#FC4C02] rounded px-2.5 py-1 hover:bg-[#FC4C02] hover:text-white transition-colors duration-150 disabled:opacity-40">Sync</button>
-              <button type="button" onClick={handleStravaDisconnect} className="text-xs text-[var(--text-subtle)] hover:text-[var(--text)] transition-colors duration-150 px-1 py-1">Trennen</button>
-            </div>
-          )}
         </div>
       </header>
 
@@ -288,9 +225,6 @@ export function PreRideScreen({ onStarted, onStartRide, initialRouteId }: Props)
         )}
       </div>
 
-      {showStravaModal && (
-        <StravaConnectModal step={modalStep} authUrl={stravaAuthUrl} error={modalError} onClose={handleCloseStravaModal} onRequestUrl={handleRequestAuthUrl} onSubmitCode={handleSubmitCode} />
-      )}
     </div>
   );
 }

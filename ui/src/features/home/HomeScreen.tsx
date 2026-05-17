@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { OudenaLogo } from "../../shared/ui/OudenaLogo";
+import { useOptionalProfileContext } from "../profiles/useProfileContext";
 import { useRouteLibrary } from "../routes/hooks/useRouteLibrary";
 import { useDeviceStatus } from "../settings/hooks/useDeviceStatus";
 import { useAthleteSettings } from "../settings/hooks/useAthleteSettings";
@@ -208,19 +209,21 @@ function EmptyState({ onOpenRoutes, onOpenDevices, kickrConnected }: { onOpenRou
 
 export function HomeScreen({ onOpenRoutes, onOpenDevices }: Props) {
   const library = useRouteLibrary();
+  const profileContext = useOptionalProfileContext();
+  const activeProfileId = profileContext?.activeProfile?.id ?? null;
   const { kickrConnected } = useDeviceStatus();
   const { settings: athleteSettings } = useAthleteSettings();
-  const recommendation = useHomeRecommendation(library);
+  const recommendation = useHomeRecommendation(library, activeProfileId);
 
   const handleHeroStart = useCallback((routeId: string) => {
-    setLastRouteId(routeId);
+    setLastRouteId(routeId, activeProfileId);
     onOpenRoutes(routeId);
-  }, [onOpenRoutes]);
+  }, [activeProfileId, onOpenRoutes]);
 
   const handleCompactClick = useCallback((routeId: string) => {
-    setLastRouteId(routeId);
+    setLastRouteId(routeId, activeProfileId);
     onOpenRoutes(routeId);
-  }, [onOpenRoutes]);
+  }, [activeProfileId, onOpenRoutes]);
 
   const otherRoutes = recommendation
     ? library.filter(r => r.id !== recommendation.route.id).slice(0, 4)

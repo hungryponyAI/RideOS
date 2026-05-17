@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { useOptionalProfileContext } from "../../profiles/useProfileContext";
 
 export interface AthleteSettings {
   height_cm: number;
@@ -7,11 +8,16 @@ export interface AthleteSettings {
 }
 
 const STORAGE_KEY = "rideos-athlete";
+const PROFILE_STORAGE_PREFIX = "oudena_profile_settings";
 const DEFAULTS: AthleteSettings = { height_cm: 180, weight_kg: 75, ftp_w: 200 };
 
-export function loadAthleteSettings(): AthleteSettings {
+function storageKey(profileId?: string | null): string {
+  return profileId ? `${PROFILE_STORAGE_PREFIX}:${profileId}` : STORAGE_KEY;
+}
+
+export function loadAthleteSettings(profileId?: string | null): AthleteSettings {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey(profileId));
     if (raw) {
       const p = JSON.parse(raw) as Partial<AthleteSettings>;
       return {
@@ -24,16 +30,18 @@ export function loadAthleteSettings(): AthleteSettings {
   return { ...DEFAULTS };
 }
 
-export function useAthleteSettings() {
-  const [settings, setSettings] = useState<AthleteSettings>(loadAthleteSettings);
+export function useAthleteSettings(profileId?: string | null) {
+  const profileContext = useOptionalProfileContext();
+  const resolvedProfileId = profileId ?? profileContext?.activeProfile?.id ?? null;
+  const [settings, setSettings] = useState<AthleteSettings>(() => loadAthleteSettings(resolvedProfileId));
 
   const updateSetting = useCallback((key: keyof AthleteSettings, value: number) => {
     setSettings((prev) => {
       const next = { ...prev, [key]: value };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      localStorage.setItem(storageKey(resolvedProfileId), JSON.stringify(next));
       return next;
     });
-  }, []);
+  }, [resolvedProfileId]);
 
   return { settings, updateSetting };
 }

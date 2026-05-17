@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect } from "react";
 import { WSProvider } from "../shared/ws/WSProvider";
 import { ThemeProvider, useTheme } from "./providers/ThemeProvider";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { MotionProvider } from "../shared/motion/MotionProvider";
+import { ScreenTransition } from "../shared/motion/ScreenTransition";
 import { HomeScreen } from "../features/home/HomeScreen";
 import { PreRideScreen } from "../features/pre-ride/PreRideScreen";
 import { RideScreen, type RideSummaryData } from "../features/ride/RideScreen";
@@ -13,6 +15,9 @@ import { SettingsPanel } from "../features/settings/SettingsPanel";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
 import { OnboardingFlow } from "../features/onboarding/OnboardingFlow";
 import { useOnboarding } from "../features/onboarding/useOnboarding";
+import { AppEntryGate } from "../features/startup/AppEntryGate";
+import { ProfileProvider } from "../features/profiles/ProfileProvider";
+import { useProfileContext } from "../features/profiles/useProfileContext";
 import { AppNav } from "./AppNav";
 import type { AppView } from "./types";
 import type { RideConfig } from "../features/pre-ride/RideOptions";
@@ -32,15 +37,16 @@ function createRideSessionId(): string {
 }
 
 
-function AppShell() {
+function AppShell({ onSwitchProfile }: { onSwitchProfile: () => void }) {
   const { isDark } = useTheme();
+  const { activeProfile } = useProfileContext();
   const [view, setView] = useState<AppView>('home');
   const [routePreSelect, setRoutePreSelect] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [rideSummary, setRideSummary] = useState<RideSummaryData | null>(null);
   const [rideStartCtx, setRideStartCtx] = useState<RideStartContext | null>(null);
   const [rideViewMode, setRideViewMode] = useState<MapViewMode>("chase");
-  const { done: onboardingDone, step, stepIndex, totalSteps, advance, complete, reopen } = useOnboarding();
+  const { done: onboardingDone, step, stepIndex, totalSteps, advance, complete, reopen } = useOnboarding(activeProfile?.id ?? null);
 
   const handleReopenOnboarding = useCallback(() => {
     reopen();
@@ -132,33 +138,35 @@ function AppShell() {
   return (
     <div data-testid="app-shell" className="flex flex-col h-screen overflow-hidden">
       <div className="flex-1 min-h-0">
-        {view === 'home' && (
-          <HomeScreen
-            onOpenRoutes={handleOpenRoutes}
-            onOpenDevices={() => handleNavigate('devices')}
-          />
-        )}
-        {view === 'routes' && (
-          <PreRideScreen onStarted={() => setView('ride')} onStartRide={handleStartRide} initialRouteId={routePreSelect} />
-        )}
-        {view === 'summary' && (
-          <RideSummaryScreen
-            summaryData={rideSummary}
-            onReturnHome={() => { setRideSummary(null); setRideStartCtx(null); setView('home'); }}
-            onRideAgain={rideSummary?.route_id
-              ? () => {
-                  const id = rideSummary!.route_id!;
-                  setRideSummary(null);
-                  setRideStartCtx(null);
-                  handleOpenRoutes(id);
-                }
-              : undefined
-            }
-          />
-        )}
-        {view === 'analytics' && <AnalyticsScreen />}
-        {view === 'devices' && <DevicesScreen />}
-        {view === 'settings' && <SettingsScreen onReopenOnboarding={handleReopenOnboarding} />}
+        <ScreenTransition transitionKey={view}>
+          {view === 'home' && (
+            <HomeScreen
+              onOpenRoutes={handleOpenRoutes}
+              onOpenDevices={() => handleNavigate('devices')}
+            />
+          )}
+          {view === 'routes' && (
+            <PreRideScreen onStarted={() => setView('ride')} onStartRide={handleStartRide} initialRouteId={routePreSelect} />
+          )}
+          {view === 'summary' && (
+            <RideSummaryScreen
+              summaryData={rideSummary}
+              onReturnHome={() => { setRideSummary(null); setRideStartCtx(null); setView('home'); }}
+              onRideAgain={rideSummary?.route_id
+                ? () => {
+                    const id = rideSummary!.route_id!;
+                    setRideSummary(null);
+                    setRideStartCtx(null);
+                    handleOpenRoutes(id);
+                  }
+                : undefined
+              }
+            />
+          )}
+          {view === 'analytics' && <AnalyticsScreen />}
+          {view === 'devices' && <DevicesScreen />}
+          {view === 'settings' && <SettingsScreen onReopenOnboarding={handleReopenOnboarding} onSwitchProfile={onSwitchProfile} />}
+        </ScreenTransition>
       </div>
 
       <AppNav current={view} onNavigate={handleNavigate} />
@@ -187,7 +195,13 @@ export default function App() {
     <WSProvider>
       <ThemeProvider>
         <ErrorBoundary>
-          <AppShell />
+          <ProfileProvider>
+            <MotionProvider defaultMode="cinematic">
+              <AppEntryGate>
+                {(onSwitchProfile) => <AppShell onSwitchProfile={onSwitchProfile} />}
+              </AppEntryGate>
+            </MotionProvider>
+          </ProfileProvider>
         </ErrorBoundary>
       </ThemeProvider>
     </WSProvider>

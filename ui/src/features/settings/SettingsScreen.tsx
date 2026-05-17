@@ -5,9 +5,11 @@ import { useAppSettings } from "./hooks/useAppSettings";
 import { useStravaStatus } from "../strava/hooks/useStravaStatus";
 import { StravaConnectModal, type StravaModalStep } from "../strava/StravaConnectModal";
 import { useWS } from "../../shared/ws/useWS";
+import { useOptionalProfileContext } from "../profiles/useProfileContext";
 
 interface Props {
   onReopenOnboarding?: () => void;
+  onSwitchProfile?: () => void;
 }
 
 // ── primitives ──────────────────────────────────────────────────────────────
@@ -148,8 +150,9 @@ function StravaIcon({ size = 14 }: { size?: number }) {
 
 // ── main screen ──────────────────────────────────────────────────────────────
 
-export function SettingsScreen({ onReopenOnboarding }: Props) {
+export function SettingsScreen({ onReopenOnboarding, onSwitchProfile }: Props) {
   const { isDark, toggleTheme } = useTheme();
+  const profileContext = useOptionalProfileContext();
   const { settings, updateSetting } = useAthleteSettings();
   const { prefs, updatePref } = useAppSettings();
   const { sendMessage } = useWS();
@@ -198,6 +201,20 @@ export function SettingsScreen({ onReopenOnboarding }: Props) {
         <div className="flex flex-col gap-2">
           <SectionLabel>Athlet</SectionLabel>
           <Section>
+            {profileContext?.activeProfile && (
+              <Row>
+                <RowLabel sub="Aktives Profil">{profileContext.activeProfile.displayName}</RowLabel>
+                {onSwitchProfile && (
+                  <button
+                    type="button"
+                    onClick={onSwitchProfile}
+                    className="text-[10px] font-medium text-[var(--text-muted)] hover:text-[var(--text)] border border-[var(--border)] rounded-lg px-3 py-1.5 cursor-pointer transition-colors duration-150 shrink-0"
+                  >
+                    Wechseln
+                  </button>
+                )}
+              </Row>
+            )}
             <NumberField label="Gewicht" unit="kg" value={settings.weight_kg} min={30} max={200} onChange={v => handleAthleteChange("weight_kg", v)} />
             <NumberField label="Körpergröße" unit="cm" value={settings.height_cm} min={100} max={250} onChange={v => handleAthleteChange("height_cm", v)} />
             <NumberField label="FTP" unit="W" value={settings.ftp_w} min={50} max={600} onChange={v => handleAthleteChange("ftp_w", v)} />
