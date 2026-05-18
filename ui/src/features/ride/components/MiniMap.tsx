@@ -67,6 +67,11 @@ const BIRDSEYE_PITCH = 0, BIRDSEYE_ZOOM = 14, BIRDSEYE_OFFSET: [number, number] 
 const VIEWMODE_EASE_MS = 450;
 const GHOST_COLOR = "#E58B4A";
 const GHOST_STROKE = "#FFFFFF";
+export const ROUTE_GEOMETRY_SMOOTHING_WINDOW_M = 28;
+export const ROUTE_GEOMETRY_SMOOTHING_PASSES = 2;
+export const ROUTE_GEOMETRY_MAX_CORRECTION_M = 7;
+export const ROUTE_STROKE_WIDTH = 4.5;
+export const ROUTE_STROKE_OPACITY = 0.72;
 
 function finiteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -125,6 +130,65 @@ function routeStartBearing(coords: Array<[number, number]>, cumDist: number[] | 
   const start = coords[0];
   const ahead = cumDist ? interpolatePosition(coords, cumDist, BEARING_LOOKAHEAD_M) : coords[1];
   return ahead ? calcBearing(start[0], start[1], ahead[0], ahead[1]) : 0;
+}
+
+function metersPerDegreeLng(lat: number): number {
+  return Math.max(1, 111_000 * Math.cos((lat * Math.PI) / 180));
+}
+
+function offsetByMeters(
+  origin: [number, number],
+  candidate: [number, number],
+  maxOffsetM: number,
+): [number, number] {
+  const latM = (candidate[0] - origin[0]) * 111_000;
+  const lngM = (candidate[1] - origin[1]) * metersPerDegreeLng(origin[0]);
+  const distanceM = Math.hypot(latM, lngM);
+  if (distanceM <= maxOffsetM || distanceM === 0) return candidate;
+  const scale = maxOffsetM / distanceM;
+  return [
+    origin[0] + (latM * scale) / 111_000,
+    origin[1] + (lngM * scale) / metersPerDegreeLng(origin[0]),
+  ];
+}
+
+function smoothRouteCoords(
+  coords: Array<[number, number]>,
+  cumDist: number[] | null,
+): Array<[number, number]> {
+  if (!cumDist || coords.length < 4 || cumDist.length !== coords.length) return coords;
+  let smoothed = coords.map(([lat, lng]) => [lat, lng] as [number, number]);
+  const halfWindowM = ROUTE_GEOMETRY_SMOOTHING_WINDOW_M / 2;
+
+  for (let pass = 0; pass < ROUTE_GEOMETRY_SMOOTHING_PASSES; pass++) {
+    smoothed = smoothed.map((coord, i) => {
+      if (i === 0 || i === smoothed.length - 1) return coord;
+      let latSum = 0;
+      let lngSum = 0;
+      let weightSum = 0;
+      const centerM = cumDist[i];
+
+      for (let j = i; j >= 0 && centerM - cumDist[j] <= halfWindowM; j--) {
+        const distanceM = Math.abs(centerM - cumDist[j]);
+        const weight = 1 - distanceM / Math.max(1, halfWindowM);
+        latSum += smoothed[j][0] * weight;
+        lngSum += smoothed[j][1] * weight;
+        weightSum += weight;
+      }
+      for (let j = i + 1; j < smoothed.length && cumDist[j] - centerM <= halfWindowM; j++) {
+        const distanceM = Math.abs(cumDist[j] - centerM);
+        const weight = 1 - distanceM / Math.max(1, halfWindowM);
+        latSum += smoothed[j][0] * weight;
+        lngSum += smoothed[j][1] * weight;
+        weightSum += weight;
+      }
+
+      if (weightSum <= 0) return coord;
+      return offsetByMeters(coords[i], [latSum / weightSum, lngSum / weightSum], ROUTE_GEOMETRY_MAX_CORRECTION_M);
+    });
+  }
+
+  return smoothed;
 }
 
 interface CameraTarget {
@@ -216,7 +280,14 @@ export function MiniMap({
   const [debugMetrics, setDebugMetrics] = useState<DebugMetrics | null>(null);
   const debugTickRef = useRef<number>(0);
 
-  const route = useMemo(() => validRoute(coords, cumDist), [coords, cumDist]);
+  const route = useMemo(() => {
+    const validated = validRoute(coords, cumDist);
+    if (!validated) return null;
+    return {
+      ...validated,
+      coords: smoothRouteCoords(validated.coords, validated.cumDist),
+    };
+  }, [coords, cumDist]);
   const safePositionM = finiteNumber(positionM) ? positionM : null;
   const speedMPerS = finiteNumber(speedKmh) ? Math.max(0, speedKmh) / 3.6 : 0;
 
@@ -351,7 +422,21 @@ export function MiniMap({
       if (src) { src.setData(geojson); }
       else {
         map.addSource("route", { type: "geojson", data: geojson });
-        map.addLayer({ id: "route", type: "line", source: "route", paint: { "line-color": "#74AFCB", "line-width": 3 } });
+        map.addLayer({
+          id: "route",
+          type: "line",
+          source: "route",
+          paint: {
+            "line-color": "#74AFCB",
+            "line-width": ROUTE_STROKE_WIDTH,
+            "line-opacity": ROUTE_STROKE_OPACITY,
+            "line-blur": 0.35,
+          },
+          layout: {
+            "line-cap": "round",
+            "line-join": "round",
+          },
+        });
       }
       if (map.getLayer("route")) map.moveLayer("route");
     } catch (error) {

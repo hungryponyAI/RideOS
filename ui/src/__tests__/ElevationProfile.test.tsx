@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ElevationProfile } from "../features/ride/components/ElevationProfile";
+import {
+  ELEVATION_PROFILE_LABEL_ROUNDING_M,
+  ElevationProfile,
+} from "../features/ride/components/ElevationProfile";
 import type { ElevationChartDatum } from "../shared/types/route";
 
 const makeData = (count = 5, distStep = 2000): ElevationChartDatum[] =>
@@ -16,6 +19,23 @@ describe("ElevationProfile", () => {
     const data = makeData(6);
     render(<ElevationProfile data={data} gradesPct={null} positionM={5000} />);
     expect(screen.getAllByText(/m/).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("rounds smoothed elevation bounds to stable label steps", () => {
+    const data: ElevationChartDatum[] = [
+      { dist: 0, elev: 100 },
+      { dist: 50, elev: 130 },
+      { dist: 100, elev: 101 },
+      { dist: 150, elev: 102 },
+      { dist: 200, elev: 103 },
+    ];
+
+    render(<ElevationProfile data={data} gradesPct={null} positionM={100} />);
+
+    const labels = screen.getAllByText(/m$/).map((node) => Number(node.textContent?.replace(" m", "")));
+    expect(labels.length).toBeGreaterThanOrEqual(2);
+    expect(labels.every((value) => value % ELEVATION_PROFILE_LABEL_ROUNDING_M === 0)).toBe(true);
+    expect(Math.max(...labels)).toBeLessThan(130);
   });
 
   it("renders rider position line when positionM is in window", () => {
@@ -38,6 +58,26 @@ describe("ElevationProfile", () => {
     );
     expect(dashed.length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText("GHOST")).toBeNull();
+  });
+
+  it("positions rider and ghost dots on the elevation curve", () => {
+    const data: ElevationChartDatum[] = [
+      { dist: 0, elev: 100 },
+      { dist: 100, elev: 110 },
+      { dist: 200, elev: 120 },
+      { dist: 300, elev: 130 },
+      { dist: 400, elev: 140 },
+    ];
+
+    const { container } = render(
+      <ElevationProfile data={data} gradesPct={null} positionM={400} ghostDistM={100} />
+    );
+
+    const circles = Array.from(container.querySelectorAll("circle"));
+    const yValues = circles.map((circle) => Number(circle.getAttribute("cy")));
+    expect(yValues.length).toBeGreaterThanOrEqual(3);
+    expect(yValues.every((value) => Number.isFinite(value) && value > 0 && value < 100)).toBe(true);
+    expect(yValues.every((value) => value !== 50)).toBe(true);
   });
 
   it("does not render ghost marker when ghostDistM is null", () => {

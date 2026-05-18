@@ -13,6 +13,10 @@ const LABEL_STEP_M = 2_000;
 const CLIMB_THRESHOLD_PCT = 4;
 const DESCENT_THRESHOLD_PCT = -3;
 const GHOST_COLOR = "#E58B4A";
+export const ELEVATION_PROFILE_SMOOTHING_WINDOW_M = 180;
+export const ELEVATION_PROFILE_BOUNDS_PADDING_M = 4;
+export const ELEVATION_PROFILE_LABEL_ROUNDING_M = 5;
+export const ELEVATION_TERRAIN_GRADE_SMOOTHING_WINDOW_M = 120;
 
 type TerrainType = "climb" | "descent" | "flat";
 
@@ -22,13 +26,77 @@ function terrainType(grade: number): TerrainType {
   return "flat";
 }
 
+function roundDownToStep(value: number, step: number): number {
+  return Math.floor(value / step) * step;
+}
+
+function roundUpToStep(value: number, step: number): number {
+  return Math.ceil(value / step) * step;
+}
+
+function smoothValuesByDistance<T extends { dist: number }>(
+  values: T[],
+  valueOf: (item: T, index: number) => number,
+  windowM: number,
+): number[] {
+  if (values.length < 3 || windowM <= 0) return values.map(valueOf);
+  const halfWindowM = windowM / 2;
+  return values.map((item, i) => {
+    let valueSum = 0;
+    let weightSum = 0;
+
+    for (let j = i; j >= 0 && item.dist - values[j].dist <= halfWindowM; j--) {
+      const distanceM = Math.abs(item.dist - values[j].dist);
+      const weight = 1 - distanceM / Math.max(1, halfWindowM);
+      valueSum += valueOf(values[j], j) * weight;
+      weightSum += weight;
+    }
+    for (let j = i + 1; j < values.length && values[j].dist - item.dist <= halfWindowM; j++) {
+      const distanceM = Math.abs(values[j].dist - item.dist);
+      const weight = 1 - distanceM / Math.max(1, halfWindowM);
+      valueSum += valueOf(values[j], j) * weight;
+      weightSum += weight;
+    }
+
+    return weightSum > 0 ? valueSum / weightSum : valueOf(item, i);
+  });
+}
+
+function interpolateElevationAt(
+  values: ElevationChartDatum[],
+  distM: number,
+): number | null {
+  if (values.length === 0) return null;
+  if (distM <= values[0].dist) return values[0].elev;
+  const last = values[values.length - 1];
+  if (distM >= last.dist) return last.elev;
+
+  for (let i = 1; i < values.length; i++) {
+    const prev = values[i - 1];
+    const next = values[i];
+    if (distM <= next.dist) {
+      const span = next.dist - prev.dist;
+      const t = span === 0 ? 0 : (distM - prev.dist) / span;
+      return prev.elev + (next.elev - prev.elev) * t;
+    }
+  }
+
+  return null;
+}
+
 export const ElevationProfile = memo(function ElevationProfile({ data, gradesPct, positionM, ghostDistM }: Props) {
   const chart = useMemo(() => {
     const hasRoute = data !== null && data.length >= 2;
-    const empty = { pathD: `M0,100 L1000,100`, baseLabels: [] as Array<{ xPct: number; label: string }>, posXPct: null, ghostXPct: null, hasRoute: false, elevMin: null, elevMax: null, terrainRects: [] as Array<{ x: number; w: number; type: TerrainType }> };
+    const empty = { pathD: `M0,100 L1000,100`, baseLabels: [] as Array<{ xPct: number; label: string }>, posXPct: null, ghostXPct: null, posPoint: null, ghostPoint: null, hasRoute: false, elevMin: null, elevMax: null, terrainRects: [] as Array<{ x: number; w: number; type: TerrainType }> };
     if (!hasRoute) return empty;
 
-    const totalDistM = data![data!.length - 1].dist;
+    const smoothedElevations = smoothValuesByDistance(
+      data!,
+      (d) => d.elev,
+      ELEVATION_PROFILE_SMOOTHING_WINDOW_M,
+    );
+    const displayData = data!.map((d, i) => ({ ...d, elev: smoothedElevations[i] }));
+    const totalDistM = displayData[displayData.length - 1].dist;
     const posM = positionM ?? 0;
     let xMin = Math.max(0, posM - WINDOW_M / 2);
     let xMax = xMin + WINDOW_M;
@@ -37,11 +105,19 @@ export const ElevationProfile = memo(function ElevationProfile({ data, gradesPct
       xMin = Math.max(0, xMax - WINDOW_M);
     }
 
-    const visible = data!.filter(d => d.dist >= xMin && d.dist <= xMax);
+    const visible = displayData.filter(d => d.dist >= xMin && d.dist <= xMax);
     if (visible.length < 2) return { ...empty, hasRoute: true };
 
-    const elevMin = Math.min(...visible.map(d => d.elev));
-    const elevMax = Math.max(...visible.map(d => d.elev));
+    const rawElevMin = Math.min(...visible.map(d => d.elev));
+    const rawElevMax = Math.max(...visible.map(d => d.elev));
+    const elevMin = roundDownToStep(
+      rawElevMin - ELEVATION_PROFILE_BOUNDS_PADDING_M,
+      ELEVATION_PROFILE_LABEL_ROUNDING_M,
+    );
+    const elevMax = roundUpToStep(
+      rawElevMax + ELEVATION_PROFILE_BOUNDS_PADDING_M,
+      ELEVATION_PROFILE_LABEL_ROUNDING_M,
+    );
     const elevRange = Math.max(elevMax - elevMin, 10);
     const span = xMax - xMin;
 
@@ -63,17 +139,33 @@ export const ElevationProfile = memo(function ElevationProfile({ data, gradesPct
       positionM !== null && positionM >= xMin && positionM <= xMax
         ? ((positionM - xMin) / span) * 100
         : null;
+    const posElev = positionM !== null ? interpolateElevationAt(displayData, positionM) : null;
+    const posPoint =
+      posXPct !== null && posElev !== null
+        ? { x: posXPct * 10, y: toY(posElev) }
+        : null;
 
     const ghostXPct =
       ghostDistM != null && ghostDistM >= xMin && ghostDistM <= xMax
         ? ((ghostDistM - xMin) / span) * 100
         : null;
+    const ghostElev = ghostDistM != null ? interpolateElevationAt(displayData, ghostDistM) : null;
+    const ghostPoint =
+      ghostXPct !== null && ghostElev !== null
+        ? { x: ghostXPct * 10, y: toY(ghostElev) }
+        : null;
 
     // Terrain highlight rects at the bottom strip
     const terrainRects: Array<{ x: number; w: number; type: TerrainType }> = [];
     if (gradesPct && gradesPct.length === data!.length) {
+      const smoothedGrades = smoothValuesByDistance(
+        data!,
+        (_, i) => gradesPct[i],
+        ELEVATION_TERRAIN_GRADE_SMOOTHING_WINDOW_M,
+      );
       const visibleWithGrades = data!
         .map((d, i) => ({ dist: d.dist, grade: gradesPct[i] }))
+        .map((d, i) => ({ ...d, grade: smoothedGrades[i] }))
         .filter(d => d.dist >= xMin && d.dist <= xMax);
 
       if (visibleWithGrades.length >= 2) {
@@ -98,7 +190,7 @@ export const ElevationProfile = memo(function ElevationProfile({ data, gradesPct
       }
     }
 
-    return { pathD, baseLabels, posXPct, ghostXPct, hasRoute: true, elevMin: Math.round(elevMin), elevMax: Math.round(elevMax), terrainRects };
+    return { pathD, baseLabels, posXPct, ghostXPct, posPoint, ghostPoint, hasRoute: true, elevMin, elevMax, terrainRects };
   }, [data, gradesPct, positionM, ghostDistM]);
 
   return (
@@ -155,21 +247,25 @@ export const ElevationProfile = memo(function ElevationProfile({ data, gradesPct
                 strokeDasharray="5 3"
                 vectorEffect="non-scaling-stroke"
               />
-              <circle
-                cx={chart.ghostXPct * 10} cy={50}
-                r={9}
-                fill={GHOST_COLOR}
-                fillOpacity="0.22"
-                vectorEffect="non-scaling-stroke"
-              />
-              <circle
-                cx={chart.ghostXPct * 10} cy={50}
-                r={4.5}
-                fill={GHOST_COLOR}
-                stroke="#FFFFFF"
-                strokeWidth="2"
-                vectorEffect="non-scaling-stroke"
-              />
+              {chart.ghostPoint !== null && (
+                <>
+                  <circle
+                    cx={chart.ghostPoint.x} cy={chart.ghostPoint.y}
+                    r={9}
+                    fill={GHOST_COLOR}
+                    fillOpacity="0.22"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <circle
+                    cx={chart.ghostPoint.x} cy={chart.ghostPoint.y}
+                    r={4.5}
+                    fill={GHOST_COLOR}
+                    stroke="#FFFFFF"
+                    strokeWidth="2"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </>
+              )}
             </>
           )}
 
@@ -184,12 +280,14 @@ export const ElevationProfile = memo(function ElevationProfile({ data, gradesPct
                 strokeOpacity="0.9"
                 vectorEffect="non-scaling-stroke"
               />
-              <circle
-                cx={chart.posXPct * 10} cy={50}
-                r={3}
-                fill="#74AFCB"
-                vectorEffect="non-scaling-stroke"
-              />
+              {chart.posPoint !== null && (
+                <circle
+                  cx={chart.posPoint.x} cy={chart.posPoint.y}
+                  r={3}
+                  fill="#74AFCB"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
             </>
           )}
         </svg>

@@ -18,7 +18,7 @@ const mapboxMock = vi.hoisted(() => {
     moveLayerCalls: Array<{ id: string; beforeId?: string }> = [];
     setPaintCalls: Array<{ layerId: string; property: string; value: unknown }> = [];
     sources = new Map<string, Source>();
-    layers: Array<{ id: string }> = [];
+    layers: Array<{ id: string; paint?: Record<string, unknown>; layout?: Record<string, unknown> }> = [];
     private handlers = new Map<string, Array<() => void>>();
 
     constructor(options: unknown) {
@@ -68,8 +68,8 @@ const mapboxMock = vi.hoisted(() => {
       return this.sources.get(id);
     }
 
-    addLayer(layer: { id: string }, beforeId?: string) {
-      const nextLayer = { id: layer.id };
+    addLayer(layer: { id: string; paint?: Record<string, unknown>; layout?: Record<string, unknown> }, beforeId?: string) {
+      const nextLayer = { id: layer.id, paint: layer.paint, layout: layer.layout };
       if (!beforeId) {
         this.layers.push(nextLayer);
         return;
@@ -326,6 +326,35 @@ describe("MiniMap", () => {
     const ghost = map.getSource("ghost")?.data as { geometry: { coordinates: [number, number] } } | undefined;
     expect(ghost?.geometry.coordinates[0]).toBeCloseTo(11.001, 3);
     expect(ghost?.geometry.coordinates[1]).toBeCloseTo(47.0005, 3);
+  });
+
+  it("draws the route with a wider translucent smoothed stroke", async () => {
+    const {
+      MiniMap,
+      ROUTE_STROKE_OPACITY,
+      ROUTE_STROKE_WIDTH,
+    } = await import("../features/ride/components/MiniMap");
+    render(
+      <MiniMap
+        coords={[[47, 11], [47.0005, 11.003], [47.001, 11.001], [47.0015, 11.004]]}
+        cumDist={[0, 110, 220, 330]}
+        positionM={100}
+        isDark={false}
+        viewMode="chase"
+      />
+    );
+
+    const map = mapboxMock.MockMap.instances[0];
+    map.trigger("load");
+    map.trigger("idle");
+
+    await waitFor(() => expect(map.getLayer("route")).toBeTruthy());
+    const routeLayer = map.getLayer("route");
+    expect(routeLayer?.paint).toMatchObject({
+      "line-width": ROUTE_STROKE_WIDTH,
+      "line-opacity": ROUTE_STROKE_OPACITY,
+    });
+    expect(routeLayer?.layout).toMatchObject({ "line-cap": "round", "line-join": "round" });
   });
 
   it("animates ghost between samples rather than snapping", async () => {
