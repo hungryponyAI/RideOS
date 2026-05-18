@@ -349,6 +349,7 @@ export function RideScreen({
           ghostLng={t?.ghost_lng ?? null}
           ghostBearingDeg={t?.ghost_bearing_deg ?? null}
           ghostDistM={t?.ghost_dist_m ?? null}
+          isPaused={isPaused}
         />
       </div>
 
@@ -389,7 +390,7 @@ export function RideScreen({
 
       {/* Top-left: primary metrics HUD */}
       <div className={`absolute top-[40px] left-4 z-10 transition-opacity duration-500 motion-reduce:transition-none ${isCompleted ? "opacity-40" : "opacity-100"}`}>
-        <HudPanel elevated className="p-4 flex flex-col gap-3 min-w-[190px] sm:min-w-[230px]">
+        <HudPanel elevated className="p-4 flex flex-col gap-3 w-[260px]">
           <MetricTile
             label="Geschwindigkeit"
             value={t?.speed_kmh?.toFixed(1) ?? "–"}

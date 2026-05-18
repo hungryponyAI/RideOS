@@ -44,6 +44,7 @@ interface MiniMapProps {
   lockToRouteStart?: boolean;
   isDescending?: boolean;
   isClimbing?: boolean;
+  isPaused?: boolean;
 }
 
 const STYLE = "mapbox://styles/mapbox/standard";
@@ -247,6 +248,7 @@ export function MiniMap({
   lockToRouteStart = false,
   isDescending,
   isClimbing,
+  isPaused = false,
 }: MiniMapProps) {
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -258,6 +260,7 @@ export function MiniMap({
   const lastFrameRef = useRef<number>(0);
   const debugEnabledRef = useRef<boolean>(isDebugMotionEnabled());
   const reducedMotionRef = useRef<boolean>(false);
+  const isPausedRef = useRef<boolean>(isPaused);
 
   const egoTargetRef = useRef<EgoTarget | null>(null);
   const egoCurrentRef = useRef<{ posM: number; lat: number; lng: number; bearing: number } | null>(null);
@@ -300,6 +303,16 @@ export function MiniMap({
       reducedMotionRef.current = false;
     }
   }, []);
+
+  // Keep paused ref in sync; reset sample clock on unpause so stale gap doesn't trigger reconnect-snap.
+  useEffect(() => {
+    const wasPaused = isPausedRef.current;
+    isPausedRef.current = isPaused;
+    if (wasPaused && !isPaused) {
+      lastEgoSampleAtRef.current = 0;
+      wsSampleClockRef.current = 0;
+    }
+  }, [isPaused]);
 
   // Mount Mapbox instance once per route.
   useEffect(() => {
@@ -581,6 +594,7 @@ export function MiniMap({
     const map = mapRef.current;
     if (!map || !styleReady || !route) return;
 
+    const EGO_COLOR = "#74AFCB";
     const ensureEgoLayer = (lat: number, lng: number) => {
       const egoGeo = { type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [lng, lat] }, properties: {} };
       const egoSrc = map.getSource("ego") as mapboxgl.GeoJSONSource | undefined;
@@ -588,13 +602,24 @@ export function MiniMap({
       try {
         map.addSource("ego", { type: "geojson", data: egoGeo });
         map.addLayer({
+          id: "ego-halo",
+          type: "circle",
+          source: "ego",
+          paint: {
+            "circle-radius": 18,
+            "circle-color": EGO_COLOR,
+            "circle-opacity": 0.24,
+            "circle-blur": 0.35,
+          },
+        });
+        map.addLayer({
           id: "ego",
           type: "circle",
           source: "ego",
           paint: {
             "circle-radius": 8,
             "circle-color": "#FFFFFF",
-            "circle-stroke-color": "#74AFCB",
+            "circle-stroke-color": EGO_COLOR,
             "circle-stroke-width": 2.5,
           },
         });
@@ -720,21 +745,23 @@ export function MiniMap({
       if (egoTargetRef.current && egoCurrentRef.current && route && route.cumDist) {
         const target = egoTargetRef.current;
         const current = egoCurrentRef.current;
-        const sampleAge = now - target.receivedAt;
-        let goalM = target.posM;
-        if (sampleAge < STALE_FREEZE_MS && target.speedMPerS > 0) {
-          goalM = target.posM + clampExtrapolationM(target.speedMPerS, sampleAge, EXTRAPOLATION_HORIZON_MS);
-        }
-        const alpha = reducedMotionRef.current ? 1 : springAlpha(dt, TAU_POSITION_MS);
-        const nextPosM = lerp(current.posM, goalM, alpha);
-        const interp = interpolatePosition(route.coords, route.cumDist, nextPosM);
-        if (interp) {
-          const ahead = interpolatePosition(route.coords, route.cumDist, nextPosM + BEARING_LOOKAHEAD_M);
-          const targetBearing = ahead ? calcBearing(interp[0], interp[1], ahead[0], ahead[1]) : current.bearing;
-          current.posM = nextPosM;
-          current.lat = interp[0];
-          current.lng = interp[1];
-          current.bearing = lerpAngleDeg(current.bearing, targetBearing, alpha);
+        if (!isPausedRef.current) {
+          const sampleAge = now - target.receivedAt;
+          let goalM = target.posM;
+          if (sampleAge < STALE_FREEZE_MS && target.speedMPerS > 0) {
+            goalM = target.posM + clampExtrapolationM(target.speedMPerS, sampleAge, EXTRAPOLATION_HORIZON_MS);
+          }
+          const alpha = reducedMotionRef.current ? 1 : springAlpha(dt, TAU_POSITION_MS);
+          const nextPosM = lerp(current.posM, goalM, alpha);
+          const interp = interpolatePosition(route.coords, route.cumDist, nextPosM);
+          if (interp) {
+            const ahead = interpolatePosition(route.coords, route.cumDist, nextPosM + BEARING_LOOKAHEAD_M);
+            const targetBearing = ahead ? calcBearing(interp[0], interp[1], ahead[0], ahead[1]) : current.bearing;
+            current.posM = nextPosM;
+            current.lat = interp[0];
+            current.lng = interp[1];
+            current.bearing = lerpAngleDeg(current.bearing, targetBearing, alpha);
+          }
         }
       }
 
@@ -775,7 +802,7 @@ export function MiniMap({
 
         if (!initialCameraSetRef.current) {
           applyInitialCamera();
-        } else if (cameraCurrentRef.current) {
+        } else if (cameraCurrentRef.current && !isPausedRef.current) {
           const cam = cameraCurrentRef.current;
           const centerAlpha = reducedMotionRef.current ? 1 : springAlpha(dt, TAU_CAMERA_CENTER_MS);
           const bearingAlpha = reducedMotionRef.current ? 1 : springAlpha(dt, TAU_CAMERA_BEARING_MS);

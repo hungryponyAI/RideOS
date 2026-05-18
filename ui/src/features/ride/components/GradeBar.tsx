@@ -6,7 +6,7 @@ interface Props {
 }
 
 export const GradeBar = memo(function GradeBar({ gradePct, highlight = false }: Props) {
-  const sign = (v: number) => (v > 0 ? "+" : v < 0 ? "−" : "");
+  const sign = (v: number) => (v >= 0 ? "+" : "−");
   const fmt = (v: number) => `${sign(v)}${Math.abs(v).toFixed(1).replace(".", ",")}%`;
 
   return (
@@ -25,7 +25,8 @@ export const GradeBar = memo(function GradeBar({ gradePct, highlight = false }: 
         <span className="text-[9px] font-sans font-medium uppercase tracking-[0.15em] text-[var(--text-subtle)] mb-0.5">
           Steigung
         </span>
-        <span className={`text-[32px] font-data font-bold tabular-nums leading-none transition-colors duration-300 ${highlight ? "text-[var(--accent)]" : "text-[var(--text)]"}`}>
+        {/* w-[5.5ch] fits "−30,0%" at tabular-nums; shrink-0 prevents reflow */}
+        <span className={`w-[5.5ch] shrink-0 text-[32px] font-data font-bold tabular-nums leading-none transition-colors duration-300 ${highlight ? "text-[var(--accent)]" : "text-[var(--text)]"}`}>
           {fmt(gradePct)}
         </span>
       </div>

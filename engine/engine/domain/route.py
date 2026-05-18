@@ -411,11 +411,11 @@ def _base_curve_speed_limit(radius_m: float | None) -> float | None:
     if radius_m is None:
         return None
     if radius_m < 10.0:
-        return 3.0
+        return 2.1   # ~7.6 km/h (was 3.0)
     if radius_m < 25.0:
-        return 5.0
+        return 3.5   # ~12.6 km/h (was 5.0)
     if radius_m < 60.0:
-        return 8.0
+        return 5.6   # ~20.2 km/h (was 8.0)
     return None
 
 

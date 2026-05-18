@@ -143,8 +143,13 @@ def _trainer_crr(weight_kg: float) -> float:
 
 
 def _trainer_grade(real_grade_pct: float, gear_engine: "GearEngine") -> float:
-    """Return the calibrated grade sent to FTMS simulation mode."""
-    return gear_engine.effective_grade(real_grade_pct) * _TRAINER_GRADE_SCALE
+    """Return the calibrated grade sent to FTMS simulation mode.
+
+    = (effective_grade + virtual_descent_offset) × scale
+    The virtual_descent_offset shifts flat-ground speed per gear without
+    affecting the climb-resistance scaling provided by effective_grade.
+    """
+    return (gear_engine.effective_grade(real_grade_pct) + gear_engine.grade_offset_pct) * _TRAINER_GRADE_SCALE
 
 
 async def run_control_loop(
