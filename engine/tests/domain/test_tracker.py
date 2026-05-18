@@ -2,7 +2,12 @@
 import pytest
 
 from engine.domain.physics import PhysicsConfig, PhysicsState
-from engine.domain.tracker import advance_position, advance_position_with_physics, grade_at
+from engine.domain.tracker import (
+    advance_position,
+    advance_position_with_physics,
+    curve_constraint_at,
+    grade_at,
+)
 
 _CUM = (0.0, 250.0, 500.0, 750.0, 1000.0)
 _GRADES = (0.0, 2.0, 4.0, -2.0, 0.0)
@@ -75,3 +80,21 @@ def test_grade_at_end():
 def test_grade_at_clamps_negative_idx():
     idx, grade = grade_at(-1.0, _CUM, _GRADES)
     assert idx == 0
+
+
+def test_curve_constraint_at_interpolates_cap_and_radius():
+    radii = (None, 40.0, 20.0, 40.0, None)
+    caps = (None, 8.0, 5.0, 8.0, None)
+
+    constraint = curve_constraint_at(500.0, _CUM, radii, caps)
+
+    assert constraint.speed_limit_mps == 5.0
+    assert constraint.radius_m == 20.0
+    assert constraint.curvature == pytest.approx(0.05)
+
+
+def test_curve_constraint_missing_profile_is_unlimited():
+    constraint = curve_constraint_at(500.0, _CUM, (), ())
+
+    assert constraint.speed_limit_mps is None
+    assert constraint.radius_m is None

@@ -7,6 +7,7 @@ intercepts and formats their output automatically.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 
 import structlog
@@ -58,3 +59,12 @@ def configure_logging(*, level: str = "INFO", json: bool = False) -> None:
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(log_level)
+
+    if os.getenv("RIDEOS_ALLOW_VENDOR_DEBUG", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        for logger_name in (
+            "bleak",
+            "bleak.backends.corebluetooth",
+            "asyncio",
+            "websockets",
+        ):
+            logging.getLogger(logger_name).setLevel(logging.WARNING)

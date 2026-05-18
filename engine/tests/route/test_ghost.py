@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import pytest
-from engine.route.ghost import GhostTracker, GhostSnapshot
+
+from engine.route.ghost import GhostSnapshot, GhostTracker, preprocess_strava_streams
 
 
 def _linear_tracker(total_dist_m: float = 1000.0, total_time_s: float = 100.0) -> GhostTracker:
@@ -87,3 +88,67 @@ def test_dist_at_time_beyond_end():
     gt = _linear_tracker(total_dist_m=1000.0, total_time_s=100.0)
     dist = gt._dist_at_time(999.0)
     assert dist == pytest.approx(1000.0, abs=1.0)
+
+
+# ------------------------------------------------------------------
+# Strava ghost preprocessing
+# ------------------------------------------------------------------
+
+def test_preprocess_removes_no_progress_waiting_time():
+    """A traffic-light-style wait is compressed out of the corrected timeline."""
+    times = list(range(0, 29))
+    distances = [float(min(t * 5, 20)) for t in times]
+    for t in range(5, 26):
+        distances[t] = 20.0
+    for t in range(26, 29):
+        distances[t] = 20.0 + (t - 25) * 5.0
+    latlng = [[52.0 + d / 111_000.0, 13.0] for d in distances]
+    streams = {
+        "time": {"data": times},
+        "distance": {"data": distances},
+        "latlng": {"data": latlng},
+    }
+
+    profile = preprocess_strava_streams(streams)
+
+    assert profile.summary.removed_stop_count >= 1
+    assert profile.summary.removed_stop_time_s >= 15.0
+    assert profile.times_s[-1] < times[-1] - 10.0
+    assert profile.cum_dist_m[-1] == pytest.approx(distances[-1])
+
+
+def test_preprocess_preserves_slow_uphill_progress():
+    """Slow riding with real distance progress is not classified as a stop."""
+    times = list(range(0, 31))
+    distances = [t * 1.2 for t in times]
+    latlng = [[52.0 + d / 111_000.0, 13.0] for d in distances]
+    streams = {
+        "time": {"data": times},
+        "distance": {"data": distances},
+        "latlng": {"data": latlng},
+    }
+
+    profile = preprocess_strava_streams(streams)
+
+    assert profile.summary.removed_stop_count == 0
+    assert profile.summary.corrected_duration_s == pytest.approx(profile.summary.raw_duration_s)
+
+
+def test_preprocess_interpolates_single_point_gps_spike_without_distance_stream():
+    """A one-sample GPS jump does not create a huge fallback-distance teleport."""
+    latlng = [
+        [52.0, 13.0],
+        [52.00005, 13.0],
+        [52.02, 13.02],
+        [52.00010, 13.0],
+        [52.00015, 13.0],
+    ]
+    streams = {
+        "time": {"data": [0, 1, 2, 3, 4]},
+        "latlng": {"data": latlng},
+    }
+
+    profile = preprocess_strava_streams(streams)
+
+    assert profile.cum_dist_m[-1] < 30.0
+    assert any("interpolated_gps_spikes" in warning for warning in profile.summary.warnings)

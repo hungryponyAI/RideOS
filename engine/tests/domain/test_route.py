@@ -1,12 +1,16 @@
 """Domain tests for engine.domain.route — RouteData, parsing, and transformations."""
+import math
+
 import pytest
+
 from engine.domain.route import (
     RouteData,
+    _rolling_mean,
     extract_gpx_name,
     load_gpx_content,
     reverse_route,
     slice_route,
-    _rolling_mean,
+    with_curve_profile,
 )
 
 _SIMPLE_GPX = """\
@@ -146,3 +150,47 @@ def test_rolling_mean_empty():
 
 def test_rolling_mean_single():
     assert _rolling_mean([7.0]) == [7.0]
+
+
+def _route_from_xy(points: list[tuple[float, float]], grades: list[float] | None = None) -> RouteData:
+    lat0 = 52.0
+    lon0 = 13.0
+    cos_lat = math.cos(math.radians(lat0))
+    lats = tuple(lat0 + y / 111_000.0 for _, y in points)
+    lons = tuple(lon0 + x / (111_000.0 * cos_lat) for x, _ in points)
+    cum = [0.0]
+    for i in range(1, len(points)):
+        x0, y0 = points[i - 1]
+        x1, y1 = points[i]
+        cum.append(cum[-1] + math.hypot(x1 - x0, y1 - y0))
+    return RouteData(
+        lats=lats,
+        lons=lons,
+        elevations_m=tuple(100.0 for _ in points),
+        cum_dist_m=tuple(cum),
+        grades_pct=tuple(grades or [0.0 for _ in points]),
+        total_dist_m=cum[-1],
+    )
+
+
+def test_with_curve_profile_keeps_straight_route_unlimited():
+    route = _route_from_xy([(i * 5.0, 0.0) for i in range(20)])
+
+    profiled = with_curve_profile(route)
+
+    assert len(profiled.curve_speed_limit_mps) == len(route.cum_dist_m)
+    assert all(limit is None for limit in profiled.curve_speed_limit_mps)
+
+
+def test_with_curve_profile_caps_sharp_turn():
+    east = [(i * 5.0, 0.0) for i in range(10)]
+    north = [(45.0, i * 5.0) for i in range(1, 10)]
+    route = _route_from_xy(east + north)
+
+    profiled = with_curve_profile(route)
+    caps = [cap for cap in profiled.curve_speed_limit_mps if cap is not None]
+    radii = [radius for radius in profiled.curve_radius_m if radius is not None]
+
+    assert caps
+    assert min(caps) <= 8.0
+    assert min(radii) < 60.0

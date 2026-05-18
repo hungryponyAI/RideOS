@@ -16,7 +16,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from engine.domain.events import RouteLoaded
 from engine.ports.eventbus import EventBusPort
@@ -110,6 +110,7 @@ class RouteService:
         route_name: Optional[str] = None,
         route_id: Optional[str] = None,
     ) -> None:
+        from engine.domain.route import with_curve_profile
         from engine.route.tracker import RouteTracker
 
         # Cancel any previous tracker task before starting a new one.
@@ -128,6 +129,7 @@ class RouteService:
         # Parse off the event loop to avoid stalling the 4 Hz tick.
         try:
             route = await asyncio.to_thread(loader_fn)
+            route = await asyncio.to_thread(with_curve_profile, route)
         except Exception as exc:  # noqa: BLE001 — surface every load failure to the UI
             _log.warning("load_route failed for %s: %s", label, exc)
             _put(ctx.broadcast_queue, {
@@ -221,7 +223,16 @@ class RouteService:
                     try:
                         streams = json.loads(path.read_text(encoding="utf-8"))
                         ctx.ghost_tracker = GhostTracker.from_strava_streams(streams)
-                        _log.info("Ghost: strava %s loaded", strava_id)
+                        summary = ctx.ghost_tracker.preprocessing_summary
+                        _log.info(
+                            "Ghost: strava %s loaded raw=%.0fs corrected=%.0fs removed=%.0fs stops=%d warnings=%s",
+                            strava_id,
+                            summary.raw_duration_s,
+                            summary.corrected_duration_s,
+                            summary.removed_stop_time_s,
+                            summary.removed_stop_count,
+                            ",".join(summary.warnings) if summary.warnings else "none",
+                        )
                     except Exception as exc:
                         _log.warning("Ghost: strava load failed for %s: %s", strava_id, exc)
                 else:

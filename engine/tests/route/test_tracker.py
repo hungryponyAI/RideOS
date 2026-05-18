@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 
 import pytest
 
@@ -136,6 +137,51 @@ async def test_physics_config_without_power_fn_keeps_speed_based_tracking():
     await asyncio.wait_for(task, timeout=1.0)
 
     assert tracker.position_m == 0.0
+
+
+async def test_curve_speed_limit_caps_virtual_progress_speed_mode():
+    """Curve profile caps route progress while leaving trainer speed input intact."""
+    from engine.route.tracker import RouteTracker
+
+    route = _build_route(total_m=1000.0, grades=[0.0, 0.0, 0.0, 0.0, 0.0])
+    route = replace(
+        route,
+        curve_radius_m=(20.0, 20.0, 20.0, 20.0, 20.0),
+        curve_speed_limit_mps=(2.0, 2.0, 2.0, 2.0, 2.0),
+    )
+    tracker = RouteTracker(route, initial_speed_ms=10.0)
+    stop_event = asyncio.Event()
+
+    task = asyncio.create_task(tracker.run(lambda: 36.0, stop_event, tick_s=0.02))
+    await asyncio.sleep(0.12)
+    stop_event.set()
+    await asyncio.wait_for(task, timeout=1.0)
+
+    assert tracker._curve_limited_active is True
+    assert tracker._virtual_speed_ms < 10.0
+
+
+def test_physics_debug_env_logs_without_global_debug(monkeypatch, caplog):
+    """RIDEOS_PHYSICS_DEBUG prints the physics line at INFO without root DEBUG noise."""
+    import logging
+
+    from engine.domain.tracker import CurveConstraint
+    from engine.route.tracker import RouteTracker
+
+    monkeypatch.setenv("RIDEOS_PHYSICS_DEBUG", "1")
+    tracker = RouteTracker(_build_route())
+
+    with caplog.at_level(logging.INFO, logger="rideos.route"):
+        tracker._log_physics_debug(
+            10.0,
+            7.0,
+            CurveConstraint(radius_m=20.0, curvature=0.05, speed_limit_mps=5.0),
+            5.0,
+        )
+
+    assert "PHYSICS | physics_v=7.00m/s" in caplog.text
+    assert "curve_limit=5.00m/s" in caplog.text
+    assert "derived_v=5.00m/s" in caplog.text
 
 
 # ------------------------------------------------------------------

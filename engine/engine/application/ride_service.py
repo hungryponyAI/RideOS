@@ -135,6 +135,7 @@ class RideService:
     async def start_ride(self, ctx: "RouteContext", msg: dict) -> None:
         """Handle a start_ride request: load, transform, configure, spawn phase machine."""
         from engine.control.phases import run_phases
+        from engine.domain.route import with_curve_profile
         from engine.route.erg import compute_cadence_table, compute_target_power_table
         from engine.route.loader import load_gpx, reverse_route, slice_route
 
@@ -188,6 +189,8 @@ class RideService:
                     "message": str(exc),
                 })
                 return
+
+        route = await asyncio.to_thread(with_curve_profile, route)
 
         ctx.current_route = route
         ctx.current_route_id = route_id
@@ -355,7 +358,16 @@ class RideService:
                         ctx.ghost_tracker = GhostTracker.from_strava_streams(streams)
                 else:
                     ctx.ghost_tracker = GhostTracker.from_strava_streams(streams)
-                _log.info("Ghost: strava %s loaded", strava_id)
+                summary = ctx.ghost_tracker.preprocessing_summary
+                _log.info(
+                    "Ghost: strava %s loaded raw=%.0fs corrected=%.0fs removed=%.0fs stops=%d warnings=%s",
+                    strava_id,
+                    summary.raw_duration_s,
+                    summary.corrected_duration_s,
+                    summary.removed_stop_time_s,
+                    summary.removed_stop_count,
+                    ",".join(summary.warnings) if summary.warnings else "none",
+                )
                 return
             except Exception as exc:
                 _log.warning("Ghost: strava load failed: %s", exc)
