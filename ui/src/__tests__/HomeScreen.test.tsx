@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import type { RouteLibraryEntry } from "../shared/types/route";
 import { HomeScreen } from "../features/home/HomeScreen";
 
@@ -52,27 +53,38 @@ const makeRoute = (id: string, name: string, overrides = {}) => ({
   ...overrides,
 });
 
+function renderHome(props: Partial<ComponentProps<typeof HomeScreen>> = {}) {
+  return render(
+    <HomeScreen
+      onOpenRoutes={vi.fn()}
+      onStartRide={vi.fn()}
+      onOpenDevices={vi.fn()}
+      {...props}
+    />
+  );
+}
+
 describe("HomeScreen - empty state", () => {
   it("renders empty state when no routes exist", () => {
-    render(<HomeScreen onOpenRoutes={vi.fn()} onOpenDevices={vi.fn()} />);
+    renderHome();
     expect(screen.getByTestId("home-empty-state")).toBeTruthy();
   });
 
   it("does not render hero card when library is empty", () => {
-    render(<HomeScreen onOpenRoutes={vi.fn()} onOpenDevices={vi.fn()} />);
+    renderHome();
     expect(screen.queryByTestId("hero-recommendation")).toBeNull();
   });
 
   it("empty state shows import prompt that calls onOpenRoutes", () => {
     const onOpenRoutes = vi.fn();
-    render(<HomeScreen onOpenRoutes={onOpenRoutes} onOpenDevices={vi.fn()} />);
+    renderHome({ onOpenRoutes });
     fireEvent.click(screen.getByText(/GPX-Strecke importieren/i));
     expect(onOpenRoutes).toHaveBeenCalled();
   });
 
   it("empty state shows device prompt that calls onOpenDevices", () => {
     const onOpenDevices = vi.fn();
-    render(<HomeScreen onOpenRoutes={vi.fn()} onOpenDevices={onOpenDevices} />);
+    renderHome({ onOpenDevices });
     fireEvent.click(screen.getByText(/Trainer verbinden/i));
     expect(onOpenDevices).toHaveBeenCalled();
   });
@@ -81,40 +93,48 @@ describe("HomeScreen - empty state", () => {
 describe("HomeScreen - with routes", () => {
   it("renders hero recommendation when routes exist", () => {
     fakeLibrary = ([makeRoute("r1", "Alpenrunde")]);
-    render(<HomeScreen onOpenRoutes={vi.fn()} onOpenDevices={vi.fn()} />);
+    renderHome();
     expect(screen.getByTestId("hero-recommendation")).toBeTruthy();
   });
 
   it("renders one dominant start CTA", () => {
     fakeLibrary = ([makeRoute("r1", "Alpenrunde")]);
-    render(<HomeScreen onOpenRoutes={vi.fn()} onOpenDevices={vi.fn()} />);
+    renderHome();
     expect(screen.getByTestId("hero-start-btn")).toBeTruthy();
   });
 
   it("displays route name in hero", () => {
     fakeLibrary = ([makeRoute("r1", "Alpenrunde")]);
-    render(<HomeScreen onOpenRoutes={vi.fn()} onOpenDevices={vi.fn()} />);
+    renderHome();
     expect(screen.getByText("Alpenrunde")).toBeTruthy();
   });
 
-  it("clicking hero start btn calls onOpenRoutes with route id", () => {
+  it("clicking hero start btn starts the route immediately", () => {
+    fakeLibrary = ([makeRoute("r1", "Alpenrunde")]);
+    const onStartRide = vi.fn();
+    renderHome({ onStartRide });
+    fireEvent.click(screen.getByTestId("hero-start-btn"));
+    expect(onStartRide).toHaveBeenCalledWith("r1", "Alpenrunde");
+  });
+
+  it("clicking hero options btn opens route options", () => {
     fakeLibrary = ([makeRoute("r1", "Alpenrunde")]);
     const onOpenRoutes = vi.fn();
-    render(<HomeScreen onOpenRoutes={onOpenRoutes} onOpenDevices={vi.fn()} />);
-    fireEvent.click(screen.getByTestId("hero-start-btn"));
-    expect(onOpenRoutes).toHaveBeenCalledWith("r1");
+    renderHome({ onOpenRoutes });
+    fireEvent.click(screen.getByTestId("hero-options-btn"));
+    expect(onOpenRoutes).toHaveBeenCalledWith("r1", "options");
   });
 
   it("clicking hero start btn stores last route id in localStorage", () => {
     fakeLibrary = ([makeRoute("r1", "Alpenrunde")]);
-    render(<HomeScreen onOpenRoutes={vi.fn()} onOpenDevices={vi.fn()} />);
+    renderHome();
     fireEvent.click(screen.getByTestId("hero-start-btn"));
     expect(localStorageMock.getItem("rideos_last_route_id")).toBe("r1");
   });
 
   it("does not render empty state when routes exist", () => {
     fakeLibrary = ([makeRoute("r1", "Alpenrunde")]);
-    render(<HomeScreen onOpenRoutes={vi.fn()} onOpenDevices={vi.fn()} />);
+    renderHome();
     expect(screen.queryByTestId("home-empty-state")).toBeNull();
   });
 
@@ -123,13 +143,37 @@ describe("HomeScreen - with routes", () => {
       makeRoute("r1", "Alpenrunde"),
       makeRoute("r2", "Küstenweg"),
     ]);
-    render(<HomeScreen onOpenRoutes={vi.fn()} onOpenDevices={vi.fn()} />);
+    renderHome();
     expect(screen.getByText("Weitere Strecken")).toBeTruthy();
+  });
+
+  it("clicking a compact route promotes it to the hero card", () => {
+    fakeLibrary = ([
+      makeRoute("r1", "Alpenrunde"),
+      makeRoute("r2", "Küstenweg"),
+    ]);
+    const onStartRide = vi.fn();
+    renderHome({ onStartRide });
+    fireEvent.click(screen.getByText("Küstenweg"));
+    expect(onStartRide).not.toHaveBeenCalled();
+    expect(within(screen.getByTestId("hero-recommendation")).getByText("Küstenweg")).toBeTruthy();
+    expect(localStorageMock.getItem("rideos_last_route_id")).toBe("r2");
+  });
+
+  it("clicking compact route options opens route options", () => {
+    fakeLibrary = ([
+      makeRoute("r1", "Alpenrunde"),
+      makeRoute("r2", "Küstenweg"),
+    ]);
+    const onOpenRoutes = vi.fn();
+    renderHome({ onOpenRoutes });
+    fireEvent.click(screen.getByTestId("compact-options-r2"));
+    expect(onOpenRoutes).toHaveBeenCalledWith("r2", "options");
   });
 
   it("does not show other routes section when only one route", () => {
     fakeLibrary = ([makeRoute("r1", "Alpenrunde")]);
-    render(<HomeScreen onOpenRoutes={vi.fn()} onOpenDevices={vi.fn()} />);
+    renderHome();
     expect(screen.queryByText("Weitere Strecken")).toBeNull();
   });
 });
@@ -141,13 +185,13 @@ describe("HomeScreen - recommendation logic", () => {
       makeRoute("r1", "Route Eins"),
       makeRoute("r2", "Zuletzt gefahren Route"),
     ]);
-    render(<HomeScreen onOpenRoutes={vi.fn()} onOpenDevices={vi.fn()} />);
+    renderHome();
     expect(screen.getByText("Zuletzt gefahren Route")).toBeTruthy();
   });
 
   it("shows reason badge on hero card", () => {
     fakeLibrary = ([makeRoute("r1", "Alpenrunde")]);
-    render(<HomeScreen onOpenRoutes={vi.fn()} onOpenDevices={vi.fn()} />);
+    renderHome();
     expect(screen.getByText("Empfohlen")).toBeTruthy();
   });
 });

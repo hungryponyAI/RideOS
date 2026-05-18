@@ -21,6 +21,7 @@ import { useProfileContext } from "../features/profiles/useProfileContext";
 import { AppNav } from "./AppNav";
 import type { AppView } from "./types";
 import type { RideConfig } from "../features/pre-ride/RideOptions";
+import { createDefaultRideConfig } from "../features/pre-ride/defaultRideConfig";
 import type { MapViewMode } from "../features/ride/components/MiniMap";
 
 interface RideStartContext {
@@ -28,6 +29,13 @@ interface RideStartContext {
   routeName: string;
   config: RideConfig;
   rideSessionId: string;
+}
+
+type RouteOpenMode = "focus" | "options";
+
+interface RoutePreSelect {
+  routeId: string;
+  mode: RouteOpenMode;
 }
 
 function createRideSessionId(): string {
@@ -41,7 +49,7 @@ function AppShell({ onSwitchProfile }: { onSwitchProfile: () => void }) {
   const { isDark } = useTheme();
   const { activeProfile } = useProfileContext();
   const [view, setView] = useState<AppView>('home');
-  const [routePreSelect, setRoutePreSelect] = useState<string | null>(null);
+  const [routePreSelect, setRoutePreSelect] = useState<RoutePreSelect | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [rideSummary, setRideSummary] = useState<RideSummaryData | null>(null);
   const [rideStartCtx, setRideStartCtx] = useState<RideStartContext | null>(null);
@@ -74,8 +82,8 @@ function AppShell({ onSwitchProfile }: { onSwitchProfile: () => void }) {
     setView('summary');
   };
 
-  const handleOpenRoutes = useCallback((preSelectId?: string) => {
-    setRoutePreSelect(preSelectId ?? null);
+  const handleOpenRoutes = useCallback((preSelectId?: string, mode: RouteOpenMode = "focus") => {
+    setRoutePreSelect(preSelectId ? { routeId: preSelectId, mode } : null);
     setView('routes');
   }, []);
 
@@ -89,6 +97,10 @@ function AppShell({ onSwitchProfile }: { onSwitchProfile: () => void }) {
     setRideViewMode("chase");
     setView('preparing');
   }, []);
+
+  const handleStartRideDefault = useCallback((routeId: string, routeName: string) => {
+    handleStartRide(routeId, routeName, createDefaultRideConfig());
+  }, [handleStartRide]);
 
   const cycleRideCamera = useCallback(() => {
     setRideViewMode(m => m === "chase" ? "follow" : m === "follow" ? "birdseye" : "chase");
@@ -142,11 +154,17 @@ function AppShell({ onSwitchProfile }: { onSwitchProfile: () => void }) {
           {view === 'home' && (
             <HomeScreen
               onOpenRoutes={handleOpenRoutes}
+              onStartRide={handleStartRideDefault}
               onOpenDevices={() => handleNavigate('devices')}
             />
           )}
           {view === 'routes' && (
-            <PreRideScreen onStarted={() => setView('ride')} onStartRide={handleStartRide} initialRouteId={routePreSelect} />
+            <PreRideScreen
+              onStarted={() => setView('ride')}
+              onStartRide={handleStartRide}
+              initialRouteId={routePreSelect?.routeId ?? null}
+              initialMode={routePreSelect?.mode ?? "focus"}
+            />
           )}
           {view === 'summary' && (
             <RideSummaryScreen
@@ -154,11 +172,12 @@ function AppShell({ onSwitchProfile }: { onSwitchProfile: () => void }) {
               onReturnHome={() => { setRideSummary(null); setRideStartCtx(null); setView('home'); }}
               onRideAgain={rideSummary?.route_id
                 ? () => {
-                    const id = rideSummary!.route_id!;
-                    setRideSummary(null);
-                    setRideStartCtx(null);
-                    handleOpenRoutes(id);
-                  }
+                  const id = rideSummary!.route_id!;
+                  const name = rideSummary!.route_name ?? "Route";
+                  setRideSummary(null);
+                  setRideStartCtx(null);
+                  handleStartRideDefault(id, name);
+                }
                 : undefined
               }
             />

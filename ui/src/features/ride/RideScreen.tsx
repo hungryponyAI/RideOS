@@ -348,6 +348,7 @@ export function RideScreen({
           ghostLat={t?.ghost_lat ?? null}
           ghostLng={t?.ghost_lng ?? null}
           ghostBearingDeg={t?.ghost_bearing_deg ?? null}
+          ghostDistM={t?.ghost_dist_m ?? null}
         />
       </div>
 

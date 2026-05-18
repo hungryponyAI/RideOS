@@ -38,6 +38,7 @@ interface MiniMapProps {
   ghostLat?: number | null;
   ghostLng?: number | null;
   ghostBearingDeg?: number | null;
+  ghostDistM?: number | null;
   isDark: boolean;
   viewMode: MapViewMode;
   lockToRouteStart?: boolean;
@@ -149,6 +150,8 @@ interface GhostTarget {
   speedMPerS: number;
 }
 
+const SPEED_EMA_ALPHA = 0.35;
+
 interface DebugMetrics {
   wsDeltaMs: number;
   egoErrM: number;
@@ -175,6 +178,7 @@ export function MiniMap({
   ghostLat,
   ghostLng,
   ghostBearingDeg,
+  ghostDistM,
   viewMode,
   lockToRouteStart = false,
   isDescending,
@@ -195,8 +199,9 @@ export function MiniMap({
   const egoCurrentRef = useRef<{ posM: number; lat: number; lng: number; bearing: number } | null>(null);
 
   const ghostTargetRef = useRef<GhostTarget | null>(null);
-  const ghostCurrentRef = useRef<{ lat: number; lng: number; bearing: number } | null>(null);
-  const prevGhostSampleRef = useRef<{ lat: number; lng: number; receivedAt: number } | null>(null);
+  const ghostCurrentRef = useRef<{ posM: number | null; lat: number; lng: number; bearing: number } | null>(null);
+  const prevGhostSampleRef = useRef<{ posM: number | null; lat: number; lng: number; receivedAt: number } | null>(null);
+  const ghostSpeedEmaRef = useRef<number>(0);
 
   const cameraTargetRef = useRef<CameraTarget | null>(null);
   const cameraCurrentRef = useRef<CameraTarget | null>(null);
@@ -323,6 +328,7 @@ export function MiniMap({
     ghostCurrentRef.current = null;
     ghostTargetRef.current = null;
     prevGhostSampleRef.current = null;
+    ghostSpeedEmaRef.current = 0;
     cameraCurrentRef.current = null;
     cameraTargetRef.current = null;
     if (cameraRevealTimerRef.current) {
@@ -390,7 +396,7 @@ export function MiniMap({
     }
   }, [route, safePositionM, lockToRouteStart, viewMode, speedMPerS]);
 
-  // Update ghost target whenever ghost coords change.
+  // Update ghost target whenever ghost coords or along-route distance change.
   useEffect(() => {
     if (!route) return;
     const hasGhost = finiteNumber(ghostLat) && finiteNumber(ghostLng);
@@ -398,32 +404,21 @@ export function MiniMap({
       ghostTargetRef.current = null;
       ghostCurrentRef.current = null;
       prevGhostSampleRef.current = null;
+      ghostSpeedEmaRef.current = 0;
       return;
     }
     const now = (typeof performance !== "undefined" ? performance.now() : Date.now());
     const prevSampleAt = lastGhostSampleAtRef.current;
     lastGhostSampleAtRef.current = now;
 
-    const prev = prevGhostSampleRef.current;
-    let derivedSpeedMPerS = 0;
-    if (prev && route.cumDist) {
-      const distFromPrev = (() => {
-        const r = 6_371_000;
-        const dLat = ((ghostLat! - prev.lat) * Math.PI) / 180;
-        const dLng = ((ghostLng! - prev.lng) * Math.PI) / 180;
-        const a = Math.sin(dLat / 2) ** 2 +
-          Math.cos((prev.lat * Math.PI) / 180) * Math.cos((ghostLat! * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-        return 2 * r * Math.asin(Math.min(1, Math.sqrt(a)));
-      })();
-      const dtS = (now - prev.receivedAt) / 1000;
-      if (dtS > 0 && dtS < 2) derivedSpeedMPerS = distFromPrev / dtS;
-    }
-    prevGhostSampleRef.current = { lat: ghostLat!, lng: ghostLng!, receivedAt: now };
-
     let posM: number | null = null;
     let lat = ghostLat!;
     let lng = ghostLng!;
-    if (route.cumDist) {
+    if (finiteNumber(ghostDistM) && route.cumDist) {
+      posM = ghostDistM;
+      const onRoute = interpolatePosition(route.coords, route.cumDist, ghostDistM);
+      if (onRoute) { lat = onRoute[0]; lng = onRoute[1]; }
+    } else if (route.cumDist) {
       const projected = projectOntoRoute(ghostLat!, ghostLng!, route.coords, route.cumDist);
       if (projected) {
         posM = projected.distM;
@@ -431,15 +426,41 @@ export function MiniMap({
         lng = projected.lng;
       }
     }
+
+    const prev = prevGhostSampleRef.current;
+    let instantSpeedMPerS = 0;
+    if (prev) {
+      const dtS = (now - prev.receivedAt) / 1000;
+      if (dtS > 0 && dtS < 2) {
+        if (posM != null && prev.posM != null) {
+          const deltaM = posM - prev.posM;
+          if (deltaM >= 0) instantSpeedMPerS = deltaM / dtS;
+        } else {
+          const r = 6_371_000;
+          const dLat = ((lat - prev.lat) * Math.PI) / 180;
+          const dLng = ((lng - prev.lng) * Math.PI) / 180;
+          const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos((prev.lat * Math.PI) / 180) * Math.cos((lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+          instantSpeedMPerS = (2 * r * Math.asin(Math.min(1, Math.sqrt(a)))) / dtS;
+        }
+      }
+    }
+    const prevEma = ghostSpeedEmaRef.current;
+    const smoothedSpeed = prevEma > 0
+      ? prevEma + SPEED_EMA_ALPHA * (instantSpeedMPerS - prevEma)
+      : instantSpeedMPerS;
+    ghostSpeedEmaRef.current = smoothedSpeed;
+    prevGhostSampleRef.current = { posM, lat, lng, receivedAt: now };
+
     const bearing = finiteNumber(ghostBearingDeg)
       ? ghostBearingDeg!
       : (ghostCurrentRef.current?.bearing ?? 0);
     const gapSinceLast = prevSampleAt > 0 ? now - prevSampleAt : 0;
-    ghostTargetRef.current = { lat, lng, bearing, receivedAt: now, posM, speedMPerS: derivedSpeedMPerS };
+    ghostTargetRef.current = { lat, lng, bearing, receivedAt: now, posM, speedMPerS: smoothedSpeed };
     if (!ghostCurrentRef.current || gapSinceLast > RECONNECT_SNAP_MS) {
-      ghostCurrentRef.current = { lat, lng, bearing };
+      ghostCurrentRef.current = { posM, lat, lng, bearing };
     }
-  }, [route, ghostLat, ghostLng, ghostBearingDeg]);
+  }, [route, ghostLat, ghostLng, ghostBearingDeg, ghostDistM]);
 
   // View-mode change: a single short ease so the perspective swap feels deliberate.
   useEffect(() => {
@@ -635,26 +656,30 @@ export function MiniMap({
       if (ghostTargetRef.current) {
         const target = ghostTargetRef.current;
         if (!ghostCurrentRef.current) {
-          ghostCurrentRef.current = { lat: target.lat, lng: target.lng, bearing: target.bearing };
+          ghostCurrentRef.current = { posM: target.posM, lat: target.lat, lng: target.lng, bearing: target.bearing };
         }
         const current = ghostCurrentRef.current;
         const sampleAge = now - target.receivedAt;
-        let goalLat = target.lat;
-        let goalLng = target.lng;
-        if (
-          sampleAge < STALE_FREEZE_MS &&
-          target.speedMPerS > 0 &&
-          target.posM != null &&
-          route &&
-          route.cumDist
-        ) {
-          const stepM = clampExtrapolationM(target.speedMPerS, sampleAge, EXTRAPOLATION_HORIZON_MS);
-          const ahead = interpolatePosition(route.coords, route.cumDist, target.posM + stepM);
-          if (ahead) { goalLat = ahead[0]; goalLng = ahead[1]; }
-        }
         const alpha = reducedMotionRef.current ? 1 : springAlpha(dt, TAU_GHOST_MS);
-        current.lat = lerp(current.lat, goalLat, alpha);
-        current.lng = lerp(current.lng, goalLng, alpha);
+
+        if (target.posM != null && route && route.cumDist) {
+          const stepM = target.speedMPerS > 0 && sampleAge < STALE_FREEZE_MS
+            ? clampExtrapolationM(target.speedMPerS, sampleAge, EXTRAPOLATION_HORIZON_MS)
+            : 0;
+          const goalPosM = target.posM + stepM;
+          const curPosM = current.posM ?? goalPosM;
+          const nextPosM = lerp(curPosM, goalPosM, alpha);
+          const onRoute = interpolatePosition(route.coords, route.cumDist, nextPosM);
+          if (onRoute) {
+            current.posM = nextPosM;
+            current.lat = onRoute[0];
+            current.lng = onRoute[1];
+          }
+        } else {
+          current.posM = null;
+          current.lat = lerp(current.lat, target.lat, alpha);
+          current.lng = lerp(current.lng, target.lng, alpha);
+        }
         current.bearing = lerpAngleDeg(current.bearing, target.bearing, alpha);
       }
 

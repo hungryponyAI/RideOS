@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ScreenHeader } from "../../shared/ui/ScreenHeader";
 import { useOptionalProfileContext } from "../profiles/useProfileContext";
 import { useRouteLibrary } from "../routes/hooks/useRouteLibrary";
@@ -8,8 +8,11 @@ import { useHomeRecommendation, setLastRouteId, type RecommendReason } from "./h
 import type { RouteLibraryEntry } from "../../shared/types/route";
 import type { AthleteSettings } from "../settings/hooks/useAthleteSettings";
 
+type RouteOpenMode = "focus" | "options";
+
 interface Props {
-  onOpenRoutes: (preSelectId?: string) => void;
+  onOpenRoutes: (preSelectId?: string, mode?: RouteOpenMode) => void;
+  onStartRide: (routeId: string, routeName: string) => void;
   onOpenDevices: () => void;
 }
 
@@ -59,9 +62,10 @@ interface HeroProps {
   reason: RecommendReason;
   athleteSettings: AthleteSettings;
   onStart: (routeId: string) => void;
+  onOptions: (routeId: string) => void;
 }
 
-function HeroCard({ route, reason, athleteSettings, onStart }: HeroProps) {
+function HeroCard({ route, reason, athleteSettings, onStart, onOptions }: HeroProps) {
   const estTime = estimateTimeS(route.distance_km, route.elevation_gain_m, athleteSettings.ftp_w, athleteSettings.weight_kg, athleteSettings.height_cm);
   return (
     <div data-testid="hero-recommendation" className="flex flex-col bg-[var(--surface)] border border-[var(--accent)] rounded-xl overflow-hidden shadow-elevated">
@@ -101,20 +105,38 @@ function HeroCard({ route, reason, athleteSettings, onStart }: HeroProps) {
             {REASON_LABELS[reason]}
           </span>
         </div>
-        <button
-          type="button"
-          data-testid="hero-start-btn"
-          onClick={() => onStart(route.id)}
-          className="w-full min-h-[44px] bg-[var(--accent)] text-white font-medium text-sm rounded-lg cursor-pointer hover:opacity-90 transition-opacity duration-150"
-        >
-          Jetzt fahren →
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            data-testid="hero-start-btn"
+            onClick={() => onStart(route.id)}
+            className="flex-1 min-h-[44px] bg-[var(--accent)] text-white font-medium text-sm rounded-lg cursor-pointer hover:opacity-90 transition-opacity duration-150"
+          >
+            Jetzt fahren →
+          </button>
+          <button
+            type="button"
+            data-testid="hero-options-btn"
+            onClick={() => onOptions(route.id)}
+            className="min-h-[44px] px-3 border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--text-muted)] text-xs font-medium rounded-lg cursor-pointer transition-colors duration-150"
+          >
+            Optionen
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-function CompactRouteCard({ route, onClick }: { route: RouteLibraryEntry; onClick: () => void }) {
+function CompactRouteCard({
+  route,
+  onStart,
+  onOptions,
+}: {
+  route: RouteLibraryEntry;
+  onStart: () => void;
+  onOptions: () => void;
+}) {
   const thumb = route.elevation_thumbnail;
   const hasThumb = thumb.length >= 2;
   const svgContent = hasThumb ? (() => {
@@ -125,26 +147,34 @@ function CompactRouteCard({ route, onClick }: { route: RouteLibraryEntry; onClic
   })() : null;
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex flex-col bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden cursor-pointer hover:border-[var(--accent)] transition-colors duration-150 text-left w-full"
-    >
-      <div className="h-[28px] shrink-0">
-        {svgContent ? (
-          <svg viewBox="0 0 1000 100" preserveAspectRatio="none" className="w-full h-full block">
-            <path d={svgContent.area} fill="#74AFCB" fillOpacity="0.12" />
-            <path d={svgContent.line} fill="none" stroke="#74AFCB" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-          </svg>
-        ) : (
-          <div className="w-full h-full bg-[var(--border)]" />
-        )}
+    <div className="flex flex-col bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden hover:border-[var(--accent)] transition-colors duration-150 text-left w-full">
+      <button type="button" onClick={onStart} className="flex flex-col text-left w-full cursor-pointer">
+        <div className="h-[28px] shrink-0">
+          {svgContent ? (
+            <svg viewBox="0 0 1000 100" preserveAspectRatio="none" className="w-full h-full block">
+              <path d={svgContent.area} fill="#74AFCB" fillOpacity="0.12" />
+              <path d={svgContent.line} fill="none" stroke="#74AFCB" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+            </svg>
+          ) : (
+            <div className="w-full h-full bg-[var(--border)]" />
+          )}
+        </div>
+        <div className="px-2.5 py-2">
+          <p className="text-[10px] font-medium text-[var(--text)] leading-tight truncate">{route.name}</p>
+          <p className="text-[9px] text-[var(--text-muted)] tabular-nums mt-0.5">{route.distance_km.toFixed(1)} km · ↑{route.elevation_gain_m} m</p>
+        </div>
+      </button>
+      <div className="px-2.5 pb-2">
+        <button
+          type="button"
+          data-testid={`compact-options-${route.id}`}
+          onClick={onOptions}
+          className="w-full min-h-[28px] border border-[var(--border)] rounded text-[9px] font-medium text-[var(--text-subtle)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors duration-150 cursor-pointer"
+        >
+          Optionen
+        </button>
       </div>
-      <div className="px-2.5 py-2">
-        <p className="text-[10px] font-medium text-[var(--text)] leading-tight truncate">{route.name}</p>
-        <p className="text-[9px] text-[var(--text-muted)] tabular-nums mt-0.5">{route.distance_km.toFixed(1)} km · ↑{route.elevation_gain_m} m</p>
-      </div>
-    </button>
+    </div>
   );
 }
 
@@ -207,41 +237,54 @@ function EmptyState({ onOpenRoutes, onOpenDevices, kickrConnected }: { onOpenRou
   );
 }
 
-export function HomeScreen({ onOpenRoutes, onOpenDevices }: Props) {
+export function HomeScreen({ onOpenRoutes, onStartRide, onOpenDevices }: Props) {
   const library = useRouteLibrary();
   const profileContext = useOptionalProfileContext();
   const activeProfileId = profileContext?.activeProfile?.id ?? null;
   const { kickrConnected } = useDeviceStatus();
   const { settings: athleteSettings } = useAthleteSettings();
   const recommendation = useHomeRecommendation(library, activeProfileId);
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const activeRoute = useMemo(() => {
+    const selectedRoute = selectedRouteId ? library.find(r => r.id === selectedRouteId) : null;
+    return selectedRoute ?? recommendation?.route ?? null;
+  }, [library, recommendation?.route, selectedRouteId]);
 
   const handleHeroStart = useCallback((routeId: string) => {
+    const route = library.find(r => r.id === routeId);
+    if (!route) return;
     setLastRouteId(routeId, activeProfileId);
-    onOpenRoutes(routeId);
+    onStartRide(route.id, route.name);
+  }, [activeProfileId, library, onStartRide]);
+
+  const handleOpenOptions = useCallback((routeId: string) => {
+    setLastRouteId(routeId, activeProfileId);
+    onOpenRoutes(routeId, "options");
   }, [activeProfileId, onOpenRoutes]);
 
-  const handleCompactClick = useCallback((routeId: string) => {
+  const handleSelectCompactRoute = useCallback((routeId: string) => {
     setLastRouteId(routeId, activeProfileId);
-    onOpenRoutes(routeId);
-  }, [activeProfileId, onOpenRoutes]);
+    setSelectedRouteId(routeId);
+  }, [activeProfileId]);
 
-  const otherRoutes = recommendation
-    ? library.filter(r => r.id !== recommendation.route.id).slice(0, 4)
+  const otherRoutes = activeRoute
+    ? library.filter(r => r.id !== activeRoute.id).slice(0, 4)
     : [];
 
   return (
     <div data-testid="home-screen" className="w-full h-full bg-[var(--bg)] flex flex-col overflow-hidden">
       <ScreenHeader />
 
-      {recommendation === null ? (
+      {activeRoute === null ? (
         <EmptyState onOpenRoutes={() => onOpenRoutes()} onOpenDevices={onOpenDevices} kickrConnected={kickrConnected} />
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 py-6 flex flex-col gap-5">
           <HeroCard
-            route={recommendation.route}
-            reason={recommendation.reason}
+            route={activeRoute}
+            reason={recommendation?.route.id === activeRoute.id ? recommendation.reason : "first"}
             athleteSettings={athleteSettings}
             onStart={handleHeroStart}
+            onOptions={handleOpenOptions}
           />
 
           {otherRoutes.length > 0 && (
@@ -258,7 +301,12 @@ export function HomeScreen({ onOpenRoutes, onOpenDevices }: Props) {
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
                 {otherRoutes.map(r => (
-                  <CompactRouteCard key={r.id} route={r} onClick={() => handleCompactClick(r.id)} />
+                  <CompactRouteCard
+                    key={r.id}
+                    route={r}
+                    onStart={() => handleSelectCompactRoute(r.id)}
+                    onOptions={() => handleOpenOptions(r.id)}
+                  />
                 ))}
               </div>
             </section>
