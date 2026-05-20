@@ -2,6 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import {
+  incrementRideDiagCounter,
+  recordRideDiag,
+  sampleRideDiagFrame,
+  setRideDiagGauge,
+} from "../../../shared/diagnostics/rideDiagnostics";
+import {
   EXTRAPOLATION_HORIZON_MS,
   RECONNECT_SNAP_MS,
   STALE_FADE_MS,
@@ -57,6 +63,9 @@ const BASEMAP_CONFIG = {
 const DEM_SOURCE_ID = "mapbox-dem";
 const DEM_URL = "mapbox://mapbox.mapbox-terrain-dem-v1";
 const TERRAIN_EXAGGERATION = 1.5;
+// Cap DEM tile resolution — terrain tiles are native memory the JS tile cache
+// doesn't bound; lower maxzoom means fewer, coarser elevation tiles per area.
+const DEM_MAX_ZOOM = 12;
 const BEARING_LOOKAHEAD_M = 200;
 const CHASE_PITCH = 60, CHASE_ZOOM = 17, CHASE_OFFSET: [number, number] = [0, 150];
 const FOLLOW_PITCH = 78, FOLLOW_ZOOM = 18.5, FOLLOW_OFFSET: [number, number] = [0, 220];
@@ -66,6 +75,9 @@ const CLIMB_CHASE_PITCH = 70, CLIMB_CHASE_ZOOM = 17.5;
 const CLIMB_FOLLOW_PITCH = 82, CLIMB_FOLLOW_ZOOM = 19;
 const BIRDSEYE_PITCH = 0, BIRDSEYE_ZOOM = 14, BIRDSEYE_OFFSET: [number, number] = [0, 0];
 const VIEWMODE_EASE_MS = 450;
+// Marker GeoJSON is pushed to Mapbox at ~30 Hz; the camera still moves every
+// rAF frame, so the sub-pixel ego/camera desync between commits is invisible.
+const MARKER_COMMIT_INTERVAL_MS = 33;
 const GHOST_COLOR = "#E58B4A";
 const GHOST_STROKE = "#FFFFFF";
 export const ROUTE_GEOMETRY_SMOOTHING_WINDOW_M = 28;
@@ -216,6 +228,7 @@ interface GhostTarget {
 }
 
 const SPEED_EMA_ALPHA = 0.35;
+let activeMapLoops = 0;
 
 interface DebugMetrics {
   wsDeltaMs: number;
@@ -261,6 +274,9 @@ export function MiniMap({
   const debugEnabledRef = useRef<boolean>(isDebugMotionEnabled());
   const reducedMotionRef = useRef<boolean>(false);
   const isPausedRef = useRef<boolean>(isPaused);
+  const viewModeRef = useRef<MapViewMode>(viewMode);
+  const isDescendingRef = useRef<boolean>(!!isDescending);
+  const isClimbingRef = useRef<boolean>(!!isClimbing);
 
   const egoTargetRef = useRef<EgoTarget | null>(null);
   const egoCurrentRef = useRef<{ posM: number; lat: number; lng: number; bearing: number } | null>(null);
@@ -314,6 +330,18 @@ export function MiniMap({
     }
   }, [isPaused]);
 
+  // Mirror viewMode / grade flags into refs so the rAF loop reads current values
+  // without re-running. Prevents map teardown and loop restart on every toggle.
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+  }, [viewMode]);
+  useEffect(() => {
+    isDescendingRef.current = !!isDescending;
+  }, [isDescending]);
+  useEffect(() => {
+    isClimbingRef.current = !!isClimbing;
+  }, [isClimbing]);
+
   // Mount Mapbox instance once per route.
   useEffect(() => {
     const container = containerRef.current;
@@ -321,9 +349,10 @@ export function MiniMap({
     let revealTimer: ReturnType<typeof setTimeout> | null = null;
     let disposed = false;
     const routeStart = route.coords[0];
-    const initialPitch = viewMode === "birdseye" ? BIRDSEYE_PITCH : viewMode === "follow" ? FOLLOW_PITCH : CHASE_PITCH;
-    const initialZoom = viewMode === "birdseye" ? BIRDSEYE_ZOOM : viewMode === "follow" ? FOLLOW_ZOOM : CHASE_ZOOM;
-    const initialBearing = viewMode === "birdseye" ? 0 : routeStartBearing(route.coords, route.cumDist);
+    const initialViewMode = viewModeRef.current;
+    const initialPitch = initialViewMode === "birdseye" ? BIRDSEYE_PITCH : initialViewMode === "follow" ? FOLLOW_PITCH : CHASE_PITCH;
+    const initialZoom = initialViewMode === "birdseye" ? BIRDSEYE_ZOOM : initialViewMode === "follow" ? FOLLOW_ZOOM : CHASE_ZOOM;
+    const initialBearing = initialViewMode === "birdseye" ? 0 : routeStartBearing(route.coords, route.cumDist);
     let map: mapboxgl.Map;
     try {
       map = new mapboxgl.Map({
@@ -335,11 +364,44 @@ export function MiniMap({
         zoom: initialZoom,
         pitch: initialPitch,
         attributionControl: false,
+        // Bound the tile cache — without this Mapbox grows it unbounded as the
+        // camera travels, accumulating multi-MB 3D-tile buffers (Safari counts
+        // these under JS heap) until the WebContent process is killed.
+        maxTileCacheSize: 60,
       });
     } catch (error) {
       console.error("[RideOS] Mapbox initialization failed", error);
+      recordRideDiag("mapbox", "mapbox initialization failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
       setMapFailed(true);
       return;
+    }
+
+    const mapWithEvents = map as mapboxgl.Map & {
+      on?: (event: string, handler: (event: unknown) => void) => void;
+      off?: (event: string, handler: (event: unknown) => void) => void;
+      getCanvas?: () => HTMLCanvasElement;
+    };
+    const handleMapError = (event: unknown) => {
+      recordRideDiag("mapbox", "mapbox error", {
+        error: event instanceof Error ? event.message : String(event),
+      });
+    };
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      recordRideDiag("webgl", "webgl context lost");
+    };
+    const handleContextRestored = () => {
+      recordRideDiag("webgl", "webgl context restored");
+    };
+    try {
+      mapWithEvents.on?.("error", handleMapError);
+      const canvas = mapWithEvents.getCanvas?.();
+      canvas?.addEventListener("webglcontextlost", handleContextLost);
+      canvas?.addEventListener("webglcontextrestored", handleContextRestored);
+    } catch {
+      // Optional diagnostic hooks only.
     }
 
     const revealConfiguredMap = () => {
@@ -357,7 +419,7 @@ export function MiniMap({
         map.setConfigProperty("basemap", "theme", "monochrome");
         map.setConfigProperty("basemap", "show3dObjects", true);
         if (!map.getSource(DEM_SOURCE_ID)) {
-          map.addSource(DEM_SOURCE_ID, { type: "raster-dem", url: DEM_URL, tileSize: 512, maxzoom: 14 });
+          map.addSource(DEM_SOURCE_ID, { type: "raster-dem", url: DEM_URL, tileSize: 512, maxzoom: DEM_MAX_ZOOM });
         }
         map.setTerrain({ source: DEM_SOURCE_ID, exaggeration: TERRAIN_EXAGGERATION });
         map.resize();
@@ -384,6 +446,14 @@ export function MiniMap({
         rafRef.current = null;
       }
       ro.disconnect();
+      try {
+        mapWithEvents.off?.("error", handleMapError);
+        const canvas = mapWithEvents.getCanvas?.();
+        canvas?.removeEventListener("webglcontextlost", handleContextLost);
+        canvas?.removeEventListener("webglcontextrestored", handleContextRestored);
+      } catch {
+        // Optional diagnostic hooks only.
+      }
       setStyleReady(false);
       setRevealed(false);
       initialCameraSetRef.current = false;
@@ -401,7 +471,7 @@ export function MiniMap({
       }
       mapRef.current = null;
     };
-  }, [route, viewMode]);
+  }, [route]);
 
   // Reset transient state when the route changes.
   useEffect(() => {
@@ -425,6 +495,7 @@ export function MiniMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReady || !route) return;
+    setRideDiagGauge("route_points", route.coords.length);
     const geojson = {
       type: "Feature" as const,
       geometry: { type: "LineString" as const, coordinates: route.coords.map(([lat, lng]) => [lng, lat]) },
@@ -432,7 +503,10 @@ export function MiniMap({
     };
     try {
       const src = map.getSource("route") as mapboxgl.GeoJSONSource | undefined;
-      if (src) { src.setData(geojson); }
+      if (src) {
+        src.setData(geojson);
+        incrementRideDiagCounter("route_set_data");
+      }
       else {
         map.addSource("route", { type: "geojson", data: geojson });
         map.addLayer({
@@ -469,7 +543,7 @@ export function MiniMap({
       egoTargetRef.current = { posM: 0, receivedAt: now, speedMPerS: 0 };
       if (!egoCurrentRef.current) {
         const [lat, lng] = route.coords[0];
-        const bearing = viewMode === "birdseye" ? 0 : routeStartBearing(route.coords, route.cumDist);
+        const bearing = viewModeRef.current === "birdseye" ? 0 : routeStartBearing(route.coords, route.cumDist);
         egoCurrentRef.current = { posM: 0, lat, lng, bearing };
       }
       return;
@@ -479,7 +553,7 @@ export function MiniMap({
     egoTargetRef.current = { posM: safePositionM, receivedAt: now, speedMPerS };
     if (egoCurrentRef.current == null) {
       const interp = interpolatePosition(route.coords, route.cumDist, safePositionM);
-      const bearing = viewMode === "birdseye" ? 0 : (() => {
+      const bearing = viewModeRef.current === "birdseye" ? 0 : (() => {
         const ahead = interpolatePosition(route.coords, route.cumDist, safePositionM + BEARING_LOOKAHEAD_M);
         return interp && ahead ? calcBearing(interp[0], interp[1], ahead[0], ahead[1]) : 0;
       })();
@@ -492,7 +566,7 @@ export function MiniMap({
         egoCurrentRef.current.lng = interp[1];
       }
     }
-  }, [route, safePositionM, lockToRouteStart, viewMode, speedMPerS]);
+  }, [route, safePositionM, lockToRouteStart, speedMPerS]);
 
   // Update ghost target whenever ghost coords or along-route distance change.
   useEffect(() => {
@@ -593,14 +667,41 @@ export function MiniMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReady || !route) return;
+    activeMapLoops += 1;
+    setRideDiagGauge("active_map_loops", activeMapLoops);
+    incrementRideDiagCounter("map_loop_starts");
 
     const EGO_COLOR = "#74AFCB";
-    const ensureEgoLayer = (lat: number, lng: number) => {
-      const egoGeo = { type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [lng, lat] }, properties: {} };
+    // Persistent Feature objects — mutated each frame instead of reallocated.
+    // Mapbox copies/serializes on setData, so reusing this object is safe.
+    const egoFeature = {
+      type: "Feature" as const,
+      geometry: { type: "Point" as const, coordinates: [0, 0] as [number, number] },
+      properties: {},
+    };
+    const ghostFeature = {
+      type: "Feature" as const,
+      geometry: { type: "Point" as const, coordinates: [0, 0] as [number, number] },
+      properties: {},
+    };
+    const emptyGhostCollection = { type: "FeatureCollection" as const, features: [] };
+    let lastGhostOpacityBucket = -1;
+    let lastMarkerCommitMs = 0;
+    let ghostCleared = false;
+
+    const ensureEgoLayer = (lat: number, lng: number, commit: boolean) => {
+      egoFeature.geometry.coordinates[0] = lng;
+      egoFeature.geometry.coordinates[1] = lat;
       const egoSrc = map.getSource("ego") as mapboxgl.GeoJSONSource | undefined;
-      if (egoSrc) { egoSrc.setData(egoGeo); return; }
+      if (egoSrc) {
+        if (commit) {
+          egoSrc.setData(egoFeature);
+          incrementRideDiagCounter("ego_set_data");
+        }
+        return;
+      }
       try {
-        map.addSource("ego", { type: "geojson", data: egoGeo });
+        map.addSource("ego", { type: "geojson", data: egoFeature });
         map.addLayer({
           id: "ego-halo",
           type: "circle",
@@ -628,19 +729,31 @@ export function MiniMap({
       }
     };
 
-    const ensureGhostLayer = (lat: number, lng: number, opacity: number) => {
-      const ghostGeo = { type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [lng, lat] }, properties: {} };
+    const ensureGhostLayer = (lat: number, lng: number, opacity: number, commit: boolean) => {
+      ghostFeature.geometry.coordinates[0] = lng;
+      ghostFeature.geometry.coordinates[1] = lat;
       const ghostSrc = map.getSource("ghost") as mapboxgl.GeoJSONSource | undefined;
       if (ghostSrc) {
-        ghostSrc.setData(ghostGeo);
-        try {
-          if (map.getLayer("ghost")) map.setPaintProperty("ghost", "circle-opacity", 0.95 * opacity);
-          if (map.getLayer("ghost-halo")) map.setPaintProperty("ghost-halo", "circle-opacity", 0.24 * opacity);
-        } catch { /* paint property not yet available */ }
+        ghostCleared = false;
+        if (commit) {
+          ghostSrc.setData(ghostFeature);
+          incrementRideDiagCounter("ghost_set_data");
+        }
+        // Quantize opacity into 20 buckets so identical paint-property writes don't
+        // churn Mapbox's internal style cache on every frame.
+        const bucket = Math.round(Math.max(0, Math.min(1, opacity)) * 20);
+        if (bucket !== lastGhostOpacityBucket) {
+          lastGhostOpacityBucket = bucket;
+          const quantized = bucket / 20;
+          try {
+            if (map.getLayer("ghost")) map.setPaintProperty("ghost", "circle-opacity", 0.95 * quantized);
+            if (map.getLayer("ghost-halo")) map.setPaintProperty("ghost-halo", "circle-opacity", 0.24 * quantized);
+          } catch { /* paint property not yet available */ }
+        }
         return;
       }
       try {
-        map.addSource("ghost", { type: "geojson", data: ghostGeo });
+        map.addSource("ghost", { type: "geojson", data: ghostFeature });
         const beforeId = map.getLayer("ego") ? "ego" : undefined;
         map.addLayer({
           id: "ghost-halo",
@@ -671,22 +784,30 @@ export function MiniMap({
     };
 
     const clearGhost = () => {
+      if (ghostCleared) return;
       const ghostSrc = map.getSource("ghost") as mapboxgl.GeoJSONSource | undefined;
-      if (ghostSrc) ghostSrc.setData({ type: "FeatureCollection", features: [] });
+      if (ghostSrc) {
+        ghostSrc.setData(emptyGhostCollection);
+        incrementRideDiagCounter("ghost_set_data");
+        ghostCleared = true;
+      }
     };
 
     const computeCameraTarget = (egoLat: number, egoLng: number, bearing: number): CameraTarget => {
+      const mode = viewModeRef.current;
+      const descending = isDescendingRef.current;
+      const climbing = isClimbingRef.current;
       let pitch = BIRDSEYE_PITCH, zoom = BIRDSEYE_ZOOM, offset: [number, number] = BIRDSEYE_OFFSET;
-      if (viewMode === "chase") {
-        pitch = isDescending ? DESCENT_CHASE_PITCH : isClimbing ? CLIMB_CHASE_PITCH : CHASE_PITCH;
-        zoom = isDescending ? DESCENT_CHASE_ZOOM : isClimbing ? CLIMB_CHASE_ZOOM : CHASE_ZOOM;
+      if (mode === "chase") {
+        pitch = descending ? DESCENT_CHASE_PITCH : climbing ? CLIMB_CHASE_PITCH : CHASE_PITCH;
+        zoom = descending ? DESCENT_CHASE_ZOOM : climbing ? CLIMB_CHASE_ZOOM : CHASE_ZOOM;
         offset = CHASE_OFFSET;
-      } else if (viewMode === "follow") {
-        pitch = isDescending ? DESCENT_FOLLOW_PITCH : isClimbing ? CLIMB_FOLLOW_PITCH : FOLLOW_PITCH;
-        zoom = isDescending ? DESCENT_FOLLOW_ZOOM : isClimbing ? CLIMB_FOLLOW_ZOOM : FOLLOW_ZOOM;
+      } else if (mode === "follow") {
+        pitch = descending ? DESCENT_FOLLOW_PITCH : climbing ? CLIMB_FOLLOW_PITCH : FOLLOW_PITCH;
+        zoom = descending ? DESCENT_FOLLOW_ZOOM : climbing ? CLIMB_FOLLOW_ZOOM : FOLLOW_ZOOM;
         offset = FOLLOW_OFFSET;
       }
-      const cameraBearing = viewMode === "birdseye" ? 0 : bearing;
+      const cameraBearing = mode === "birdseye" ? 0 : bearing;
       return { center: [egoLng, egoLat], bearing: cameraBearing, pitch, zoom, offset };
     };
 
@@ -728,6 +849,12 @@ export function MiniMap({
       const last = lastFrameRef.current;
       const dt = last > 0 ? Math.max(1, Math.min(100, now - last)) : 16;
       lastFrameRef.current = now;
+      sampleRideDiagFrame(dt);
+
+      // Throttle GeoJSON marker uploads to ~30 Hz; the camera still moves every
+      // frame so motion stays smooth while Mapbox worker churn drops ~3-4x.
+      const commitMarkers = now - lastMarkerCommitMs >= MARKER_COMMIT_INTERVAL_MS;
+      if (commitMarkers) lastMarkerCommitMs = now;
 
       if (egoTargetRef.current && !egoCurrentRef.current) {
         const target = egoTargetRef.current;
@@ -814,12 +941,13 @@ export function MiniMap({
           cam.offset = [lerp(cam.offset[0], desired.offset[0], pzAlpha), lerp(cam.offset[1], desired.offset[1], pzAlpha)];
           try {
             map.jumpTo({ center: cam.center, bearing: cam.bearing, pitch: cam.pitch, zoom: cam.zoom });
+            incrementRideDiagCounter("map_jump_to");
           } catch (error) {
             console.warn("[RideOS] Camera jumpTo failed", error);
           }
         }
 
-        ensureEgoLayer(egoCur.lat, egoCur.lng);
+        ensureEgoLayer(egoCur.lat, egoCur.lng, commitMarkers);
       }
 
       if (ghostCurrentRef.current && ghostTargetRef.current) {
@@ -831,7 +959,7 @@ export function MiniMap({
           : sampleAge > fadeEnd
             ? 0.5
             : 1 - 0.5 * ((sampleAge - fadeStart) / (fadeEnd - fadeStart));
-        ensureGhostLayer(ghostCurrentRef.current.lat, ghostCurrentRef.current.lng, opacity);
+        ensureGhostLayer(ghostCurrentRef.current.lat, ghostCurrentRef.current.lng, opacity, commitMarkers);
       } else if (!ghostTargetRef.current) {
         clearGhost();
       }
@@ -865,8 +993,11 @@ export function MiniMap({
         if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
+      activeMapLoops = Math.max(0, activeMapLoops - 1);
+      setRideDiagGauge("active_map_loops", activeMapLoops);
+      incrementRideDiagCounter("map_loop_stops");
     };
-  }, [route, styleReady, viewMode, isDescending, isClimbing]);
+  }, [route, styleReady]);
 
   return (
     <div className="relative w-full h-full min-h-[300px] bg-[var(--bg)]">

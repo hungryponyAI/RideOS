@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { ScreenHeader } from "../../shared/ui/ScreenHeader";
 import { useTheme } from "../../app/providers/ThemeProvider";
 import { useAthleteSettings, type AthleteSettings } from "./hooks/useAthleteSettings";
-import { useAppSettings } from "./hooks/useAppSettings";
+import { useAppSettings, shiftSettingsFromPrefs, type ShiftMode } from "./hooks/useAppSettings";
 import { useStravaStatus } from "../strava/hooks/useStravaStatus";
 import { StravaConnectModal, type StravaModalStep } from "../strava/StravaConnectModal";
 import { useWS } from "../../shared/ws/useWS";
@@ -191,6 +191,17 @@ export function SettingsScreen({ onReopenOnboarding, onSwitchProfile }: Props) {
     sendMessage({ type: "athlete_settings", ...next });
   }, [updateSetting, settings, sendMessage]);
 
+  const handleShiftModeChange = useCallback((mode: ShiftMode) => {
+    updatePref("shift_mode", mode);
+    sendMessage({ type: "shift_settings", mode, auto_cadence_min_rpm: prefs.auto_cadence_min_rpm, auto_cadence_max_rpm: prefs.auto_cadence_max_rpm });
+  }, [updatePref, sendMessage, prefs.auto_cadence_min_rpm, prefs.auto_cadence_max_rpm]);
+
+  const handleAutoCadenceChange = useCallback((key: "auto_cadence_min_rpm" | "auto_cadence_max_rpm", value: number) => {
+    updatePref(key, value);
+    const next = { ...shiftSettingsFromPrefs(prefs), [key]: value };
+    sendMessage({ type: "shift_settings", mode: next.mode, auto_cadence_min_rpm: next.auto_cadence_min_rpm, auto_cadence_max_rpm: next.auto_cadence_max_rpm });
+  }, [updatePref, sendMessage, prefs]);
+
   const isStravaConnected = stravaStatus?.connected ?? false;
   const isStravaSyncing = stravaStatus?.syncing ?? false;
 
@@ -236,6 +247,70 @@ export function SettingsScreen({ onReopenOnboarding, onSwitchProfile }: Props) {
               <RowLabel sub="Kurze Aufwärmphase vor der Fahrt">Aufwärmen aktiviert</RowLabel>
               <Toggle checked={prefs.warmup_enabled} onChange={v => updatePref("warmup_enabled", v)} label="Aufwärmen aktiviert" />
             </Row>
+          </Section>
+        </div>
+
+        {/* Schaltung */}
+        <div className="flex flex-col gap-2">
+          <SectionLabel>Schaltung</SectionLabel>
+          <Section>
+            <Row>
+              <RowLabel sub="Wie werden Gänge gewechselt?">Modus</RowLabel>
+              <SegmentControl<ShiftMode>
+                value={prefs.shift_mode}
+                onChange={handleShiftModeChange}
+                options={[
+                  { label: "Manuell", value: "manual" },
+                  { label: "Kassette", value: "cassette" },
+                  { label: "Auto", value: "auto" },
+                ]}
+              />
+            </Row>
+            {prefs.shift_mode === "cassette" && (
+              <Row>
+                <RowLabel sub="Tausche Zwift Cog gegen eine echte Kassette aus. Schaltung erfolgt mechanisch über den Umwerfer. Steigung wird 1:1 an den Trainer gesendet.">
+                  Echte Kassette am Trainer
+                </RowLabel>
+              </Row>
+            )}
+            {prefs.shift_mode === "auto" && (
+              <>
+                <div className="flex items-center justify-between py-3 border-b border-[var(--border)]">
+                  <RowLabel sub="Gangwechsel nach oben wenn RPM überschritten">Trittfrequenz max</RowLabel>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number" inputMode="numeric" min={50} max={130} step={1}
+                      value={prefs.auto_cadence_max_rpm}
+                      onChange={e => {
+                        const v = parseInt(e.target.value, 10);
+                        if (Number.isFinite(v)) handleAutoCadenceChange("auto_cadence_max_rpm", Math.max(prefs.auto_cadence_min_rpm + 1, Math.min(130, v)));
+                      }}
+                      className="w-16 bg-[var(--bg)] border border-[var(--border)] rounded text-[var(--text)] font-data font-bold text-sm tabular-nums px-2 py-1 text-right focus:outline-none focus:border-[var(--accent)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    <span className="text-[10px] font-medium text-[var(--text-muted)] shrink-0">RPM</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between py-3 border-b border-[var(--border)]">
+                  <RowLabel sub="Gangwechsel nach unten wenn RPM unterschritten">Trittfrequenz min</RowLabel>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number" inputMode="numeric" min={50} max={130} step={1}
+                      value={prefs.auto_cadence_min_rpm}
+                      onChange={e => {
+                        const v = parseInt(e.target.value, 10);
+                        if (Number.isFinite(v)) handleAutoCadenceChange("auto_cadence_min_rpm", Math.max(50, Math.min(prefs.auto_cadence_max_rpm - 1, v)));
+                      }}
+                      className="w-16 bg-[var(--bg)] border border-[var(--border)] rounded text-[var(--text)] font-data font-bold text-sm tabular-nums px-2 py-1 text-right focus:outline-none focus:border-[var(--accent)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    <span className="text-[10px] font-medium text-[var(--text-muted)] shrink-0">RPM</span>
+                  </div>
+                </div>
+                <Row>
+                  <RowLabel sub="Manueller Gangwechsel setzt Auto-Shift für 10 s aus">Manueller Override</RowLabel>
+                  <span className="text-[9px] font-medium text-[var(--text-muted)] shrink-0">10 s</span>
+                </Row>
+              </>
+            )}
           </Section>
         </div>
 

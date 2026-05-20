@@ -38,10 +38,16 @@ class RideRepoSink:
         self._start_t_mono: float = 0.0
         self._power_samples: list[int] = []
         self._last_position_m: float = 0.0
+        self._write_count: int = 0
 
     @property
     def current_ride_id(self) -> Optional[str]:
         return self._ride_id
+
+    @property
+    def write_count(self) -> int:
+        """Total SQLite write calls made by this sink during process lifetime."""
+        return self._write_count
 
     def on_event(self, event: DomainEvent) -> None:
         try:
@@ -81,6 +87,7 @@ class RideRepoSink:
             cooldown_s=event.cooldown_s,
             erg_mode=event.erg_mode,
         )
+        self._write_count += 1
 
     def _append(self, event: DomainEvent) -> None:
         t_ms = int((event.t_mono - self._start_t_mono) * 1000)
@@ -92,6 +99,7 @@ class RideRepoSink:
             event_type=type(event).__name__,
             payload=payload,
         )
+        self._write_count += 1
         self._seq += 1
 
     def _close_ride(self, event: RideEnded) -> None:
@@ -109,6 +117,7 @@ class RideRepoSink:
             avg_power_w=avg_pwr,
             max_power_w=max_pwr,
         )
+        self._write_count += 1
         _log.info(
             "RideRepoSink: ride %s persisted — %d events, %.0fs, %.0fm",
             self._ride_id, self._seq, event.elapsed_s, self._last_position_m,

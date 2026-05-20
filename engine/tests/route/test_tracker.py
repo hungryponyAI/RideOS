@@ -118,6 +118,24 @@ async def test_physics_mode_advances_from_power_when_speed_is_missing():
     assert tracker.position_m > 0.0
 
 
+async def test_time_scale_accelerates_tracker_progress():
+    """Replay/stress mode can compress route progress without BLE hardware."""
+    from engine.route.tracker import RouteTracker
+
+    route = _build_route(total_m=1000.0, grades=[0.0, 0.0, 0.0, 0.0, 0.0])
+    tracker = RouteTracker(route)
+    stop_event = asyncio.Event()
+
+    task = asyncio.create_task(
+        tracker.run(lambda: 36.0, stop_event, tick_s=0.02, time_scale=8.0)
+    )
+    await asyncio.sleep(0.12)
+    stop_event.set()
+    await asyncio.wait_for(task, timeout=1.0)
+
+    assert tracker.position_m > 6.0
+
+
 async def test_physics_config_without_power_fn_keeps_speed_based_tracking():
     """Physics config alone is not enough to switch modes."""
     from engine.domain.physics import PhysicsConfig

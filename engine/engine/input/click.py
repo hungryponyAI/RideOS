@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from bleak import BleakClient, BleakError, BleakScanner
 
@@ -93,11 +93,13 @@ class ClickShifter:
         *,
         clock: Callable[[], float] = time.monotonic,
         on_state_change: Callable[[bool], None] | None = None,
+        diagnostics: Any | None = None,
     ) -> None:
         self._gears = gear_engine
         self._clock = clock
         self._last_shift_t: float = float("-inf")
         self._on_state_change = on_state_change
+        self._diagnostics = diagnostics
         # V1 ECDH state (set only when connected to a v1 Click)
         self._aes_key: bytes | None = None
         self._iv_prefix: bytes | None = None
@@ -208,8 +210,10 @@ class ClickShifter:
 
         while not stop_event.is_set():
             try:
+                self._diag_increment("click_scan_attempts")
                 device = await _scanner(timeout=DEFAULT_SCAN_TIMEOUT_S)
                 if device is None:
+                    self._diag_increment("click_scan_misses")
                     _log.warning(
                         "Zwift Click not found; retrying in %.1fs", retry_backoff
                     )
@@ -219,10 +223,13 @@ class ClickShifter:
                         pass
                     continue
 
+                self._diag_increment("click_scan_hits")
+                self._diag_increment("click_connect_attempts")
                 async with _connect(device) as client:
                     try:
                         await self._activate(client)
                         await client.start_notify(ZWIFT_ASYNC_CHAR_UUID, self.on_notify)
+                        self._diag_set("click_connected", True)
                         self._emit_state(True)
                         _log.info("Zwift Click connected and notifying")
 
@@ -233,31 +240,44 @@ class ClickShifter:
                                     stop_event.wait(), timeout=V2_KEEPALIVE_INTERVAL_S
                                 )
                             except asyncio.TimeoutError:
-                                await client.write_gatt_char(
-                                    ZWIFT_SYNC_RX_CHAR_UUID, V2_CONFIG_2, response=False
+                                await self._write_click_char(
+                                    client,
+                                    ZWIFT_SYNC_RX_CHAR_UUID,
+                                    V2_CONFIG_2,
+                                    response=False,
+                                    counter="click_keepalive_writes",
                                 )
                         try:
                             await client.stop_notify(ZWIFT_ASYNC_CHAR_UUID)
                         except Exception:
                             pass
                     finally:
+                        self._diag_set("click_connected", False)
                         self._emit_state(False)
 
             except asyncio.TimeoutError:
+                self._diag_increment("click_scan_timeouts")
                 continue
             except BleakError as exc:
+                self._diag_increment("ble_errors")
+                self._diag_increment("click_errors")
+                self._diag_set("click_last_error", str(exc))
                 _log.warning(
                     "Click BLE error: %s — retrying in %.1fs", exc, retry_backoff
                 )
+                self._diag_set("click_connected", False)
                 self._emit_state(False)
                 try:
                     await asyncio.wait_for(stop_event.wait(), timeout=retry_backoff)
                 except asyncio.TimeoutError:
                     pass
             except Exception as exc:
+                self._diag_increment("click_unexpected_errors")
+                self._diag_set("click_last_error", str(exc))
                 _log.warning(
                     "Click unexpected error: %s — retrying in %.1fs", exc, retry_backoff
                 )
+                self._diag_set("click_connected", False)
                 self._emit_state(False)
                 try:
                     await asyncio.wait_for(stop_event.wait(), timeout=retry_backoff)
@@ -300,7 +320,13 @@ class ClickShifter:
         # Subscribe ASYNC briefly to detect a v1 key response
         await client.start_notify(ZWIFT_ASYNC_CHAR_UUID, _handshake_listener)
         try:
-            await client.write_gatt_char(ZWIFT_SYNC_RX_CHAR_UUID, V2_ACTIVATE_WRITE, response=False)
+            await self._write_click_char(
+                client,
+                ZWIFT_SYNC_RX_CHAR_UUID,
+                V2_ACTIVATE_WRITE,
+                response=False,
+                counter="click_activation_writes",
+            )
             try:
                 await asyncio.wait_for(key_received.wait(), timeout=1.0)
             except asyncio.TimeoutError:
@@ -313,9 +339,21 @@ class ClickShifter:
         else:
             # V2: send the two config writes that enable button reporting
             await asyncio.sleep(0.05)
-            await client.write_gatt_char(ZWIFT_SYNC_RX_CHAR_UUID, V2_CONFIG_1, response=False)
+            await self._write_click_char(
+                client,
+                ZWIFT_SYNC_RX_CHAR_UUID,
+                V2_CONFIG_1,
+                response=False,
+                counter="click_activation_writes",
+            )
             await asyncio.sleep(0.1)
-            await client.write_gatt_char(ZWIFT_SYNC_RX_CHAR_UUID, V2_CONFIG_2, response=False)
+            await self._write_click_char(
+                client,
+                ZWIFT_SYNC_RX_CHAR_UUID,
+                V2_CONFIG_2,
+                response=False,
+                counter="click_activation_writes",
+            )
             _log.info("Zwift Click v2 activated (unencrypted mode)")
 
     async def _complete_v1_ecdh(self, client: "BleakClient", dev_pub_raw64: bytes) -> None:
@@ -333,10 +371,12 @@ class ClickShifter:
         pub_bytes = private_key.public_key().public_bytes(
             serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint,
         )
-        await client.write_gatt_char(
+        await self._write_click_char(
+            client,
             ZWIFT_SYNC_RX_CHAR_UUID,
             RIDE_ON + bytes([1, 2]) + pub_bytes[1:],
             response=False,
+            counter="click_activation_writes",
         )
 
         dev_pub_key = EllipticCurvePublicKey.from_encoded_point(
@@ -355,6 +395,33 @@ class ClickShifter:
         self._aes_key = key_material[:32]
         self._iv_prefix = key_material[32:]
         _log.info("Zwift Click v1 ECDH key exchange complete")
+
+    async def _write_click_char(
+        self,
+        client: "BleakClient",
+        uuid: str,
+        data: bytes,
+        *,
+        response: bool,
+        counter: str,
+    ) -> None:
+        self._diag_increment("click_writes")
+        self._diag_increment(counter)
+        try:
+            await client.write_gatt_char(uuid, data, response=response)
+        except Exception as exc:
+            self._diag_increment("ble_errors")
+            self._diag_increment("click_write_errors")
+            self._diag_set("click_last_error", str(exc))
+            raise
+
+    def _diag_increment(self, name: str, amount: int = 1) -> None:
+        if self._diagnostics is not None:
+            self._diagnostics.increment(name, amount)
+
+    def _diag_set(self, name: str, value: Any) -> None:
+        if self._diagnostics is not None:
+            self._diagnostics.set_gauge(name, value)
 
     # ------------------------------------------------------------------
     # Default scanner / connector (production paths)
@@ -390,8 +457,9 @@ async def run_click_shifter(
     stop_event: asyncio.Event,
     *,
     on_state_change: Callable[[bool], None] | None = None,
+    diagnostics: Any | None = None,
 ) -> None:
     """Scan for the Zwift Click, connect, and dispatch shifts until stop_event."""
     await ClickShifter(
-        gear_engine, on_state_change=on_state_change
+        gear_engine, on_state_change=on_state_change, diagnostics=diagnostics
     ).connect_and_listen(stop_event=stop_event)

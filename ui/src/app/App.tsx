@@ -13,6 +13,8 @@ import { DevicesScreen } from "../features/devices/DevicesScreen";
 import { RideSummaryScreen } from "../features/summary/RideSummaryScreen";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
+import { SimulatedWSProvider, SIM_ROUTE_ID, SIM_SESSION_ID, getSimViewMode, isRideSimEnabled } from "../shared/ws/SimulatedWSProvider";
+import { installRideDiagGlobalHandlers, startRideDiagSummary } from "../shared/diagnostics/rideDiagnostics";
 import { OnboardingFlow } from "../features/onboarding/OnboardingFlow";
 import { useOnboarding } from "../features/onboarding/useOnboarding";
 import { AppEntryGate } from "../features/startup/AppEntryGate";
@@ -210,6 +212,35 @@ function AppShell({ onSwitchProfile }: { onSwitchProfile: () => void }) {
 }
 
 export default function App() {
+  useEffect(() => {
+    const stopSummary = startRideDiagSummary();
+    const uninstallHandlers = installRideDiagGlobalHandlers();
+    return () => {
+      stopSummary();
+      uninstallHandlers();
+    };
+  }, []);
+
+  if (isRideSimEnabled()) {
+    const simViewMode = getSimViewMode();
+    return (
+      <SimulatedWSProvider>
+        <ThemeProvider>
+          <ErrorBoundary>
+            <MotionProvider defaultMode="cinematic">
+              <RideScreen
+                isDark={false}
+                activeRouteId={SIM_ROUTE_ID}
+                activeRideSessionId={SIM_SESSION_ID}
+                viewMode={simViewMode}
+              />
+            </MotionProvider>
+          </ErrorBoundary>
+        </ThemeProvider>
+      </SimulatedWSProvider>
+    );
+  }
+
   return (
     <WSProvider>
       <ThemeProvider>

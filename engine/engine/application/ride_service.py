@@ -76,11 +76,40 @@ class RideService:
 
     # ── synchronous user actions ──────────────────────────────────────────
 
-    def shift(self, direction: Literal["up", "down"]) -> int:
-        """Shift one gear and publish GearShifted."""
+    def shift(self, direction: Literal["up", "down"], *, automatic: bool = False) -> int:
+        """Shift one gear and publish GearShifted.
+
+        automatic=True marks the shift as auto-generated; outbound loop uses this
+        to send last_auto_shift_at so the UI can flash the AUTO badge.
+        """
         gear = self._gears.shift_up() if direction == "up" else self._gears.shift_down()
-        self._bus.publish(GearShifted(gear=gear, direction=direction, t_mono=self._clock()))
+        self._bus.publish(
+            GearShifted(gear=gear, direction=direction, automatic=automatic, t_mono=self._clock())
+        )
         return gear
+
+    def update_shift_settings(
+        self,
+        *,
+        mode: str = "manual",
+        auto_cadence_min_rpm: int = 82,
+        auto_cadence_max_rpm: int = 92,
+        auto_shift_controller: "Optional[Any]" = None,
+    ) -> None:
+        """Apply shift mode + auto-shift cadence targets immediately."""
+        from engine.domain.gears import ShiftMode
+        try:
+            new_mode = ShiftMode(mode)
+        except ValueError:
+            new_mode = ShiftMode.MANUAL
+        self._gears.mode = new_mode
+        if auto_shift_controller is not None:
+            auto_shift_controller.cadence_min_rpm = max(50, min(130, auto_cadence_min_rpm))
+            auto_shift_controller.cadence_max_rpm = max(50, min(130, auto_cadence_max_rpm))
+        _log.info(
+            "shift_settings: mode=%s cadence=%d-%d",
+            new_mode.value, auto_cadence_min_rpm, auto_cadence_max_rpm,
+        )
 
     def set_paused(self, paused: bool) -> None:
         """Toggle pause/resume mid-ride and publish RidePauseToggled."""
@@ -293,6 +322,7 @@ class RideService:
                 on_phase_change=_on_phase_change,
                 physics_config=physics_config,
                 power_fn=power_fn,
+                time_scale=ctx.time_scale,
             ),
             name="ride_phases",
         )

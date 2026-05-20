@@ -174,4 +174,14 @@ describe("WSProvider", () => {
     });
     expect(received).toHaveLength(0);
   });
+
+  it("does not schedule reconnect after provider cleanup closes the socket", () => {
+    vi.useFakeTimers();
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const { unmount } = render(<WSProvider><div /></WSProvider>);
+    unmount();
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+    vi.useRealTimers();
+    setTimeoutSpy.mockRestore();
+  });
 });

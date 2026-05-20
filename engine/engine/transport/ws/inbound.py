@@ -31,6 +31,7 @@ from engine.transport.ws.schemas import (
     PreviewRouteMsg,
     RenameRouteMsg,
     SetPausedMsg,
+    ShiftSettingsMsg,
     StartRideMsg,
     StravaDisconnectMsg,
     StravaGetAuthUrlMsg,
@@ -83,7 +84,25 @@ class WSInbound:
         if ctx.ride_service is None:
             return
         new = ctx.ride_service.shift(msg.direction)
+        if ctx.auto_shift_controller is not None:
+            ctx.auto_shift_controller.register_manual_shift()
         _log.info("WS gear shift %s -> gear %d", msg.direction.upper(), new)
+
+    async def _shift_settings(self, ws: "ServerConnection", data: dict) -> None:
+        try:
+            msg = ShiftSettingsMsg.model_validate(data)
+        except ValidationError:
+            _log.warning("shift_settings: invalid message")
+            return
+        ctx = self._ctx
+        if ctx.ride_service is None:
+            return
+        ctx.ride_service.update_shift_settings(
+            mode=msg.mode,
+            auto_cadence_min_rpm=msg.auto_cadence_min_rpm,
+            auto_cadence_max_rpm=msg.auto_cadence_max_rpm,
+            auto_shift_controller=ctx.auto_shift_controller,
+        )
 
     async def _load_route(self, ws: "ServerConnection", data: dict) -> None:
         try:
@@ -428,4 +447,5 @@ _DISPATCH: dict[str, _Handler] = {
     "get_ride": WSInbound._get_ride,
     "get_analytics_overview": WSInbound._get_analytics_overview,
     "get_ride_analytics": WSInbound._get_ride_analytics,
+    "shift_settings": WSInbound._shift_settings,
 }

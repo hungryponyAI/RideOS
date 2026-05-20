@@ -25,6 +25,7 @@ export interface TelemetryState {
   elapsed_s?: number | null;
   dist_remaining_m?: number | null;
   ended_reason?: "completed" | "user_ended" | null;
+  last_auto_shift_at?: number | null;
 }
 
 export type ConnectionStatus =

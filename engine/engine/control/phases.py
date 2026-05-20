@@ -38,6 +38,7 @@ async def run_phases(
     on_phase_change: Optional[Callable[[str, Optional[float], Optional[float]], None]] = None,
     physics_config: "PhysicsConfig | None" = None,
     power_fn: Optional[Callable[[], Optional[float]]] = None,
+    time_scale: float = 1.0,
 ) -> None:
     """Run the full ride phase sequence, blocking until done or stop_event fires.
 
@@ -88,7 +89,8 @@ async def run_phases(
         on_tracker_ready(tracker)
 
     tracker_task = asyncio.create_task(
-        tracker.run(speed_fn, stop_event, power_fn=power_fn), name="route_tracker"
+        tracker.run(speed_fn, stop_event, power_fn=power_fn, time_scale=time_scale),
+        name="route_tracker",
     )
 
     try:

@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { recordRideDiag } from "../shared/diagnostics/rideDiagnostics";
 
 interface Props {
   children: ReactNode;
@@ -17,6 +18,11 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("[RideOS] UI crash boundary caught an error", error, info);
+    recordRideDiag("error", "react error boundary", {
+      message: error.message,
+      stack: error.stack ?? null,
+      componentStack: info.componentStack,
+    });
   }
 
   render() {

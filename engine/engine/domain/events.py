@@ -21,11 +21,12 @@ class TelemetryReading:
 
 @dataclass(frozen=True)
 class GearShifted:
-    """Gear change triggered by shifter or keyboard — carries the resulting gear."""
+    """Gear change triggered by shifter, keyboard, or auto-shift controller."""
 
     gear: int
     direction: Literal["up", "down"]
     t_mono: float
+    automatic: bool = False
 
 
 @dataclass(frozen=True)

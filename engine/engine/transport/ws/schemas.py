@@ -122,3 +122,10 @@ class GetAnalyticsOverviewMsg(BaseModel):
 class GetRideAnalyticsMsg(BaseModel):
     type: Literal["get_ride_analytics"]
     ride_id: str
+
+
+class ShiftSettingsMsg(BaseModel):
+    type: Literal["shift_settings"]
+    mode: Literal["manual", "cassette", "auto"] = "manual"
+    auto_cadence_min_rpm: int = 82
+    auto_cadence_max_rpm: int = 92

@@ -16,7 +16,7 @@ import asyncio
 import logging
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Optional, Type
+from typing import Any, Awaitable, Callable, Optional, Type
 
 from bleak import BleakClient, BleakError
 from bleak.backends.device import BLEDevice
@@ -64,6 +64,7 @@ async def reconnect_loop(
     controller_factory: ControllerFactory = FtmsController,
     on_client_ready: Optional[OnClientReady] = None,
     on_kickr_state_change: Optional[Callable[[bool], None]] = None,
+    diagnostics: Any | None = None,
 ) -> None:
     """Run the scan/connect/subscribe cycle forever, until stop_event is set.
 
@@ -78,14 +79,19 @@ async def reconnect_loop(
             return
 
         try:
+            _diag_increment(diagnostics, "kickr_scan_attempts")
             device = await find_device()
         except (BleakError, OSError) as exc:
+            _diag_increment(diagnostics, "ble_errors")
+            _diag_increment(diagnostics, "kickr_scan_errors")
+            _diag_set(diagnostics, "kickr_last_error", str(exc))
             _log.warning("Scan failed: %s (backoff=%.1fs)", exc, backoff)
             await sleep(backoff)
             backoff = min(backoff * 2, config.max_backoff)
             continue
 
         if device is None:
+            _diag_increment(diagnostics, "kickr_scan_misses")
             if stop_event is not None and stop_event.is_set():
                 return
             _log.info("KICKR not found; retrying in %.1fs", backoff)
@@ -93,18 +99,22 @@ async def reconnect_loop(
             backoff = min(backoff * 2, config.max_backoff)
             continue
 
+        _diag_increment(diagnostics, "kickr_scan_hits")
         _log.info("Connecting to %s", getattr(device, "name", device))
 
         disconnected = asyncio.Event()
 
         def _on_disconnect(_: BleakClient) -> None:
             disconnected.set()
+            _diag_set(diagnostics, "kickr_connected", False)
             if on_kickr_state_change is not None:
                 on_kickr_state_change(False)
 
         try:
+            _diag_increment(diagnostics, "kickr_connect_attempts")
             async with connect_client(device, _on_disconnect) as client:
                 await start_indoor_bike_notify(client, queue)
+                _diag_set(diagnostics, "kickr_connected", True)
                 if on_kickr_state_change is not None:
                     on_kickr_state_change(True)
                 _log.info("Subscribed to FTMS Indoor Bike Data; awaiting data...")
@@ -113,7 +123,11 @@ async def reconnect_loop(
                 control_task: Optional[asyncio.Task] = None
 
                 if athlete is not None:
-                    controller = controller_factory(client)
+                    controller = (
+                        controller_factory(client, diagnostics=diagnostics)
+                        if diagnostics is not None
+                        else controller_factory(client)
+                    )
                     await controller.start()
 
                 if on_client_ready is not None:
@@ -129,7 +143,8 @@ async def reconnect_loop(
                             projection=projection,
                             erg_debouncer=erg_debouncer,
                             gear_engine=gear_engine,
-                        )
+                        ),
+                        name="ftms_control_loop",
                     )
 
                 # Wait until either stop_event fires or device disconnects.
@@ -171,9 +186,16 @@ async def reconnect_loop(
                 try:
                     await stop_indoor_bike_notify(client)
                 except (BleakError, OSError):
+                    _diag_increment(diagnostics, "ble_errors")
+                    _diag_increment(diagnostics, "kickr_notify_stop_errors")
                     pass
+                _diag_set(diagnostics, "kickr_connected", False)
 
         except (BleakError, OSError) as exc:
+            _diag_increment(diagnostics, "ble_errors")
+            _diag_increment(diagnostics, "kickr_connect_errors")
+            _diag_set(diagnostics, "kickr_connected", False)
+            _diag_set(diagnostics, "kickr_last_error", str(exc))
             _log.warning(
                 "BLE error during connect/notify: %s (backoff=%.1fs)",
                 exc, backoff,
@@ -191,3 +213,13 @@ async def _event_wait(event: Optional[asyncio.Event]) -> None:
     """Await an event.wait(); returns immediately if event is None."""
     if event is not None:
         await event.wait()
+
+
+def _diag_increment(diagnostics: Any | None, name: str, amount: int = 1) -> None:
+    if diagnostics is not None:
+        diagnostics.increment(name, amount)
+
+
+def _diag_set(diagnostics: Any | None, name: str, value: Any) -> None:
+    if diagnostics is not None:
+        diagnostics.set_gauge(name, value)

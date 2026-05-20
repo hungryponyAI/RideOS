@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING, Awaitable, Callable, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
@@ -56,8 +56,9 @@ class FtmsController:
     _KEEPALIVE_S: float = 1.0
     _RESPONSE_TIMEOUT_S: float = 2.0
 
-    def __init__(self, client: BleakClient) -> None:
+    def __init__(self, client: BleakClient, *, diagnostics: Any | None = None) -> None:
         self._client = client
+        self._diagnostics = diagnostics
         self._pending: Optional[asyncio.Future] = None
         self._subscribed = False
         self._controlled = False
@@ -109,6 +110,9 @@ class FtmsController:
     async def _send(
         self, payload: bytes, op: OpCode, *, timeout: Optional[float] = None
     ) -> None:
+        self._diag_increment("control_writes")
+        self._diag_increment(f"control_write_{op.name.lower()}")
+        self._diag_set("control_last_op", op.name)
         loop = asyncio.get_running_loop()
         self._pending = loop.create_future()
         try:
@@ -116,13 +120,27 @@ class FtmsController:
             data = await asyncio.wait_for(
                 self._pending, timeout=timeout or self._RESPONSE_TIMEOUT_S
             )
+            resp = parse_control_point_response(data)
+            if resp.request_op != op:
+                raise FtmsControlError(op, ResultCode.OPERATION_FAILED)
+            if resp.result != ResultCode.SUCCESS:
+                raise FtmsControlError(op, resp.result)
+        except Exception as exc:
+            self._diag_increment("control_write_failures")
+            self._diag_set("control_last_error", f"{op.name}: {exc}")
+            raise
+        else:
+            self._diag_increment("control_write_successes")
         finally:
             self._pending = None
-        resp = parse_control_point_response(data)
-        if resp.request_op != op:
-            raise FtmsControlError(op, ResultCode.OPERATION_FAILED)
-        if resp.result != ResultCode.SUCCESS:
-            raise FtmsControlError(op, resp.result)
+
+    def _diag_increment(self, name: str) -> None:
+        if self._diagnostics is not None:
+            self._diagnostics.increment(name)
+
+    def _diag_set(self, name: str, value: Any) -> None:
+        if self._diagnostics is not None:
+            self._diagnostics.set_gauge(name, value)
 
 
 def _estimate_cw(weight_kg: float, height_cm: float) -> float:
@@ -146,10 +164,12 @@ def _trainer_grade(real_grade_pct: float, gear_engine: "GearEngine") -> float:
     """Return the calibrated grade sent to FTMS simulation mode.
 
     = (effective_grade + virtual_descent_offset) × scale
-    The virtual_descent_offset shifts flat-ground speed per gear without
-    affecting the climb-resistance scaling provided by effective_grade.
+    CASSETTE mode bypasses virtual gearing and sends full real grade (scale=1.0)
+    so the user's physical derailleur handles resistance naturally.
     """
-    return (gear_engine.effective_grade(real_grade_pct) + gear_engine.grade_offset_pct) * _TRAINER_GRADE_SCALE
+    from engine.domain.gears import ShiftMode  # avoid circular at module level
+    scale = 1.0 if gear_engine.mode is ShiftMode.CASSETTE else _TRAINER_GRADE_SCALE
+    return (gear_engine.effective_grade(real_grade_pct) + gear_engine.grade_offset_pct) * scale
 
 
 async def run_control_loop(

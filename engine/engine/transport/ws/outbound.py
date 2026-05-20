@@ -122,6 +122,7 @@ async def run_outbound_loop(
                 "dist_remaining_m": dist_remaining_m,
                 "erg_change_countdown_s": erg_change_countdown_s,
                 "ended_reason": v.ended_reason,
+                "last_auto_shift_at": v.last_auto_shift_at,
             })
         except Exception:
             _log.exception("Outbound broadcast tick failed")

@@ -1,5 +1,6 @@
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetRideDiagForTests } from "../shared/diagnostics/rideDiagnostics";
 
 const mapboxMock = vi.hoisted(() => {
   type Source = {
@@ -142,6 +143,8 @@ async function pumpFrames(times: number) {
 
 describe("MiniMap", () => {
   beforeEach(() => {
+    resetRideDiagForTests();
+    window.history.replaceState(null, "", "/");
     mapboxMock.MockMap.instances.length = 0;
     mapboxMock.MockMap.failConstructor = false;
     vi.stubEnv("VITE_MAPBOX_TOKEN", "test-token");
@@ -167,6 +170,8 @@ describe("MiniMap", () => {
 
   afterEach(() => {
     cleanup();
+    resetRideDiagForTests();
+    window.history.replaceState(null, "", "/");
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     vi.resetModules();
@@ -416,4 +421,5 @@ describe("MiniMap", () => {
     expect(map.easeToCalls.length).toBe(easeBefore);
     expect(map.jumpToCalls.length).toBe(jumpBefore);
   });
+
 });

@@ -38,7 +38,7 @@ def test_dispatch_table_keys():
         "strava_get_auth_url", "strava_submit_code", "strava_sync",
         "set_paused", "strava_disconnect", "end_ride", "preview_route",
         "get_ride_summary", "list_rides", "delete_ride", "delete_all_rides", "get_ride",
-        "get_analytics_overview", "get_ride_analytics",
+        "get_analytics_overview", "get_ride_analytics", "shift_settings",
     }
     assert set(_DISPATCH.keys()) == expected
 

@@ -71,18 +71,23 @@ class RouteTracker:
         *,
         tick_s: float = 0.25,
         power_fn: Callable[[], Optional[float]] | None = None,
+        time_scale: float = 1.0,
     ) -> None:
         """Main tracker loop. Exits when stop_event fires OR all laps complete.
 
         speed_fn: returns current speed in km/h (or None when no reading yet).
+        time_scale: multiplies elapsed wall time for replay/stress runs.
         """
+        time_scale = max(0.1, float(time_scale))
         last_t = time.monotonic()
-        start_t = time.monotonic()
+        elapsed_scaled_s = 0.0
         self._lap_index = 0
 
         while not stop_event.is_set():
             now = time.monotonic()
-            dt = now - last_t
+            wall_dt = now - last_t
+            dt = wall_dt * time_scale
+            elapsed_scaled_s += dt
             last_t = now
 
             if self._physics_config is not None and power_fn is not None:
@@ -132,7 +137,7 @@ class RouteTracker:
             if self._position_m >= self._route.total_dist_m - _ROUTE_END_EPSILON_M:
                 self._lap_index += 1
                 if self._lap_index >= self._laps:
-                    elapsed_s = int(now - start_t)
+                    elapsed_s = int(elapsed_scaled_s)
                     _log.info(
                         "Route complete: %d lap(s) in %ds",
                         self._laps,

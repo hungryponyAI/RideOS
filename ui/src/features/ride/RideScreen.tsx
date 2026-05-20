@@ -7,8 +7,10 @@ import { useClimbFocus } from "./hooks/useClimbFocus";
 import { useDescentState } from "./hooks/useDescentState";
 import { useRouteData } from "./hooks/useRouteData";
 import { loadAthleteSettings } from "../settings/hooks/useAthleteSettings";
+import { loadAppPreferences, shiftSettingsFromPrefs } from "../settings/hooks/useAppSettings";
 import { useDeviceStatus } from "../settings/hooks/useDeviceStatus";
 import { ConnectionBanner } from "../../shared/ui/ConnectionBanner";
+import { RideDiagExportButton } from "../../shared/diagnostics/RideDiagExportButton";
 import { HudPanel } from "../../shared/ui/HudPanel";
 import { MetricTile } from "../../shared/ui/MetricTile";
 import { GearStrip } from "./components/GearStrip";
@@ -151,6 +153,7 @@ export function RideScreen({
   const { routeRef, routeLoaded, routeError, clearRouteError } = useRouteData(activeRouteId, activeRideSessionId);
   const isClimbFocus = useClimbFocus(t?.real_grade_pct);
   const isDescending = useDescentState(t?.real_grade_pct);
+  const shiftMode = loadAppPreferences().shift_mode;
 
   const [isPaused, setIsPaused] = useState(true);
   const [rideStarted, setRideStarted] = useState(false);
@@ -257,6 +260,8 @@ export function RideScreen({
     if (nowActive && !wasActive) {
       sendMessage({ type: "athlete_settings", ...loadAthleteSettings() });
       sendMessage({ type: "set_paused", paused: true });
+      const shiftPrefs = shiftSettingsFromPrefs(loadAppPreferences());
+      sendMessage({ type: "shift_settings", ...shiftPrefs });
     }
     if (status === "disconnected") setAnnouncement("Verbindung unterbrochen");
     else if (status === "reconnecting") setAnnouncement("Verbindung wird wiederhergestellt");
@@ -264,8 +269,8 @@ export function RideScreen({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "j" || e.key === "J") sendMessage({ type: "gear_shift", direction: "down" });
-      else if (e.key === "k" || e.key === "K") sendMessage({ type: "gear_shift", direction: "up" });
+      if (e.key === "j" || e.key === "J") { if (shiftMode !== "cassette") sendMessage({ type: "gear_shift", direction: "down" }); }
+      else if (e.key === "k" || e.key === "K") { if (shiftMode !== "cassette") sendMessage({ type: "gear_shift", direction: "up" }); }
       else if (e.key === "m" || e.key === "M") onCycleCamera();
       else if (e.key === " ") { e.preventDefault(); togglePause(); }
       else if (e.key === "Escape" && showEndConfirm) setShowEndConfirm(false);
@@ -345,11 +350,11 @@ export function RideScreen({
           lockToRouteStart={!rideStarted}
           isDescending={isDescending}
           isClimbing={isClimbFocus}
+          isPaused={isPaused}
           ghostLat={t?.ghost_lat ?? null}
           ghostLng={t?.ghost_lng ?? null}
           ghostBearingDeg={t?.ghost_bearing_deg ?? null}
           ghostDistM={t?.ghost_dist_m ?? null}
-          isPaused={isPaused}
         />
       </div>
 
@@ -373,6 +378,7 @@ export function RideScreen({
       <div className="absolute top-0 left-0 right-0 z-30">
         <ConnectionBanner status={status} trainerConnected={kickrConnected} />
       </div>
+      <RideDiagExportButton />
 
       {wakeLock.warning && (
         <div className="absolute top-9 left-1/2 z-30 -translate-x-1/2 rounded-lg border border-[var(--warning)] bg-[var(--surface)] px-3 py-2 text-[11px] font-medium text-[var(--text)] shadow-elevated">
@@ -390,7 +396,7 @@ export function RideScreen({
 
       {/* Top-left: primary metrics HUD */}
       <div className={`absolute top-[40px] left-4 z-10 transition-opacity duration-500 motion-reduce:transition-none ${isCompleted ? "opacity-40" : "opacity-100"}`}>
-        <HudPanel elevated className="p-4 flex flex-col gap-3 w-[260px]">
+        <HudPanel elevated className="p-4 flex flex-col gap-3 w-[290px]">
           <MetricTile
             label="Geschwindigkeit"
             value={t?.speed_kmh?.toFixed(1) ?? "–"}
@@ -414,8 +420,12 @@ export function RideScreen({
           </div>
 
           {!t?.erg_mode && (
-            <div className="grid grid-cols-2 gap-4 border-t border-[var(--border)] pt-2.5">
-              <GearStrip gear={t?.gear ?? null} />
+            <div className="flex items-start gap-6 border-t border-[var(--border)] pt-2.5">
+              <GearStrip
+                gear={t?.gear ?? null}
+                shiftMode={shiftMode}
+                lastAutoShiftAt={t?.last_auto_shift_at ?? null}
+              />
               <GradeBar gradePct={t?.real_grade_pct ?? 0} highlight={isClimbFocus} />
             </div>
           )}

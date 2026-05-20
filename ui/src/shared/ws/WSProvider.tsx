@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { WSContext } from "./WSContext";
 import type { ConnectionStatus } from "../types/telemetry";
+import {
+  incrementRideDiagCounter,
+  setRideDiagGauge,
+} from "../diagnostics/rideDiagnostics";
 
 const WS_URL = "ws://localhost:8765";
 
@@ -10,6 +14,7 @@ export function WSProvider({ children }: { children: ReactNode }) {
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listenersRef = useRef<Map<string, Set<(payload: unknown) => void>>>(new Map());
   const lastMsgRef = useRef<Map<string, unknown>>(new Map());
+  const disposedRef = useRef(false);
 
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
 
@@ -18,6 +23,11 @@ export function WSProvider({ children }: { children: ReactNode }) {
       listenersRef.current.set(type, new Set());
     }
     listenersRef.current.get(type)!.add(cb);
+    setRideDiagGauge("ws_listener_types", listenersRef.current.size);
+    setRideDiagGauge(
+      "ws_listener_count",
+      Array.from(listenersRef.current.values()).reduce((sum, set) => sum + set.size, 0),
+    );
     // Replay last known message so late-mounting components get current state
     const last = lastMsgRef.current.get(type);
     if (last !== undefined) {
@@ -29,6 +39,10 @@ export function WSProvider({ children }: { children: ReactNode }) {
     }
     return () => {
       listenersRef.current.get(type)?.delete(cb);
+      setRideDiagGauge(
+        "ws_listener_count",
+        Array.from(listenersRef.current.values()).reduce((sum, set) => sum + set.size, 0),
+      );
     };
   }, []);
 
@@ -42,6 +56,7 @@ export function WSProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const connect = useCallback(() => {
+    if (disposedRef.current) return;
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
     setStatus("connecting");
@@ -54,6 +69,7 @@ export function WSProvider({ children }: { children: ReactNode }) {
 
     ws.onmessage = (e) => {
       setStatus("live");
+      incrementRideDiagCounter("ws_messages");
       let msg: Record<string, unknown>;
       try {
         msg = JSON.parse(e.data as string) as Record<string, unknown>;
@@ -61,6 +77,7 @@ export function WSProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (!msg || typeof msg.type !== "string") return;
+      incrementRideDiagCounter(`ws_${msg.type}`);
       lastMsgRef.current.set(msg.type, msg);
       const listeners = listenersRef.current.get(msg.type);
       if (listeners) {
@@ -75,6 +92,7 @@ export function WSProvider({ children }: { children: ReactNode }) {
     };
 
     ws.onclose = () => {
+      if (disposedRef.current) return;
       setStatus("disconnected");
       const delay = Math.min(30000, 2000 * 2 ** retryCountRef.current);
       retryCountRef.current += 1;
@@ -83,10 +101,13 @@ export function WSProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    disposedRef.current = false;
     connect();
     return () => {
-      wsRef.current?.close();
+      disposedRef.current = true;
       if (retryRef.current) clearTimeout(retryRef.current);
+      retryRef.current = null;
+      wsRef.current?.close();
     };
   }, [connect]);
 

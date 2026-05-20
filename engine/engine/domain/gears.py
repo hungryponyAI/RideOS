@@ -9,11 +9,24 @@ Geometric (not linear) so every shift feels like the same relative jump.
 Virtual-descent offsets shift the flat-ground baseline so the KICKR naturally
 reports higher speed in low gears and lower speed in high gears.  Gear 6 = 0%.
 Tune _GRADE_OFFSETS_PCT to match real-world target speeds per gear.
+
+ShiftMode controls how gearing affects FTMS grade output:
+  MANUAL   — user shifts via Click/keyboard; factor + offset both active.
+  CASSETTE — physical cassette on trainer; factor=1.0, offset=0, scale=1.0.
+  AUTO     — AutoShiftController drives gear; same physics as MANUAL.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Tuple
+
+
+class ShiftMode(str, Enum):
+    MANUAL = "manual"
+    CASSETTE = "cassette"
+    AUTO = "auto"
+
 
 # factor[i] = 0.8 * 6 ** ((i-1)/11) — pinned to 3 decimal places.
 _FACTORS: Tuple[float, ...] = (
@@ -35,16 +48,21 @@ _GRADE_OFFSETS_PCT: Tuple[float, ...] = (
 @dataclass
 class GearEngine:
     current_gear: int = 6
+    mode: ShiftMode = ShiftMode.MANUAL
     factors: Tuple[float, ...] = field(default_factory=lambda: _FACTORS)
     grade_offsets_pct: Tuple[float, ...] = field(default_factory=lambda: _GRADE_OFFSETS_PCT)
 
     @property
     def factor(self) -> float:
+        if self.mode is ShiftMode.CASSETTE:
+            return 1.0
         return self.factors[self.current_gear - 1]
 
     @property
     def grade_offset_pct(self) -> float:
         """Virtual-descent offset for the current gear (% grade)."""
+        if self.mode is ShiftMode.CASSETTE:
+            return 0.0
         return self.grade_offsets_pct[self.current_gear - 1]
 
     def shift_up(self) -> int:

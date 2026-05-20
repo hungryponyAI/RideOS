@@ -40,6 +40,7 @@ class RideStateView:
 
     # Virtual gearing
     gear: int = 6
+    last_auto_shift_at: float | None = None  # monotonic timestamp of last automatic shift
 
     # Route position
     position_m: float = 0.0
@@ -94,7 +95,11 @@ class RideStateProjection:
             v = replace(v, speed_kmh=event.speed_kmh, power_w=event.power_w, cadence_rpm=event.cadence_rpm)
 
         elif isinstance(event, GearShifted):
-            v = replace(v, gear=event.gear)
+            v = replace(
+                v,
+                gear=event.gear,
+                last_auto_shift_at=event.t_mono if event.automatic else v.last_auto_shift_at,
+            )
 
         elif isinstance(event, PositionAdvanced):
             v = replace(

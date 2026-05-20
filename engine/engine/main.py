@@ -30,10 +30,13 @@ from engine.adapters.persistence.event_logger import InMemoryEventLog
 from engine.adapters.persistence.ride_repo_sink import RideRepoSink
 from engine.adapters.persistence.sqlite.connection import get_connection
 from engine.adapters.persistence.sqlite.ride_repo import SqliteRideRepo
+from engine.application.auto_shift import AutoShiftController
+from engine.application.diagnostics import EngineDiagnostics
+from engine.application.replay import ReplayConfig, run_ble_scan_stress, run_replay_telemetry
 from engine.application.ride_service import RideService
-from engine.application.wake_lock import MacOSWakeLock
 from engine.application.route_service import RouteService
 from engine.application.strava_service import StravaService
+from engine.application.wake_lock import MacOSWakeLock
 from engine.ble.client import telemetry_consumer
 from engine.ble.reconnect import ReconnectConfig, reconnect_loop
 from engine.ble.scanner import find_kickr
@@ -110,6 +113,13 @@ async def main() -> int:
     queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
     stop_event = asyncio.Event()
     broadcast_queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=10)
+    replay_config = ReplayConfig.from_env()
+    stress_ble_scan = os.getenv("RIDEOS_STRESS_BLE_SCAN", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -151,6 +161,7 @@ async def main() -> int:
     for event_type in _all_event_types:
         bus.subscribe(event_type, _ride_repo_sink.on_event)
     _log.info("Ride event log enabled (SQLite: %s)", _DB_PATH)
+    _DIAG_PATH = Path(os.getenv("RIDEOS_ENGINE_DIAG_PATH", str(_DB_PATH.parent / "last_engine_diag.json")))
 
     _ROUTES_DIR = Path(__file__).parent.parent / "routes"
     _CONFIG_DIR = Path(__file__).parent.parent / "config"
@@ -177,6 +188,12 @@ async def main() -> int:
     route_service = RouteService(bus)
     strava_service = StravaService(bus)
 
+    auto_shift_controller = AutoShiftController(
+        ride_service=ride_service,
+        projection=projection,
+        gear_engine=gear_engine,
+    )
+
     route_ctx = RouteContext(
         broadcast_queue=broadcast_queue,
         stop_event=stop_event,
@@ -189,11 +206,26 @@ async def main() -> int:
         strava_service=strava_service,
         projection=projection,
         ride_repo=_ride_repo,
+        auto_shift_controller=auto_shift_controller,
+        time_scale=replay_config.time_scale if replay_config.enabled else 1.0,
     )
+
+    diagnostics = EngineDiagnostics(
+        route_ctx=route_ctx,
+        projection=projection,
+        broadcast_queue=broadcast_queue,
+        ride_repo_sink=_ride_repo_sink,
+        output_path=_DIAG_PATH,
+    )
+    for event_type in _all_event_types:
+        bus.subscribe(event_type, diagnostics.on_event)
+    diagnostics.set_gauge("kickr_connected", False)
+    diagnostics.set_gauge("click_connected", False)
 
     shifter_adapter = KeyboardShifterAdapter(gear_engine, bus)
 
     def _on_kickr_state_change(connected: bool) -> None:
+        diagnostics.set_gauge("kickr_connected", connected)
         msg = {"type": "kickr_status", "connected": connected}
         try:
             broadcast_queue.put_nowait(msg)
@@ -211,6 +243,7 @@ async def main() -> int:
         Mirrors _on_reading drop-oldest pattern (RESEARCH.md Pattern 1, INFRA-01).
         Plain def — no await allowed; runs on the asyncio event loop thread.
         """
+        diagnostics.set_gauge("click_connected", connected)
         msg = {"type": "click_status", "connected": connected}
         try:
             broadcast_queue.put_nowait(msg)
@@ -234,36 +267,63 @@ async def main() -> int:
     async def find_device():
         return await find_kickr(timeout=10.0)
 
-    reconnect_task = asyncio.create_task(
-        reconnect_loop(
-            queue=queue,
-            find_device=find_device,
-            connect_client=_connect_client,
-            config=ReconnectConfig(initial_backoff=1.0, max_backoff=60.0),
-            stop_event=stop_event,
-            athlete=athlete,
-            projection=projection,
-            erg_debouncer=erg_debouncer,
-            gear_engine=gear_engine,
-            on_kickr_state_change=_on_kickr_state_change,
-        ),
-        name="reconnect_loop",
-    )
-
-    consumer_task = asyncio.create_task(
-        telemetry_consumer(queue, _on_reading),
-        name="telemetry_consumer",
-    )
+    managed_tasks: list[asyncio.Task] = []
+    if replay_config.enabled:
+        replay_task = asyncio.create_task(
+            run_replay_telemetry(
+                stop_event,
+                _on_reading,
+                config=replay_config,
+                on_state_change=_on_kickr_state_change,
+            ),
+            name="replay_telemetry",
+        )
+        managed_tasks.append(replay_task)
+        _log.info("Replay mode active; BLE KICKR connection is disabled")
+        if stress_ble_scan:
+            ble_scan_stress_task = asyncio.create_task(
+                run_ble_scan_stress(
+                    stop_event,
+                    find_device,
+                    diagnostics=diagnostics,
+                ),
+                name="ble_scan_stress",
+            )
+            managed_tasks.append(ble_scan_stress_task)
+    else:
+        reconnect_task = asyncio.create_task(
+            reconnect_loop(
+                queue=queue,
+                find_device=find_device,
+                connect_client=_connect_client,
+                config=ReconnectConfig(initial_backoff=1.0, max_backoff=60.0),
+                stop_event=stop_event,
+                athlete=athlete,
+                projection=projection,
+                erg_debouncer=erg_debouncer,
+                gear_engine=gear_engine,
+                on_kickr_state_change=_on_kickr_state_change,
+                diagnostics=diagnostics,
+            ),
+            name="reconnect_loop",
+        )
+        consumer_task = asyncio.create_task(
+            telemetry_consumer(queue, _on_reading),
+            name="telemetry_consumer",
+        )
+        managed_tasks.extend([reconnect_task, consumer_task])
 
     broadcast_task = asyncio.create_task(
         run_outbound_loop(broadcast_queue, stop_event, projection, route_ctx, erg_debouncer, gear_engine),
         name="state_broadcast",
     )
+    managed_tasks.append(broadcast_task)
 
     gear_logger_task = asyncio.create_task(
         _gear_status_logger(gear_engine, projection, stop_event),
         name="gear_status_logger",
     )
+    managed_tasks.append(gear_logger_task)
 
     ws_task = asyncio.create_task(
         broadcast_loop(
@@ -274,20 +334,43 @@ async def main() -> int:
         ),
         name="ws_broadcast",
     )
+    managed_tasks.append(ws_task)
 
-    click_adapter = ClickShifterAdapter(
-        gear_engine, bus, on_state_change=_on_click_state_change,
-    )
-    click_task = asyncio.create_task(
-        click_adapter.run(stop_event),
-        name="click_shifter",
-    )
-    _log.debug("click_task spawned — scanning for Zwift Click in background")
+    if replay_config.enabled and not stress_ble_scan:
+        _on_click_state_change(False)
+        _log.info("Replay mode active; Zwift Click scanning is disabled")
+    else:
+        click_adapter = ClickShifterAdapter(
+            gear_engine, bus, on_state_change=_on_click_state_change, diagnostics=diagnostics,
+        )
+        click_task = asyncio.create_task(
+            click_adapter.run(stop_event),
+            name="click_shifter",
+        )
+        managed_tasks.append(click_task)
+        if replay_config.enabled:
+            _log.info("Replay mode active; Zwift Click scanning enabled by RIDEOS_STRESS_BLE_SCAN")
+        else:
+            _log.debug("click_task spawned — scanning for Zwift Click in background")
 
     keyboard_task = asyncio.create_task(
         shifter_adapter.run(stop_event),
         name="keyboard_shifter",
     )
+    managed_tasks.append(keyboard_task)
+
+    auto_shift_task = asyncio.create_task(
+        auto_shift_controller.run(stop_event),
+        name="auto_shift",
+    )
+    managed_tasks.append(auto_shift_task)
+
+    diagnostics_task = asyncio.create_task(
+        diagnostics.run(stop_event),
+        name="engine_diagnostics",
+    )
+    managed_tasks.append(diagnostics_task)
+    diagnostics.set_tasks(managed_tasks)
 
     # Wait for shutdown signal, then drain cleanly.
     await stop_event.wait()
@@ -303,21 +386,20 @@ async def main() -> int:
                 pass
 
     # Tell the consumer to exit; let the reconnect loop finish its current await.
-    await queue.put(None)
+    if not replay_config.enabled:
+        await queue.put(None)
 
     try:
         await asyncio.wait_for(
             asyncio.gather(
-                reconnect_task, consumer_task, broadcast_task,
-                gear_logger_task, ws_task, click_task, keyboard_task,
+                *managed_tasks,
                 return_exceptions=True,
             ),
             timeout=15.0,
         )
     except asyncio.TimeoutError:
         _log.warning("Shutdown timed out; cancelling remaining tasks")
-        for t in (reconnect_task, consumer_task, broadcast_task,
-                  gear_logger_task, ws_task, click_task, keyboard_task):
+        for t in managed_tasks:
             if not t.done():
                 t.cancel()
 

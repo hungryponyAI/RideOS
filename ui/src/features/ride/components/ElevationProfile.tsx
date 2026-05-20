@@ -1,5 +1,9 @@
 import { memo, useMemo } from "react";
 import type { ElevationChartDatum } from "../../../shared/types/route";
+import {
+  incrementRideDiagCounter,
+  setRideDiagGauge,
+} from "../../../shared/diagnostics/rideDiagnostics";
 
 interface Props {
   data: ElevationChartDatum[] | null;
@@ -85,6 +89,8 @@ function interpolateElevationAt(
 }
 
 export const ElevationProfile = memo(function ElevationProfile({ data, gradesPct, positionM, ghostDistM }: Props) {
+  incrementRideDiagCounter("elevation_renders");
+  setRideDiagGauge("elevation_points", data?.length ?? 0);
   const chart = useMemo(() => {
     const hasRoute = data !== null && data.length >= 2;
     const empty = { pathD: `M0,100 L1000,100`, baseLabels: [] as Array<{ xPct: number; label: string }>, posXPct: null, ghostXPct: null, posPoint: null, ghostPoint: null, hasRoute: false, elevMin: null, elevMax: null, terrainRects: [] as Array<{ x: number; w: number; type: TerrainType }> };

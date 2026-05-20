@@ -10,7 +10,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from websockets.asyncio.server import ServerConnection, serve
 
@@ -58,6 +58,8 @@ class RouteContext:
     strava_service: "StravaService | None" = None
     projection: "RideStateProjection | None" = None
     ride_repo: "SqliteRideRepo | None" = None
+    auto_shift_controller: "Optional[Any]" = None  # AutoShiftController | None
+    time_scale: float = 1.0
 
 
 async def broadcast_loop(

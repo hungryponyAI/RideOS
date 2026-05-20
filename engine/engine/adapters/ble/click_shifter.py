@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from engine.domain.events import GearShifted
 from engine.domain.gears import GearEngine
@@ -57,12 +57,14 @@ class ClickShifterAdapter:
         *,
         clock: Callable[[], float] = time.monotonic,
         on_state_change: Optional[Callable[[bool], None]] = None,
+        diagnostics: Any | None = None,
     ) -> None:
         proxy = _ShiftProxy(gear_engine, bus, clock)
         self._shifter = ClickShifter(
             proxy,  # type: ignore[arg-type]  # duck-typed; proxy satisfies shift_up/down contract
             clock=clock,
             on_state_change=on_state_change,
+            diagnostics=diagnostics,
         )
 
     async def run(self, stop_event: asyncio.Event) -> None:

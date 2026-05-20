@@ -167,7 +167,7 @@ class RouteService:
         proj = ctx.projection
         speed_fn = (lambda: proj.view.speed_kmh) if proj is not None else (lambda: None)
         ctx.tracker_task = asyncio.create_task(
-            tracker.run(speed_fn, ctx.stop_event),
+            tracker.run(speed_fn, ctx.stop_event, time_scale=ctx.time_scale),
             name="route_tracker",
         )
         _log.info("Route loaded from %s: %d points, %.0f m total",
